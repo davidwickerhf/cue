@@ -596,6 +596,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 			{visual && <ZoomSection clip={clip} />}
 			{visual && <ColorSection clip={clip} />}
 			{visual && <EffectsSection clip={clip} video={asset?.kind === "video"} />}
+			{visual && !adjustment && <FrameSection clip={clip} />}
 			{visual && <MaskSection clip={clip} />}
 			{visual && asset?.kind === "video" && <KeySection clip={clip} />}
 			{visual && <TransitionSection clip={clip} project={project} />}
@@ -1593,6 +1594,46 @@ function EffectsSection({
 					onChange={(stabilize) => set({ stabilize })}
 				/>
 			)}
+		</Section>
+	);
+}
+
+/** Rounded corners and a drop shadow, as in the studio look of screen recordings. */
+function FrameSection({ clip }: { clip: MediaClip }) {
+	const f = { radius: 0, shadow: 0, ...clip.frame };
+	const set = (frame: Record<string, number> | null) =>
+		void run("update_clip", { id: clip.id, patch: { frame } });
+	return (
+		<Section
+			title="Corners and shadow"
+			action={
+				clip.frame ? (
+					<Button size="sm" variant="ghost" className="h-6 text-[11px]" onPress={() => set(null)}>
+						Reset
+					</Button>
+				) : null
+			}
+		>
+			<Field label="Corners">
+				<Range
+					value={f.radius}
+					min={0}
+					max={200}
+					step={1}
+					format={(v) => (v ? `${Math.round(v)} px` : "Square")}
+					onCommit={(radius) => set({ radius, shadow: f.shadow })}
+				/>
+			</Field>
+			<Field label="Shadow">
+				<Range
+					value={f.shadow}
+					min={0}
+					max={1}
+					step={0.01}
+					format={(v) => (v ? `${Math.round(v * 100)}` : "Off")}
+					onCommit={(shadow) => set({ radius: f.radius, shadow })}
+				/>
+			</Field>
 		</Section>
 	);
 }

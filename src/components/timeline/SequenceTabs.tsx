@@ -56,6 +56,16 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [compare, flip]);
 	const nameOf = (id: string) => all.find((q) => q.id === id)?.name ?? id;
+	// The open sequence can go too: its neighbour opens first. Undo brings it back.
+	const remove = async (id: string) => {
+		if (all.length < 2) return;
+		if (id === open.id) {
+			const i = all.findIndex((q) => q.id === id);
+			const next = all[i + 1] ?? all[i - 1];
+			await run("open_sequence", { id: next.id });
+		}
+		await run("delete_sequence", { id });
+	};
 	return (
 		<div className="flex h-8 shrink-0 items-end gap-0.5 border-b border-separator bg-background px-2">
 			{all.map((q) => {
@@ -69,7 +79,7 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 							setMenu({ id: q.id, x: e.clientX, y: e.clientY });
 						}}
 						className={cn(
-							"flex h-7 max-w-[200px] items-center rounded-t-md border border-b-0 px-2.5 text-[12px]",
+							"group flex h-7 max-w-[200px] items-center gap-1 rounded-t-md border border-b-0 pr-1 pl-2.5 text-[12px]",
 							active
 								? "border-separator bg-surface text-foreground"
 								: "border-transparent text-muted hover:text-foreground",
@@ -99,6 +109,26 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 							>
 								{q.name}
 								{nested && <span className="ml-1 text-[10px] text-muted">nested</span>}
+							</button>
+						)}
+						{all.length > 1 && renaming !== q.id && (
+							<button
+								type="button"
+								onClick={() => void remove(q.id)}
+								title={
+									nested
+										? "Nested in another sequence: delete those clips first"
+										: `Delete ${q.name}`
+								}
+								aria-label={`Delete ${q.name}`}
+								className={cn(
+									"flex size-4 shrink-0 items-center justify-center rounded text-muted hover:bg-default hover:text-foreground",
+									active
+										? "opacity-60"
+										: "opacity-0 group-hover:opacity-60 focus-visible:opacity-100",
+								)}
+							>
+								<X className="size-2.5" />
 							</button>
 						)}
 					</div>
@@ -184,11 +214,11 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 									},
 								]
 							: []),
-						...(menu.id !== open.id
+						...(all.length > 1
 							? [
 									{
 										label: "Delete",
-										action: () => void run("delete_sequence", { id: menu.id }),
+										action: () => void remove(menu.id),
 										danger: true,
 									},
 								]

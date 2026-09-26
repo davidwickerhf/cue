@@ -120,6 +120,20 @@ export function zoomAt(
 	return { scale: 1, x: 0.5, y: 0.5 };
 }
 
+/**
+ * Where a zoom puts the picture, as the export draws it: scaled by `scale` and
+ * moved by `dx`, `dy` (shares of the frame) so the focus is centred but the
+ * frame stays covered. A source point u shows at scale * u + dx.
+ */
+export function zoomView(z: { scale: number; x: number; y: number }): {
+	scale: number;
+	dx: number;
+	dy: number;
+} {
+	const shift = (f: number) => Math.min(0, Math.max(1 - z.scale, 0.5 - z.scale * f));
+	return { scale: z.scale, dx: shift(z.x), dy: shift(z.y) };
+}
+
 /** Sorted, de-duplicated keyframes with `next` inserted (replacing one within 10 ms). */
 export function withKeyframe(list: Keyframe[] | undefined, next: Keyframe): Keyframe[] {
 	return [...(list ?? []).filter((k) => Math.abs(k.atMs - next.atMs) > 10), next].sort(

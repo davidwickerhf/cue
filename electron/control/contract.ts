@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WALLPAPERS } from "../core/capture";
 import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
@@ -206,8 +207,19 @@ export const contract = {
 			bubble: z
 				.boolean()
 				.default(true)
-				.describe("Show the camera small in the bottom-right corner"),
+				.describe("Show the camera small in the bottom-right corner (round, with the studio look)"),
 			maxSeconds: z.number().min(1).max(7200).optional(),
+			studio: z
+				.boolean()
+				.default(true)
+				.describe(
+					"The Recordly-style finish: the screen inset on a wallpaper with rounded corners and a shadow, the real pointer replaced by a smooth larger cursor, zooms on the clicks and a ripple on each click. All of it is ordinary clips, keyframes and zooms on their own tracks (Background, Cursor, Clicks), so it can be edited afterwards",
+				),
+			wallpaper: z
+				.enum([...WALLPAPERS, "none"])
+				.optional()
+				.describe("Studio background (default dusk)"),
+			autoZoom: z.boolean().default(true).describe("Studio: zoom in where the clicks are"),
 		},
 	},
 	stop_screen_recording: {
@@ -289,7 +301,7 @@ export const contract = {
 	},
 	update_clip: {
 		description:
-			"Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+			"Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: {

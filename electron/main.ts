@@ -10,8 +10,10 @@ import {
 	dialog,
 	ipcMain,
 	Menu,
+	nativeImage,
 	protocol,
 	safeStorage,
+	screen,
 	session,
 	shell,
 	systemPreferences,
@@ -27,7 +29,8 @@ import { contract, type MethodName } from "./control/contract";
 import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
-import type { CaptureSources } from "./core/capture";
+import { type CaptureSources, WALLPAPERS } from "./core/capture";
+import { cursorBinary, studioDir } from "./core/cursor";
 import { diffSnapshot } from "./core/delta";
 import type { TextRender } from "./core/exporter";
 import {
@@ -210,6 +213,28 @@ async function captureSources(thumbnails = false): Promise<CaptureSources> {
 		microphoneAccess: mediaAccess("microphone"),
 		...devices,
 	};
+}
+
+/**
+ * What the pointer is measured against: a screen's bounds (in points, like the
+ * pointer), or a window's id (its bounds come from cue-cursor as it moves).
+ */
+async function pointerTarget(
+	sourceId: string,
+): Promise<{ region: { x: number; y: number; w: number; h: number } | null; windowId?: number }> {
+	const window = /^window:(\d+):/.exec(sourceId);
+	if (window) return { region: null, windowId: Number(window[1]) };
+	let displayId: string | undefined;
+	if (sourceId.startsWith("screen:")) {
+		const found = await desktopCapturer
+			.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } })
+			.catch(() => []);
+		displayId = found.find((s) => s.id === sourceId)?.display_id;
+	}
+	const display =
+		screen.getAllDisplays().find((d) => String(d.id) === displayId) ?? screen.getPrimaryDisplay();
+	const b = display.bounds;
+	return { region: { x: b.x, y: b.y, w: b.width, h: b.height } };
 }
 
 /** The screen or window the window's next getDisplayMedia() call records. */
@@ -876,10 +901,38 @@ function registerIpc() {
 	ipcMain.on("cue:setCaptureSource", (_event, id: string | null) => {
 		displaySource = id;
 	});
+	ipcMain.handle("cue:studioWallpapers", () => {
+		const dir = studioDir();
+		return Object.fromEntries(
+			WALLPAPERS.map((name) => {
+				const file = dir ? path.join(dir, `${name}.jpg`) : "";
+				const image = file && existsSync(file) ? nativeImage.createFromPath(file) : null;
+				return [name, image && !image.isEmpty() ? image.resize({ width: 96 }).toDataURL() : null];
+			}),
+		);
+	});
+	ipcMain.handle(
+		"cue:pointerAvailable",
+		() => cursorBinary() !== null && process.platform === "darwin",
+	);
 	ipcMain.handle(
 		"cue:captureBegin",
-		(_event, input: { screen: boolean; camera: boolean; requestId?: string }) =>
-			controller.beginCapture(input),
+		async (
+			_event,
+			input: {
+				screen: boolean;
+				camera: boolean;
+				requestId?: string;
+				sourceId?: string | null;
+				pointer?: boolean;
+			},
+		) => {
+			const { sourceId, pointer, ...rest } = input;
+			return controller.beginCapture({
+				...rest,
+				cursor: pointer && sourceId ? await pointerTarget(sourceId) : undefined,
+			});
+		},
 	);
 	ipcMain.handle("cue:captureChunk", (_event, id: string, part: "main" | "overlay", data) =>
 		controller.writeCapture(id, part, Buffer.from(data)),

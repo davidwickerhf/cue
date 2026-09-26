@@ -1,4 +1,4 @@
-import { valueAt, zoomAt } from "../../electron/core/anim";
+import { valueAt, zoomAt, zoomView } from "../../electron/core/anim";
 import {
 	COMPRESSOR_KNEE_DB,
 	compressorSettings,
@@ -770,10 +770,19 @@ class PlaybackEngine {
 		// A wipe uncovers the picture from one side, on top of any crop.
 		const left = Math.max(c.left, tr?.kind === "wipe-left" ? 1 - p : 0);
 		const right = Math.max(c.right, tr?.kind === "wipe-right" ? 1 - p : 0);
+		// Rounded corners go with the crop; the shadow is drawn around the whole track layer
+		// (a shadow on the frame itself would be cut off by its clip path).
+		const px = W / Math.max(1, project.data.canvas.width);
+		const round = clip.frame?.radius ? ` round ${clip.frame.radius * px}px` : "";
 		frame.clipPath =
-			left || c.top || right || c.bottom
-				? `inset(${c.top * 100}% ${right * 100}% ${c.bottom * 100}% ${left * 100}%)`
+			left || c.top || right || c.bottom || round
+				? `inset(${c.top * 100}% ${right * 100}% ${c.bottom * 100}% ${left * 100}%${round})`
 				: "none";
+		const root = slot.frame.parentElement;
+		const shadow = clip.frame?.shadow
+			? `drop-shadow(0 ${14 * px}px ${36 * px}px rgba(0,0,0,${(0.75 * clip.frame.shadow).toFixed(3)}))`
+			: "";
+		if (root && root.style.filter !== shadow) root.style.filter = shadow;
 		const mask = clip.mask ? `url(${maskUrl(clip.mask, ar)})` : "none";
 		if (frame.maskImage !== mask) {
 			frame.maskImage = mask;
@@ -783,9 +792,13 @@ class PlaybackEngine {
 		const other = isImage ? slot.video : slot.image;
 		if (other.style.display !== "none") other.style.display = "none";
 		element.style.display = "";
-		const z = zoomAt(clip.zooms, local);
-		element.style.transformOrigin = `${z.x * 100}% ${z.y * 100}%`;
-		element.style.transform = z.scale !== 1 ? `scale(${z.scale})` : "none";
+		// The same framing as the export: the focus is centred but the picture always covers the frame.
+		const z = zoomView(zoomAt(clip.zooms, local));
+		element.style.transformOrigin = "0 0";
+		element.style.transform =
+			z.scale !== 1
+				? `translate(${z.dx * 100}%, ${z.dy * 100}%) scale(${z.scale})`
+				: "none";
 		// Effects are sized like the export's: in pixels of a 1080-line picture.
 		// "Compare" shows the pictures as they were shot: no grade, no effects.
 		const look = this.original ? undefined : clip;

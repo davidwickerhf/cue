@@ -648,9 +648,12 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			tr?.kind === "zoom" ? `*(1+${ZOOM_FROM}*(1-${enteredAt(T)}))` : "";
 		const animatedScale = !!kf.scale?.length || tr?.kind === "zoom";
 		const S = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, "t") : String(t.scale)}${zoomIn("t")}`;
-		const zoom = zoomExprs(clip.zooms, "t");
+		// Zooms: zoompan keeps the frame size fixed (a scale that changes size per frame
+		// would leave crop working on the old size, pinning every zoom to the top left).
+		// The focus is centred where it can be, without showing past the picture's edge.
+		const zoom = zoomExprs(clip.zooms, "it");
 		const zoomChain = zoom
-			? `,scale=w='trunc(iw*${zoom.scale}/2)*2':h='trunc(ih*${zoom.scale}/2)*2':eval=frame:flags=bicubic,crop=w=${sw}:h=${sh}:x='max(0,min(iw-${sw},${zoom.x}*iw-${sw}/2))':y='max(0,min(ih-${sh},${zoom.y}*ih-${sh}/2))'`
+			? `,zoompan=z='${zoom.scale}':x='max(0,min(iw-iw/zoom,${zoom.x}*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,${zoom.y}*ih-ih/zoom/2))':d=1:s=${sw}x${sh}:fps=${fps}`
 			: "";
 		const colorChain =
 			gradeFilters(clip.color)
@@ -708,7 +711,28 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				: "";
 			source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))}${steady},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
 		} else continue;
-		const finish = `${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`;
+		// Rounded corners: an alpha mask the size of the cropped picture, multiplied into its alpha.
+		let rounded = "";
+		if (clip.frame?.radius) {
+			const cw = Math.max(2, Math.round((sw * cropW) / 2) * 2);
+			const ch = Math.max(2, Math.round((sh * cropH) / 2) * 2);
+			const radius = clip.frame.radius / (fitBase * Math.max(0.01, t.scale));
+			const m = addInput([
+				"-loop",
+				"1",
+				"-framerate",
+				String(fps),
+				"-t",
+				s(clip.durationMs + 1000),
+				"-i",
+				await roundedMask(ctx.dir, cw, ch, radius),
+			]);
+			chains.push(`[${m}:v]format=gray,scale=${cw}:${ch}[fm${label}]`);
+			rounded =
+				`,scale=${cw}:${ch},format=rgba,split[fa${label}][fb${label}];[fb${label}]alphaextract[fx${label}];` +
+				`[fx${label}][fm${label}]blend=all_mode=multiply:shortest=1[fy${label}];[fa${label}][fy${label}]alphamerge`;
+		}
+		const finish = `${crop}${rounded}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`;
 		if (clip.mask) {
 			// The mask is drawn once at the picture's size and becomes its alpha, before cropping and scaling.
 			// With a chroma key too, the key's alpha and the mask are multiplied so both apply.
@@ -747,6 +771,38 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const Sg = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale)}${zoomIn(local)}`;
 		const dx = `${(((c.left - c.right) / 2) * sw * fitBase).toFixed(3)}*(${Sg})`;
 		const dy = `${(((c.top - c.bottom) / 2) * sh * fitBase).toFixed(3)}*(${Sg})`;
+		if (clip.frame?.shadow) {
+			// The shadow sits under the picture where it rests (its keyframes aren't followed).
+			const box = {
+				x: W * t.x + ((c.left - c.right) / 2) * sw * fitBase * t.scale,
+				y: H * t.y + ((c.top - c.bottom) / 2) * sh * fitBase * t.scale,
+				w: baseW * t.scale,
+				h: baseH * t.scale,
+			};
+			const shade = addInput([
+				"-loop",
+				"1",
+				"-framerate",
+				String(fps),
+				"-t",
+				s(clip.durationMs),
+				"-i",
+				await shadowImage(ctx.dir, W, H, box, clip.frame),
+			]);
+			const fadeShadow = [
+				clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",
+				clip.fadeOutMs > 0
+					? `fade=t=out:st=${s(clip.durationMs - clip.fadeOutMs)}:d=${s(clip.fadeOutMs)}:alpha=1`
+					: "",
+			].filter(Boolean);
+			chains.push(
+				`[${shade}:v]format=rgba,fps=${fps}${fadeShadow.length ? `,${fadeShadow.join(",")}` : ""},setpts=PTS-STARTPTS+${start}/TB[sd${label}]`,
+			);
+			chains.push(
+				`[${current}][sd${label}]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass[sdo${label}]`,
+			);
+			current = `sdo${label}`;
+		}
 		chains.push(
 			`[${current}][${label}]overlay=x='${W}*(${X})+${dx}-w/2':y='${H}*(${Y})+${dy}-h/2':enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
 		);
@@ -881,6 +937,68 @@ function gradeFilters(grade: ColorGrade | undefined): string[] {
  * A grey mask image (white shows, black hides) for a clip, drawn once with
  * ffmpeg's geq and cached. Same formula as the preview's mask.
  */
+/** Signed distance to a rounded rectangle (negative inside), as a geq expression. */
+function roundedDistance(cx: number, cy: number, hw: number, hh: number, r: number): string {
+	const ax = `(abs(X-${cx.toFixed(2)})-${(hw - r).toFixed(2)})`;
+	const ay = `(abs(Y-${cy.toFixed(2)})-${(hh - r).toFixed(2)})`;
+	return `(hypot(max(${ax}\\,0)\\,max(${ay}\\,0))+min(max(${ax}\\,${ay})\\,0)-${r.toFixed(2)})`;
+}
+
+/** Cached one-frame PNG made with a geq expression over a blank picture. */
+async function geqImage(
+	dir: string,
+	key: unknown,
+	w: number,
+	h: number,
+	format: "gray" | "rgba",
+	expr: string,
+): Promise<string> {
+	const text = JSON.stringify(key);
+	let hash = 0;
+	for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+	const file = path.join(dir, ".cue-cache", "masks", `${(hash >>> 0).toString(36)}.png`);
+	try {
+		await fs.access(file);
+		return file;
+	} catch {}
+	await fs.mkdir(path.dirname(file), { recursive: true });
+	await ffmpeg([
+		"-f",
+		"lavfi",
+		"-i",
+		`color=black:s=${w}x${h}:d=1`,
+		"-vf",
+		`format=${format},geq=${expr}`,
+		"-frames:v",
+		"1",
+		file,
+	]);
+	return file;
+}
+
+/** White inside a w×h rectangle with corners of `radius` pixels, antialiased. */
+export function roundedMask(dir: string, w: number, h: number, radius: number): Promise<string> {
+	const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+	const d = roundedDistance(w / 2, h / 2, w / 2, h / 2, r);
+	return geqImage(dir, ["round", w, h, r], w, h, "gray", `lum='255*clip(0.5-${d}\\,0\\,1)'`);
+}
+
+/** A soft dark shadow under a rounded box, on a transparent W×H canvas. */
+export function shadowImage(
+	dir: string,
+	W: number,
+	H: number,
+	box: { x: number; y: number; w: number; h: number },
+	frame: { radius: number; shadow: number },
+): Promise<string> {
+	const scale = H / 1080;
+	const sigma = 36 * scale;
+	const r = Math.max(0, Math.min(frame.radius, box.w / 2, box.h / 2));
+	const d = roundedDistance(box.x, box.y + 14 * scale, box.w / 2, box.h / 2, r);
+	const alpha = `255*${(0.75 * frame.shadow).toFixed(3)}*exp(-pow(max(${d}\\,0)/${sigma.toFixed(2)}\\,2))`;
+	return geqImage(dir, ["shadow", W, H, box, frame], W, H, "rgba", `r=0:g=0:b=0:a='${alpha}'`);
+}
+
 async function maskImage(dir: string, mask: Mask, w: number, h: number): Promise<string> {
 	const key = JSON.stringify([mask, w, h]);
 	let hash = 0;

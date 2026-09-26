@@ -1,13 +1,40 @@
 import { Button } from "@heroui/react";
 import { ArrowClockwise, Monitor, Pause, Play, Stop, X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { type CaptureSources, SCREEN_ACCESS_HELP } from "../../electron/core/capture";
+import {
+	type CaptureSources,
+	DEFAULT_STUDIO,
+	SCREEN_ACCESS_HELP,
+	type StudioChoice,
+	WALLPAPERS,
+} from "../../electron/core/capture";
 import { type CaptureChoice, capture } from "../lib/capture";
 import { createStore } from "../lib/state";
 import { cn, formatTime } from "../lib/utils";
 import { Toggle } from "./ui/controls";
 
 export const recordDialog = createStore({ open: false });
+
+const STUDIO_KEY = "cue.studio";
+
+/** The studio settings last used (they carry over between recordings). */
+function savedStudio(): { on: boolean; look: StudioChoice } {
+	try {
+		const saved = JSON.parse(localStorage.getItem(STUDIO_KEY) ?? "null") as {
+			on?: boolean;
+			look?: Partial<StudioChoice>;
+		} | null;
+		return { on: saved?.on ?? true, look: { ...DEFAULT_STUDIO, ...saved?.look } };
+	} catch {
+		return { on: true, look: DEFAULT_STUDIO };
+	}
+}
+
+const CURSOR_SIZES = [
+	{ label: "S", value: 0.75 },
+	{ label: "M", value: 1 },
+	{ label: "L", value: 1.4 },
+];
 
 /** Plays a MediaStream in a <video> (streams can't be set as an attribute). */
 function StreamView({ stream, className }: { stream: MediaStream | null; className?: string }) {
@@ -31,6 +58,10 @@ export function RecordDialog() {
 		bubble: true,
 	});
 	const [error, setError] = useState<string | null>(null);
+	const [studioOn, setStudioOn] = useState(() => savedStudio().on);
+	const [look, setLook] = useState<StudioChoice>(() => savedStudio().look);
+	const [wallpapers, setWallpapers] = useState<Record<string, string | null>>({});
+	const [pointer, setPointer] = useState(true);
 	const screen = capture.streams.use((s) => s.screen);
 	const camera = capture.streams.use((s) => s.camera);
 	const close = () => {
@@ -70,16 +101,34 @@ export function RecordDialog() {
 		return () => window.removeEventListener("keydown", onKey, true);
 	}, [open]);
 
+	useEffect(() => {
+		if (!open) return;
+		void window.cue.studioWallpapers().then(setWallpapers);
+		void window.cue.pointerAvailable().then(setPointer);
+	}, [open]);
+
+	useEffect(() => {
+		localStorage.setItem(STUDIO_KEY, JSON.stringify({ on: studioOn, look }));
+	}, [studioOn, look]);
+
+	// The studio only applies to screens and windows.
+	const studio =
+		studioOn && choice.sourceId
+			? { ...look, zoom: look.zoom && pointer, cursor: look.cursor && pointer }
+			: null;
+	const full = { ...choice, studio };
+
 	// Live preview of what will be recorded.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only the stream options matter
 	useEffect(() => {
 		if (!open || !sources) return;
 		let alive = true;
 		setError(null);
-		capture.preview(choice).catch((e: Error) => alive && setError(e.message));
+		capture.preview(full).catch((e: Error) => alive && setError(e.message));
 		return () => {
 			alive = false;
 		};
-	}, [open, sources, choice]);
+	}, [open, sources, choice, !!studio?.cursor]);
 
 	if (!open) return null;
 	const set = (patch: Partial<CaptureChoice>) => setChoice((c) => ({ ...c, ...patch }));
@@ -91,7 +140,7 @@ export function RecordDialog() {
 
 	const record = () => {
 		recordDialog.set({ open: false });
-		void capture.start(choice);
+		void capture.start(full);
 	};
 
 	const tile = (s: CaptureSources["sources"][number]) => (
@@ -186,10 +235,20 @@ export function RecordDialog() {
 							</p>
 						)}
 					</div>
-					<div className="flex flex-col gap-3">
-						<div className="relative aspect-video overflow-hidden rounded-lg bg-black">
+					<div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+						<div
+							className="relative aspect-video shrink-0 overflow-hidden rounded-lg bg-black bg-cover bg-center"
+							style={
+								screen && studio && studio.wallpaper !== "none" && wallpapers[studio.wallpaper]
+									? { backgroundImage: `url(${wallpapers[studio.wallpaper]})` }
+									: undefined
+							}
+						>
 							{screen ? (
-								<StreamView stream={screen} className="size-full object-contain" />
+								<StreamView
+									stream={screen}
+									className={cn("size-full object-contain", studio && "p-[8%]")}
+								/>
 							) : (
 								<StreamView stream={camera} className="size-full object-cover" />
 							)}
@@ -198,9 +257,11 @@ export function RecordDialog() {
 									stream={camera}
 									className={cn(
 										"absolute object-cover",
-										choice.bubble
-											? "right-2 bottom-2 w-[30%] rounded-md shadow-lg"
-											: "right-1 top-1 w-[22%] rounded-sm opacity-80",
+										choice.bubble && studio
+											? "right-[4.5%] bottom-[8%] aspect-square w-[14.6%] rounded-full shadow-lg"
+											: choice.bubble
+												? "right-2 bottom-2 w-[30%] rounded-md shadow-lg"
+												: "right-1 top-1 w-[22%] rounded-sm opacity-80",
 									)}
 								/>
 							)}
@@ -262,6 +323,96 @@ export function RecordDialog() {
 									</option>
 								))}
 							</select>
+						)}
+						{choice.sourceId && (
+							<div className="mt-1 flex flex-col gap-2.5 border-t border-separator pt-3">
+								<Toggle label="Studio look" checked={studioOn} onChange={setStudioOn} />
+								<p className="-mt-1 text-[11px] text-muted">
+									A wallpaper, rounded corners, a smooth cursor and zooms on your clicks. All of it
+									stays editable on its own tracks.
+								</p>
+								{studioOn && (
+									<>
+										<div
+											className="flex flex-wrap gap-1.5"
+											role="radiogroup"
+											aria-label="Wallpaper"
+										>
+											{(["none", ...WALLPAPERS] as const).map((name) => (
+												<button
+													key={name}
+													type="button"
+													aria-pressed={look.wallpaper === name}
+													title={
+														name === "none" ? "No wallpaper" : name[0].toUpperCase() + name.slice(1)
+													}
+													onClick={() => setLook((l) => ({ ...l, wallpaper: name }))}
+													className={cn(
+														"h-7 w-10 rounded-md border bg-cover bg-center text-[10px] text-muted",
+														look.wallpaper === name
+															? "border-accent ring-1 ring-accent"
+															: "border-border",
+													)}
+													style={
+														name !== "none" && wallpapers[name]
+															? { backgroundImage: `url(${wallpapers[name]})` }
+															: undefined
+													}
+												>
+													{name === "none" ? "None" : ""}
+												</button>
+											))}
+										</div>
+										{pointer ? (
+											<>
+												<Toggle
+													label="Zoom in on clicks"
+													checked={look.zoom}
+													onChange={(zoom) => setLook((l) => ({ ...l, zoom }))}
+												/>
+												<Toggle
+													label="Smooth cursor"
+													checked={look.cursor}
+													onChange={(cursor) => setLook((l) => ({ ...l, cursor }))}
+												/>
+												{look.cursor && (
+													<div className="flex items-center justify-between text-[12px]">
+														<span className="text-foreground/85">Cursor size</span>
+														<div className="flex gap-1">
+															{CURSOR_SIZES.map((size) => (
+																<button
+																	key={size.label}
+																	type="button"
+																	aria-pressed={look.cursorSize === size.value}
+																	onClick={() => setLook((l) => ({ ...l, cursorSize: size.value }))}
+																	className={cn(
+																		"h-6 w-7 rounded-md border text-[11px]",
+																		look.cursorSize === size.value
+																			? "border-accent bg-accent/10"
+																			: "border-border text-muted",
+																	)}
+																>
+																	{size.label}
+																</button>
+															))}
+														</div>
+													</div>
+												)}
+												<Toggle
+													label="Click ripples"
+													checked={look.clickEffect}
+													onChange={(clickEffect) => setLook((l) => ({ ...l, clickEffect }))}
+												/>
+											</>
+										) : (
+											<p className="text-[11px] text-muted">
+												The pointer can't be recorded on this computer, so zooms and the smooth
+												cursor are off.
+											</p>
+										)}
+									</>
+								)}
+							</div>
 						)}
 					</div>
 				</div>

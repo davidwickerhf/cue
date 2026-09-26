@@ -6,6 +6,7 @@ import path from "node:path";
 import { chunkCaptions } from "./ai";
 import { AUTO_MIX_TARGETS, audioPreset, type MixRole, mixRole } from "./audio";
 import { mp4Args, mp4Name, planPlacement, type TrackChoice } from "./capture";
+import { autoZooms, type CursorPoint, cursorClips, onCanvas, smoothPath } from "./cursor";
 import {
 	type ExportReport,
 	exportAudioMix,
@@ -2502,7 +2503,13 @@ export class ProjectStore extends EventEmitter {
 	 * picture in picture bubble when asked. One undo step.
 	 */
 	async addScreenRecording(
-		input: { main: string; overlay?: string; atMs: number; bubble: boolean },
+		input: {
+			main: string;
+			overlay?: string;
+			atMs: number;
+			bubble: boolean;
+			studio?: StudioLook;
+		},
 		actor: Actor,
 	): Promise<{ assets: Asset[]; clipIds: string[] }> {
 		const fps = this.current.canvas.fps;
@@ -2538,6 +2545,35 @@ export class ProjectStore extends EventEmitter {
 		}
 		const [main, overlay] = assets;
 		const atMs = Math.max(0, Math.round(input.atMs));
+		const studio = input.studio && !main.name.includes("camera") ? input.studio : undefined;
+		// The studio's pictures are copied into the project, so it doesn't depend on the app's files.
+		const still = async (file: string | null | undefined) => {
+			if (!file) return undefined;
+			const folder = path.join(this.projectDir, "recordings", "studio");
+			const copy = path.join(folder, path.basename(file));
+			const rel = path.relative(this.projectDir, copy);
+			const known = this.current.assets.find((a) => a.relPath === rel);
+			if (known) return known;
+			await fs.mkdir(folder, { recursive: true });
+			if (!existsSync(copy)) await fs.copyFile(file, copy);
+			const info = await probe(copy);
+			return {
+				id: newId("a"),
+				kind: "image",
+				name: path.basename(copy),
+				path: relativeToProject(this.projectDir, copy),
+				relPath: rel,
+				durationMs: 0,
+				width: info.width,
+				height: info.height,
+				hasAudio: false,
+				origin: "recording",
+				createdAt: new Date().toISOString(),
+				actor,
+			} satisfies Asset as Asset;
+		};
+		const wallpaper = await still(studio?.wallpaper);
+		const pointer = studio?.cursor ? await still(studio.cursor.image) : undefined;
 		const summary = overlay
 			? `Recorded the screen and camera (${(main.durationMs / 1000).toFixed(1)} s)`
 			: `Recorded ${path.basename(main.path).includes("camera") ? "the camera" : "the screen"} (${(main.durationMs / 1000).toFixed(1)} s)`;
@@ -2565,7 +2601,12 @@ export class ProjectStore extends EventEmitter {
 				).created;
 				if (created?.[0]) clipIds.push(created[0]);
 			}
-			if (clipIds.length > 1) {
+			if (studio) {
+				clipIds.push(
+					...this.applyStudio(clipIds, studio, { wallpaper, pointer, bubble: input.bubble }, actor),
+				);
+				this.apply({ type: "groupClips", ids: clipIds }, actor);
+			} else if (clipIds.length > 1) {
 				this.apply({ type: "groupClips", ids: clipIds }, actor);
 				if (input.bubble) {
 					const placed = clipIds.map((id) => {
@@ -2581,6 +2622,200 @@ export class ProjectStore extends EventEmitter {
 		});
 		this.autoBuildProxies();
 		return result;
+	}
+
+	/**
+	 * The studio look on a just-placed screen recording (`ids`: screen, then
+	 * camera): the screen inset on a wallpaper with rounded corners and a shadow,
+	 * zooms on the clicks, a smooth cursor drawn back over it, a ripple on each
+	 * click and the camera as a round bubble. Returns the clips it added.
+	 */
+	private applyStudio(
+		ids: string[],
+		look: StudioLook,
+		pictures: { wallpaper?: Asset; pointer?: Asset; bubble: boolean },
+		actor: Actor,
+	): string[] {
+		for (const picture of [pictures.wallpaper, pictures.pointer])
+			if (picture && !this.current.assets.some((a) => a.id === picture.id))
+				this.apply({ type: "addAsset", asset: picture }, actor);
+		const find = (id: string) => this.current.clips.find((c) => c.id === id) as MediaClip;
+		const screen = find(ids[0]);
+		const asset = this.current.assets.find((a) => a.id === screen.assetId) as Asset;
+		const { width: W, height: H } = this.current.canvas;
+		const indexOf = (trackId: string) => this.current.tracks.findIndex((t) => t.id === trackId);
+		const added: string[] = [];
+		const startMs = screen.startMs;
+		const durationMs = screen.durationMs;
+
+		// The screen, inset with rounded corners and a shadow.
+		const inset = look.padding ?? 0.08;
+		const scale = Math.round((1 - 2 * inset) * 1000) / 1000;
+		this.apply(
+			{
+				type: "updateClip",
+				id: screen.id,
+				patch: {
+					transform: { x: 0.5, y: 0.5, scale },
+					frame: { radius: Math.round(H * 0.016), shadow: 0.6 },
+				},
+			},
+			actor,
+		);
+		const zooms = look.zoom
+			? autoZooms(look.clicks, durationMs).map((z) => {
+					this.apply({ type: "addZoom", clipId: screen.id, ...z }, actor);
+					return z;
+				})
+			: [];
+		const placedZooms = find(screen.id).zooms ?? [];
+
+		// The wallpaper, on a track of its own under the screen.
+		if (pictures.wallpaper) {
+			const track = this.apply(
+				{ type: "addTrack", kind: "video", index: indexOf(screen.trackId) + 1, name: "Background" },
+				actor,
+			).created?.[0] as string;
+			const a = pictures.wallpaper;
+			const ar = a.width && a.height ? a.width / a.height : W / H;
+			const cover = Math.max(W / H / ar, ar / (W / H));
+			const [id] = this.apply(
+				{
+					type: "addClips",
+					clips: [
+						{
+							type: "media",
+							trackId: track,
+							assetId: a.id,
+							startMs,
+							durationMs,
+							transform: { scale: Math.round(cover * 1000) / 1000 },
+							name: "Wallpaper",
+						},
+					],
+				},
+				actor,
+			).created as string[];
+			added.push(id);
+		}
+
+		// Where the screen sits on the canvas, for the cursor and the ripples.
+		const ar = asset.width && asset.height ? asset.width / asset.height : W / H;
+		const fit = Math.min(W / ar, H) * scale;
+		const place = {
+			width: (fit * ar) / W,
+			height: fit / H,
+			left: 0.5 - (fit * ar) / W / 2,
+			top: 0.5 - fit / H / 2,
+		};
+
+		// The cursor, drawn back smooth and a little larger.
+		if (pictures.pointer && look.cursor) {
+			const track = this.apply(
+				{ type: "addTrack", kind: "video", index: indexOf(screen.trackId), name: "Cursor" },
+				actor,
+			).created?.[0] as string;
+			const path = smoothPath(look.path, durationMs, look.cursor.smoothing ?? 90);
+			const clips = cursorClips(path, placedZooms, place, {
+				size: 0.05 * (look.cursor.size ?? 1) * scale,
+				image: CURSOR_IMAGE,
+				aspect: W / H,
+			});
+			if (clips.length) {
+				const created = this.apply(
+					{
+						type: "addClips",
+						clips: clips.map((c) => ({
+							type: "media" as const,
+							trackId: track,
+							assetId: (pictures.pointer as Asset).id,
+							startMs: startMs + c.startMs,
+							durationMs: c.durationMs,
+							keyframes: c.keyframes,
+							transform: {
+								x: c.keyframes.x[0].value,
+								y: c.keyframes.y[0].value,
+								scale: c.keyframes.scale[0].value,
+							},
+							name: "Cursor",
+						})),
+					},
+					actor,
+				).created as string[];
+				added.push(...created);
+			}
+		}
+
+		// A ripple where each click lands.
+		if (look.clickEffect && look.clicks.length) {
+			const track = this.apply(
+				{ type: "addTrack", kind: "text", index: indexOf(screen.trackId), name: "Clicks" },
+				actor,
+			).created?.[0] as string;
+			const ring = 0.05 * scale;
+			const created = this.apply(
+				{
+					type: "addClips",
+					clips: look.clicks
+						.filter((c) => c.atMs < durationMs - 100)
+						.map((c) => {
+							const at = onScreen(c, placedZooms, place);
+							return {
+								type: "text" as const,
+								trackId: track,
+								startMs: startMs + c.atMs,
+								durationMs: Math.min(550, durationMs - c.atMs),
+								text: "",
+								style: { x: at.x, y: at.y },
+								animationIn: "pop" as const,
+								animationOut: "fade" as const,
+								shape: {
+									kind: "ellipse" as const,
+									width: (ring * at.zoom * H) / W,
+									height: ring * at.zoom,
+									fill: "rgba(255,255,255,0.28)",
+									stroke: "rgba(255,255,255,0.9)",
+									strokeWidth: 4,
+								},
+								name: "Click",
+							};
+						}),
+				},
+				actor,
+			).created as string[];
+			added.push(...created);
+		}
+
+		// The camera as a round bubble in the corner.
+		const camera = ids[1] ? find(ids[1]) : undefined;
+		if (camera && pictures.bubble) {
+			const cam = this.current.assets.find((a) => a.id === camera.assetId);
+			const car = cam?.width && cam.height ? cam.width / cam.height : 16 / 9;
+			const cfit = Math.min(W / car, H);
+			const D = H * 0.26;
+			const cs = car >= 1 ? D / cfit : D / (cfit * car);
+			const side = car >= 1 ? (1 - 1 / car) / 2 : 0;
+			const vert = car < 1 ? (1 - car) / 2 : 0;
+			const margin = H * 0.045;
+			this.apply(
+				{
+					type: "updateClip",
+					id: camera.id,
+					patch: {
+						transform: {
+							scale: Math.round(cs * 1000) / 1000,
+							x: 1 - (margin + D / 2) / W,
+							y: 1 - (margin + D / 2) / H,
+							crop: { left: side, right: side, top: vert, bottom: vert },
+						},
+						frame: { radius: Math.round(D / 2), shadow: 0.6 },
+					},
+				},
+				actor,
+			);
+		}
+		void zooms;
+		return added;
 	}
 
 	/** Generates a spoken take for a line (OpenAI voices or the macOS synthesiser). */
@@ -3184,4 +3419,33 @@ function slug(name: string): string {
 
 function safeSegment(value: string): string {
 	return value.replace(/[^A-Za-z0-9_.-]/g, "_");
+}
+
+/** The cursor image in resources/studio: its size and where the tip is, in pixels. */
+const CURSOR_IMAGE = { size: 80, tipX: 7.5, tipY: 1.5 };
+
+/** Where a click shows on the canvas, through the zoom at that moment. */
+function onScreen(
+	p: CursorPoint,
+	zooms: import("./types").Zoom[],
+	place: { left: number; top: number; width: number; height: number },
+) {
+	return onCanvas(p, p.atMs, zooms, place);
+}
+
+/** The Recordly-style look for a screen recording, with the pointer as recorded. */
+export interface StudioLook {
+	/** A picture behind the screen (absolute path), or null for the canvas colour. */
+	wallpaper: string | null;
+	/** Space around the screen, as a share of the frame on each side. */
+	padding?: number;
+	/** Zoom in where the clicks are. */
+	zoom: boolean;
+	/** Draw the pointer back as a smooth cursor (the real one is left out of the recording). */
+	cursor: { image: string; size?: number; smoothing?: number } | null;
+	/** A ripple on each click. */
+	clickEffect: boolean;
+	/** The pointer, in recording time and shares of the recorded area. */
+	path: CursorPoint[];
+	clicks: CursorPoint[];
 }

@@ -13,9 +13,11 @@
   ],
   extraResources: [
     { from: "dist-mcp", to: "mcp" },
-    { from: "build/native", to: "native", filter: ["cue-vision"] },
+    { from: "build/native", to: "native", filter: ["cue-vision", "cue-cursor"] },
     // The RNNoise model for voice denoise, with its BSD licence.
     { from: "resources/rnnoise", to: "rnnoise" },
+    // Wallpapers and the cursor for the studio look of screen recordings.
+    { from: "resources/studio", to: "studio" },
   ],
   fileAssociations: [
     { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/icon.icns" },

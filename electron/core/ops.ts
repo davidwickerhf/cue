@@ -10,6 +10,7 @@ import {
 	colorSchema,
 	cropSchema,
 	curveSchema,
+	DEFAULT_FRAME,
 	DEFAULT_KEY,
 	DEFAULT_MASK,
 	DEFAULT_SHAPE,
@@ -20,6 +21,7 @@ import {
 	EASES,
 	effectsSchema,
 	exportSchema,
+	frameSchema,
 	groupTracks,
 	keyframeSchema,
 	keySchema,
@@ -83,6 +85,17 @@ export const mediaClipInput = z.object({
 	name: z.string().max(120).optional(),
 	/** false keeps a video's sound on the picture clip instead of an audio track (see settings.separateAudio). */
 	linkedAudio: z.boolean().optional(),
+	/** Clip-local keyframes per property (x, y, scale, volume). */
+	keyframes: z
+		.object({
+			x: z.array(keyframeSchema).max(2000),
+			y: z.array(keyframeSchema).max(2000),
+			scale: z.array(keyframeSchema).max(2000),
+			volume: z.array(keyframeSchema).max(2000),
+		})
+		.partial()
+		.optional(),
+	frame: frameSchema.partial().optional(),
 });
 
 export const textClipInput = z.object({
@@ -128,6 +141,7 @@ export const clipPatch = z
 		mask: maskSchema.partial().nullable(),
 		key: keySchema.partial().nullable(),
 		effects: effectsSchema.partial().nullable(),
+		frame: frameSchema.partial().nullable(),
 		wordStyle: wordStyleSchema.nullable(),
 		shape: shapeSchema.partial().nullable(),
 		words: z.array(captionWordSchema).max(400).nullable(),
@@ -736,6 +750,17 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 		},
 		denoise: input.denoise ?? "off",
 		name: input.name ?? a.name,
+		...(input.keyframes
+			? {
+					keyframes: Object.fromEntries(
+						Object.entries(input.keyframes).map(([prop, list]) => [
+							prop,
+							list.map((k) => tidyKeyframe(k, Math.round(input.durationMs ?? natural))),
+						]),
+					),
+				}
+			: {}),
+		...(input.frame ? { frame: frameSchema.parse({ ...DEFAULT_FRAME, ...input.frame }) } : {}),
 	});
 }
 
@@ -1278,6 +1303,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				mask,
 				key,
 				effects,
+				frame,
 				wordStyle,
 				words,
 				shape,
@@ -1313,6 +1339,15 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 								return next.blur || next.sharpen || next.vignette || next.glow || next.stabilize
 									? next
 									: undefined;
+							})(),
+						}),
+				...(frame === undefined || current.type !== "media"
+					? {}
+					: {
+							frame: (() => {
+								if (frame === null) return undefined;
+								const next = frameSchema.parse({ ...DEFAULT_FRAME, ...current.frame, ...frame });
+								return next.radius || next.shadow ? next : undefined;
 							})(),
 						}),
 			};

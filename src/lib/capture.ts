@@ -1,5 +1,5 @@
 import type { CaptureResult } from "../../electron/controller";
-import { SCREEN_ACCESS_HELP } from "../../electron/core/capture";
+import { SCREEN_ACCESS_HELP, type StudioChoice } from "../../electron/core/capture";
 import { notify } from "./api";
 import { playback } from "./playback";
 import { createStore } from "./state";
@@ -15,6 +15,8 @@ export interface CaptureChoice {
 	cameraId?: string;
 	microphoneId?: string;
 	maxSeconds?: number;
+	/** The Recordly-style finish (wallpaper, smooth cursor, auto-zooms); null for the plain recording. */
+	studio?: StudioChoice | null;
 }
 
 function stopAll(stream: MediaStream | null | undefined) {
@@ -77,24 +79,44 @@ class ScreenCapture {
 	private pausedMs = 0;
 	private pausedAt = 0;
 	private cancelled = false;
-	private opened = { sourceId: undefined as string | null | undefined, cameraId: "" };
+	private opened = {
+		sourceId: undefined as string | null | undefined,
+		cameraId: "",
+		hideCursor: false,
+	};
+	private pointer: Promise<boolean> | null = null;
+	/** Wall-clock start and pauses, to line the pointer up with the picture. */
+	private clock = { startedAt: 0, pauses: [] as { from: number; to: number }[] };
+
+	/** The real pointer is left out when the studio draws its own (and the pointer can be recorded). */
+	private async hidesCursor(choice: CaptureChoice): Promise<boolean> {
+		if (!choice.studio?.cursor || !choice.sourceId) return false;
+		this.pointer ??= window.cue.pointerAvailable().catch(() => false);
+		return this.pointer;
+	}
 
 	/** Opens (or swaps) the screen and camera streams for the preview and recording. */
 	async preview(choice: CaptureChoice): Promise<void> {
 		const { screen, camera } = this.streams.get();
-		if (choice.sourceId !== this.opened.sourceId) {
+		const hideCursor = await this.hidesCursor(choice);
+		if (choice.sourceId !== this.opened.sourceId || hideCursor !== this.opened.hideCursor) {
 			stopAll(screen);
 			this.streams.set({ screen: null });
 			this.opened.sourceId = choice.sourceId;
+			this.opened.hideCursor = hideCursor;
 			if (choice.sourceId) {
 				window.cue.setCaptureSource(choice.sourceId);
 				try {
 					const stream = await navigator.mediaDevices.getDisplayMedia({
-						video: { frameRate: { ideal: 30, max: 30 } },
+						video: {
+							frameRate: { ideal: 30, max: 30 },
+							...(hideCursor ? { cursor: "never" } : {}),
+						} as MediaTrackConstraints,
 						audio: false,
 					});
 					// A newer choice may have been made while this one opened.
-					if (this.opened.sourceId !== choice.sourceId) stopAll(stream);
+					if (this.opened.sourceId !== choice.sourceId || this.opened.hideCursor !== hideCursor)
+						stopAll(stream);
 					else this.streams.set({ screen: stream });
 				} catch (error) {
 					this.opened.sourceId = undefined;
@@ -139,7 +161,7 @@ class ScreenCapture {
 		stopAll(this.mic);
 		this.mic = null;
 		this.streams.set({ screen: null, camera: null });
-		this.opened = { sourceId: undefined, cameraId: "" };
+		this.opened = { sourceId: undefined, cameraId: "", hideCursor: false };
 	}
 
 	/** Countdown, then record until stop() (or maxSeconds). */
@@ -200,6 +222,8 @@ class ScreenCapture {
 			screen: !!screen,
 			camera: !!camera,
 			requestId: this.requestId,
+			sourceId: choice.sourceId,
+			pointer: !!choice.studio && !!screen,
 		});
 		this.sessionId = session.id;
 		// The microphone goes with the main picture (the screen, or the camera alone).
@@ -233,6 +257,7 @@ class ScreenCapture {
 		playback.pause();
 		// Started together so the camera stays in sync with the screen.
 		for (const r of this.recorders) r.start(1000);
+		this.clock = { startedAt: Date.now(), pauses: [] };
 		this.startedAt = performance.now();
 		this.pausedMs = 0;
 		this.status.set({ phase: "recording", maxSeconds: choice.maxSeconds ?? null });
@@ -251,6 +276,7 @@ class ScreenCapture {
 		if (this.status.get().phase !== "recording") return;
 		for (const r of this.recorders) if (r.state === "recording") r.pause();
 		this.pausedAt = performance.now();
+		this.clock.pauses.push({ from: Date.now(), to: Number.POSITIVE_INFINITY });
 		this.status.set({ phase: "paused" });
 	}
 
@@ -258,6 +284,8 @@ class ScreenCapture {
 		if (this.status.get().phase !== "paused") return;
 		for (const r of this.recorders) if (r.state === "paused") r.resume();
 		this.pausedMs += performance.now() - this.pausedAt;
+		const pause = this.clock.pauses.at(-1);
+		if (pause) pause.to = Date.now();
 		this.status.set({ phase: "recording" });
 	}
 
@@ -287,6 +315,12 @@ class ScreenCapture {
 			this.recorders.map((r) => (r as MediaRecorder & { writing?: Promise<void> }).writing),
 		);
 		const bubble = !!this.choice?.bubble;
+		const studio = this.choice?.studio ?? null;
+		const clock = {
+			startedAt: this.clock.startedAt,
+			// Stopped while paused: the pause runs to the end.
+			pauses: this.clock.pauses.map((p) => ({ from: p.from, to: Math.min(p.to, Date.now()) })),
+		};
 		this.recorders = [];
 		this.sessionId = null;
 		this.requestId = undefined;
@@ -294,7 +328,12 @@ class ScreenCapture {
 		this.release();
 		notify("Importing the recording…");
 		try {
-			const result = await window.cue.captureFinish(id, { atMs: this.atMs, bubble });
+			const result = await window.cue.captureFinish(id, {
+				atMs: this.atMs,
+				bubble,
+				clock,
+				studio,
+			});
 			notify("Recording added to the timeline", "success");
 			return result;
 		} catch (error) {

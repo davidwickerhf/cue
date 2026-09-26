@@ -34,6 +34,7 @@ export function useEditorCommands() {
 							microphone: command.microphone,
 							bubble: command.bubble,
 							maxSeconds: command.maxSeconds,
+							studio: command.studio,
 						},
 						command.requestId,
 					);

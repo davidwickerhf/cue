@@ -61,14 +61,33 @@ const api = {
 	screenAccess: () => ipcRenderer.invoke("cue:screenAccess") as Promise<string>,
 	/** The source the next getDisplayMedia() call records. */
 	setCaptureSource: (id: string | null) => ipcRenderer.send("cue:setCaptureSource", id),
-	captureBegin: (input: { screen: boolean; camera: boolean; requestId?: string }) =>
+	/** Small previews of the studio wallpapers, by name. */
+	studioWallpapers: () =>
+		ipcRenderer.invoke("cue:studioWallpapers") as Promise<Record<string, string | null>>,
+	/** Whether the pointer can be recorded separately (for the studio look). */
+	pointerAvailable: () => ipcRenderer.invoke("cue:pointerAvailable") as Promise<boolean>,
+	captureBegin: (input: {
+		screen: boolean;
+		camera: boolean;
+		requestId?: string;
+		sourceId?: string | null;
+		pointer?: boolean;
+	}) =>
 		ipcRenderer.invoke("cue:captureBegin", input) as Promise<{
 			id: string;
 			files: { main: string; overlay?: string };
 		}>,
 	captureChunk: (id: string, part: "main" | "overlay", data: ArrayBuffer) =>
 		ipcRenderer.invoke("cue:captureChunk", id, part, data) as Promise<void>,
-	captureFinish: (id: string, input: { atMs: number; bubble: boolean }) =>
+	captureFinish: (
+		id: string,
+		input: {
+			atMs: number;
+			bubble: boolean;
+			clock?: import("./core/cursor").RecordingClock;
+			studio?: import("./core/capture").StudioChoice | null;
+		},
+	) =>
 		ipcRenderer.invoke("cue:captureFinish", id, input) as Promise<
 			import("./controller").CaptureResult
 		>,

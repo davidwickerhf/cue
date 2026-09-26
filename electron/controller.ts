@@ -5,7 +5,21 @@ import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
 import { binPath, filterMedia, mediaUses, usedAssetIds } from "./core/bins";
-import { type CaptureSources, checkCaptureOptions, recordingFiles } from "./core/capture";
+import {
+	type CaptureSources,
+	checkCaptureOptions,
+	DEFAULT_STUDIO,
+	recordingFiles,
+	type StudioChoice,
+} from "./core/capture";
+import {
+	type CursorEvent,
+	normalise,
+	type RecordingClock,
+	type Rect,
+	recordCursor,
+	studioDir,
+} from "./core/cursor";
 import type { TextRender } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
 import { reviewEdit } from "./core/notes";
@@ -99,6 +113,8 @@ interface CaptureSession {
 	/** Writes happen in order, one after another. */
 	writing: Promise<void>;
 	actor: Actor;
+	/** The pointer, recorded for the studio look. */
+	cursor?: { stop: () => Promise<CursorEvent[]>; region: Rect | null };
 }
 
 /** What a finished recording became, for agents. */
@@ -276,6 +292,8 @@ export class Controller extends EventEmitter {
 		screen: boolean;
 		camera: boolean;
 		requestId?: string;
+		/** Record the pointer too (for the studio look): the screen's bounds, or a window's id. */
+		cursor?: { region: Rect | null; windowId?: number };
 	}): Promise<{ id: string; files: { main: string; overlay?: string } }> {
 		if (!this.store.isOpen) throw new Error("Open a project first.");
 		if (this.capture) throw new Error("A recording is already running.");
@@ -299,6 +317,10 @@ export class Controller extends EventEmitter {
 			writing: Promise.resolve(),
 			actor: agentStart ? "agent" : "user",
 		};
+		if (input.cursor && input.screen) {
+			const recorder = recordCursor(input.cursor.windowId);
+			if (recorder) this.capture.cursor = { ...recorder, region: input.cursor.region };
+		}
 		this.lastCapture = null;
 		this.updateRecorder({ capturing: true });
 		if (agentStart) {
@@ -321,7 +343,15 @@ export class Controller extends EventEmitter {
 	}
 
 	/** The window stopped recording: convert, import and place the result. */
-	finishCapture(id: string, input: { atMs: number; bubble: boolean }): Promise<CaptureResult> {
+	finishCapture(
+		id: string,
+		input: {
+			atMs: number;
+			bubble: boolean;
+			clock?: RecordingClock;
+			studio?: StudioChoice | null;
+		},
+	): Promise<CaptureResult> {
 		const session = this.capture;
 		if (!session || session.id !== id) return Promise.reject(new Error("No recording is running."));
 		this.capture = null;
@@ -331,9 +361,31 @@ export class Controller extends EventEmitter {
 			await session.writing;
 			await session.handles.main.close();
 			await session.handles.overlay?.close();
+			const events = (await session.cursor?.stop()) ?? [];
+			const dir = studioDir();
+			const choice = input.studio;
+			const pointer =
+				input.clock && session.cursor
+					? normalise(events, input.clock, session.cursor.region)
+					: { path: [], clicks: [] };
+			const studio =
+				choice && dir && !/camera\.webm$/.test(session.files.main)
+					? {
+							wallpaper:
+								choice.wallpaper === "none" ? null : path.join(dir, `${choice.wallpaper}.jpg`),
+							zoom: choice.zoom && pointer.clicks.length > 0,
+							cursor:
+								choice.cursor && pointer.path.length
+									? { image: path.join(dir, "cursor.png"), size: choice.cursorSize }
+									: null,
+							clickEffect: choice.clickEffect,
+							path: pointer.path,
+							clicks: pointer.clicks,
+						}
+					: undefined;
 			const { assets, clipIds } = await this.job("Importing the recording", () =>
 				this.store.addScreenRecording(
-					{ ...session.files, atMs: input.atMs, bubble: input.bubble },
+					{ ...session.files, atMs: input.atMs, bubble: input.bubble, studio },
 					session.actor,
 				),
 			);
@@ -401,6 +453,7 @@ export class Controller extends EventEmitter {
 		for (const w of this.captureWaiters) w.reject(error);
 		this.captureWaiters = [];
 		this.updateRecorder({ capturing: false });
+		void session.cursor?.stop();
 		await session.writing.catch(() => {});
 		await session.handles.main.close().catch(() => {});
 		await session.handles.overlay?.close().catch(() => {});
@@ -1433,6 +1486,14 @@ export class Controller extends EventEmitter {
 				microphone: input.microphone,
 				bubble: input.bubble,
 				maxSeconds: input.maxSeconds,
+				studio:
+					input.studio && !cameraOnly
+						? {
+								...DEFAULT_STUDIO,
+								...(input.wallpaper ? { wallpaper: input.wallpaper } : {}),
+								zoom: input.autoZoom,
+							}
+						: null,
 			});
 			await started;
 		} catch (error) {

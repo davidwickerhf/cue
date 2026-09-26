@@ -149,6 +149,32 @@ export function planPlacement(
 	return { main, overlay: { newTrackAt: mainIndex ?? top } };
 }
 
+/** Backgrounds for the studio look (pictures in resources/studio). */
+export const WALLPAPERS = ["dusk", "ocean", "graphite", "mint", "sunrise"] as const;
+export type Wallpaper = (typeof WALLPAPERS)[number];
+
+/** The Recordly-style finish for a screen recording, as chosen before recording. */
+export interface StudioChoice {
+	/** Picture behind the screen, or none (the canvas colour). */
+	wallpaper: Wallpaper | "none";
+	/** Zoom in where the clicks are. */
+	zoom: boolean;
+	/** Leave the real pointer out and draw a smooth, larger one. */
+	cursor: boolean;
+	/** A ripple on each click. */
+	clickEffect: boolean;
+	/** Cursor size, 0.5–2 (1 is about 5% of the frame's height). */
+	cursorSize: number;
+}
+
+export const DEFAULT_STUDIO: StudioChoice = {
+	wallpaper: "dusk",
+	zoom: true,
+	cursor: true,
+	clickEffect: true,
+	cursorSize: 1,
+};
+
 /** Recording options chosen in the dialog or by an agent. */
 export interface CaptureOptions {
 	/** A screen or window id from list_capture_sources; null records the camera alone. */

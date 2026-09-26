@@ -235,6 +235,14 @@ export interface Effects {
 	stabilize: boolean;
 }
 
+/** Rounded corners and a drop shadow around a picture (the "studio" look of screen recordings). */
+export interface Frame {
+	/** Corner radius in pixels of the export canvas. */
+	radius: number;
+	/** Shadow strength, 0 (none) – 1. */
+	shadow: number;
+}
+
 export interface Transition {
 	kind: import("./transitions").TransitionKind;
 	durationMs: number;
@@ -264,6 +272,7 @@ export interface MediaClip {
 	mask?: Mask;
 	key?: ChromaKey;
 	effects?: Effects;
+	frame?: Frame;
 	/** How this clip enters from the clip before it on the same track. */
 	transitionIn?: Transition;
 	/** Clips with the same group move and delete together (e.g. linked picture and sound). */
@@ -625,6 +634,7 @@ export type EditorCommand =
 			microphone: boolean;
 			bubble: boolean;
 			maxSeconds?: number;
+			studio?: import("./capture").StudioChoice | null;
 	  }
 	| { type: "stopScreen" }
 	| { type: "listDevices"; requestId: string }

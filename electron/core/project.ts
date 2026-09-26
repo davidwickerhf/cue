@@ -117,7 +117,7 @@ export const cropSchema = z.object({
 export const transformSchema = z.object({
 	x: z.number().min(-1).max(2),
 	y: z.number().min(-1).max(2),
-	scale: z.number().min(0.05).max(10),
+	scale: z.number().min(0.01).max(10),
 	opacity: z.number().min(0).max(1),
 	crop: cropSchema.default(NO_CROP),
 });
@@ -219,6 +219,11 @@ export const effectsSchema = z.object({
 	glow: z.number().min(0).max(1),
 	stabilize: z.boolean(),
 });
+export const frameSchema = z.object({
+	radius: z.number().min(0).max(400),
+	shadow: z.number().min(0).max(1),
+});
+export const DEFAULT_FRAME = { radius: 24, shadow: 0.5 };
 export const NO_EFFECTS = { blur: 0, sharpen: 0, vignette: 0, glow: 0, stabilize: false };
 export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temperature: 0 };
 export const transitionSchema = z.object({
@@ -346,12 +351,13 @@ const mediaClipSchema = z.object({
 	fadeOutMs: ms.default(0),
 	transform: transformSchema.default(DEFAULT_TRANSFORM),
 	denoise: denoiseSchema.default("off"),
-	keyframes: z.record(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema)).optional(),
+	keyframes: z.partialRecord(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema)).optional(),
 	zooms: z.array(zoomSchema).optional(),
 	color: colorSchema.optional(),
 	mask: maskSchema.optional(),
 	key: keySchema.optional(),
 	effects: effectsSchema.optional(),
+	frame: frameSchema.optional(),
 	transitionIn: transitionSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),
