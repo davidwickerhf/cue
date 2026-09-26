@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 118,
+	"count": 122,
 	"groups": [
 		{
 			"title": "Overview",
@@ -274,7 +274,7 @@
 				},
 				{
 					"name": "update_track",
-					"description": "Rename, mute, solo, lock, hide, set volume (0–2) or pan (-1 left to 1 right), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks).",
+					"description": "Rename, mute, solo, lock, hide, set volume (0–2) or pan (-1 left to 1 right), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks). eq: three bands in dB (-12 to 12): low (shelf at 120 Hz: rumble, boom), mid (1.2 kHz: presence, honk), high (shelf at 8 kHz: air, hiss); bands you leave out keep their value, null makes it flat. compressor: {amount 0–1} evens out loud and quiet parts (0.3 gentle, 0.5 voice, 0.8 heavy), null turns it off. Presets: Voice is eq {low:-3, mid:2, high:3} with compressor 0.5; Music bed is eq {mid:-2} with compressor 0.3.",
 					"inputs": [
 						{
 							"name": "id",
@@ -284,9 +284,20 @@
 						{
 							"name": "patch",
 							"type": "object",
-							"required": true
+							"required": true,
+							"nullable": true
 						}
 					]
+				},
+				{
+					"name": "auto_mix",
+					"description": "Level the mix in one undoable step: measures each audible track's loudness and sets track volumes so dialogue and voiceover sit at about -16 LUFS and music or background tracks about 8 dB under them, turns on ducking for music tracks, and gives the voiceover track the Voice preset (EQ and compressor) if it has no EQ yet. Tracks are told apart by the voiceover flag, their names (Music, Voice, …) and transcripts. Returns each track's measured loudness and what changed.",
+					"inputs": []
+				},
+				{
+					"name": "measure_loudness",
+					"description": "Measure the loudness of the whole mix as it would be exported (EBU R128): integrated LUFS and true peak in dBTP. Nothing is changed.",
+					"inputs": []
 				},
 				{
 					"name": "remove_track",
@@ -1381,6 +1392,78 @@
 						},
 						{
 							"name": "instructions",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "arrange_clips",
+					"description": "Put several pictures on screen at once (clips that play at the same time on different video tracks): side-by-side, top-bottom, thirds, grid (four), full (back to full frame), or picture in picture pip-br / pip-bl / pip-tr / pip-tl (the clip on the higher track becomes the small one; one clip alone is just made small). Split layouts fill areas in the order of clipIds, each picture centre-cropped to fill its area.",
+					"inputs": [
+						{
+							"name": "layout",
+							"type": "\"full\" | \"side-by-side\" | \"top-bottom\" | \"thirds\" | \"grid\" | \"pip-br\" | \"pip-bl\" | \"pip-tr\" | \"pip-tl\"",
+							"required": true
+						},
+						{
+							"name": "clipIds",
+							"type": "string[]",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "add_overlay",
+					"description": "Add a graphic over the picture in one step. box, circle, arrow, line: an outline in color (arrows and lines go from (x - width/2, y - height/2) to (x + width/2, y + height/2), so width and height can be negative to point the other way); callout: a dark box with text; redact: a solid box (black by default) that hides what is under it; blur: blurs everything under that area (an adjustment layer with a mask). x, y (centre), width, height are shares of the frame. Graphics go on a 'Graphics' text track and pop in; edit them afterwards with update_clip (style x/y, shape {kind, width, height, fill, stroke, strokeWidth, radius}, text).",
+					"inputs": [
+						{
+							"name": "kind",
+							"type": "\"box\" | \"circle\" | \"arrow\" | \"line\" | \"callout\" | \"blur\" | \"redact\"",
+							"required": true
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false,
+							"default": "3000"
+						},
+						{
+							"name": "x",
+							"type": "number",
+							"required": false,
+							"default": "0.5"
+						},
+						{
+							"name": "y",
+							"type": "number",
+							"required": false,
+							"default": "0.5"
+						},
+						{
+							"name": "width",
+							"type": "number",
+							"required": false,
+							"default": "0.3"
+						},
+						{
+							"name": "height",
+							"type": "number",
+							"required": false,
+							"default": "0.2"
+						},
+						{
+							"name": "color",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "text",
 							"type": "string",
 							"required": false
 						}
