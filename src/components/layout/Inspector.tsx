@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { valueAt } from "../../../electron/core/anim";
+import { TRANSITIONS } from "../../../electron/core/transitions";
 import type { MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
@@ -554,26 +555,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 			{visual && <EffectsSection clip={clip} video={asset?.kind === "video"} />}
 			{visual && <MaskSection clip={clip} />}
 			{visual && asset?.kind === "video" && <KeySection clip={clip} />}
-			{clip.transitionIn && (
-				<Section title="Transition in">
-					<div className="flex items-center justify-between gap-2">
-						<span className="text-[12px]">
-							{clip.transitionIn.kind === "crossfade" ? "Crossfade" : "Dip to black"}
-						</span>
-						<span className="text-[12px] text-muted tabular">
-							{(clip.transitionIn.durationMs / 1000).toFixed(2)} s
-						</span>
-						<Button
-							size="sm"
-							variant="ghost"
-							className="h-7 text-[12px]"
-							onPress={() => void run("remove_transition", { clipId: clip.id })}
-						>
-							Remove
-						</Button>
-					</div>
-				</Section>
-			)}
+			{visual && <TransitionSection clip={clip} project={project} />}
 			{visual && asset?.kind === "video" && asset.hasAudio && clip.volume > 0 && (
 				<Section>
 					<Button
@@ -1276,6 +1258,71 @@ function MaskSection({ clip }: { clip: MediaClip }) {
 				checked={m.invert}
 				onChange={(invert) => set({ invert })}
 			/>
+		</Section>
+	);
+}
+
+/** How the clip enters from the one before it: pick a kind and a length. */
+function TransitionSection({ clip, project }: { clip: MediaClip; project: ProjectSnapshot }) {
+	const tr = clip.transitionIn;
+	// Only clips that follow (or overlap) another on the same track can have one.
+	const before = project.data.clips.some(
+		(c) =>
+			c.id !== clip.id &&
+			c.trackId === clip.trackId &&
+			c.startMs < clip.startMs &&
+			c.startMs + c.durationMs >= clip.startMs - 2,
+	);
+	if (!tr && !before) return null;
+	const set = (kind: string, durationMs = tr?.durationMs ?? 600) =>
+		void run("add_transition", { clipId: clip.id, kind, durationMs });
+	return (
+		<Section
+			title="Transition in"
+			action={
+				tr ? (
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-6 text-[11px]"
+						onPress={() => void run("remove_transition", { clipId: clip.id })}
+					>
+						Remove
+					</Button>
+				) : null
+			}
+		>
+			<div className="grid grid-cols-2 gap-1">
+				{TRANSITIONS.map((t) => (
+					<button
+						key={t.kind}
+						type="button"
+						onClick={() => set(t.kind)}
+						className={cn(
+							"h-7 rounded-md border px-2 text-left text-[11px]",
+							tr?.kind === t.kind
+								? "border-accent bg-accent/10 text-foreground"
+								: "border-border text-muted hover:border-foreground/30 hover:text-foreground",
+						)}
+					>
+						{t.label}
+					</button>
+				))}
+			</div>
+			{tr && (
+				<Field label="Length">
+					<NumberInput
+						value={tr.durationMs}
+						scale={1000}
+						digits={2}
+						step={0.1}
+						min={0.04}
+						max={5}
+						suffix="s"
+						onCommit={(ms) => set(tr.kind, Math.round(ms))}
+					/>
+				</Field>
+			)}
 		</Section>
 	);
 }

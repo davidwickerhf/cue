@@ -32,6 +32,7 @@ import {
 	transitionSchema,
 	voiceoverTrack,
 } from "./project";
+import { fadesIn, overlaps, transitionLabel } from "./transitions";
 import type { Asset, Clip, MediaClip, ProjectData, Track } from "./types";
 
 /**
@@ -1582,15 +1583,23 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				Math.min(op.transition.durationMs, c.durationMs / 2, left.durationMs / 2),
 			);
 			let next = data;
-			if (op.transition.kind === "crossfade") {
+			const kind = op.transition.kind;
+			// Replacing a transition starts from the clips as they were without it.
+			if (c.transitionIn) {
+				next = applyOp(next, { type: "removeTransition", clipId: c.id }).data;
+			}
+			if (kind !== "dip") {
 				// Overlap the clips by d: this clip and everything after it on the track move left.
-				const shift = d - Math.max(0, clipEnd(left) - c.startMs);
-				next = shiftTrackFrom(next, c, -shift);
+				const current = clip(next, c.id);
+				const before = leftNeighbour(next, current) ?? left;
+				const shift = d - Math.max(0, clipEnd(before) - current.startMs);
+				next = shiftTrackFrom(next, current, -shift);
 				const moved = clip(next, c.id) as MediaClip;
 				next = replaceClip(next, {
 					...moved,
-					fadeInMs: d,
-					transitionIn: { kind: "crossfade", durationMs: d },
+					// Wipes and slides keep the picture solid; the others fade it in too.
+					fadeInMs: fadesIn({ kind, durationMs: d }) ? d : 0,
+					transitionIn: { kind, durationMs: d },
 				});
 			} else {
 				next = replaceClip(next, { ...(left as MediaClip), fadeOutMs: Math.round(d / 2) });
@@ -1602,7 +1611,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			}
 			return {
 				data: next,
-				summary: `Added a ${sec(d)} ${op.transition.kind === "crossfade" ? "crossfade" : "dip to black"} into ${c.name ?? c.id}`,
+				summary: `Added a ${sec(d)} ${transitionLabel(kind).toLowerCase()} into ${c.name ?? c.id}`,
 			};
 		}
 		case "removeTransition": {
@@ -1610,7 +1619,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			if (!c.transitionIn) throw new Error("That clip has no transition.");
 			let next = data;
 			const left = leftNeighbour(data, c, c.transitionIn.durationMs + 60);
-			if (c.transitionIn.kind === "crossfade") {
+			if (overlaps(c.transitionIn)) {
 				const shift = left ? Math.max(0, clipEnd(left) - c.startMs) : 0;
 				next = shiftTrackFrom(next, c, shift);
 			} else if (left && left.type === "media") next = replaceClip(next, { ...left, fadeOutMs: 0 });

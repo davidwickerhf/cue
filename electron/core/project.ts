@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRANSITION_KINDS } from "./transitions";
 import type {
 	AiSettings,
 	Asset,
@@ -202,7 +203,7 @@ export const effectsSchema = z.object({
 export const NO_EFFECTS = { blur: 0, sharpen: 0, vignette: 0, glow: 0, stabilize: false };
 export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temperature: 0 };
 export const transitionSchema = z.object({
-	kind: z.enum(["crossfade", "dip"]),
+	kind: z.enum(TRANSITION_KINDS),
 	durationMs: z.number().min(40).max(5000),
 });
 

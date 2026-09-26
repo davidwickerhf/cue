@@ -175,7 +175,7 @@ export interface Effects {
 }
 
 export interface Transition {
-	kind: "crossfade" | "dip";
+	kind: import("./transitions").TransitionKind;
 	durationMs: number;
 }
 

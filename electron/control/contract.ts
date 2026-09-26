@@ -8,6 +8,7 @@ import {
 	textStyleSchema,
 } from "../core/project";
 import { TITLE_IDS } from "../core/titles";
+import { TRANSITION_KINDS } from "../core/transitions";
 
 /**
  * The agent-facing API. Each entry becomes an MCP tool (through the bridge)
@@ -350,10 +351,10 @@ export const contract = {
 	ungroup_clips: { description: "Unlink clips.", input: { ids: z.array(z.string()).min(1) } },
 	add_transition: {
 		description:
-			"Transition into a clip from the clip right before it on the same track. crossfade overlaps the two (later clips move left by the overlap); dip fades through black.",
+			"Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the two clips (later clips move left by the overlap) and crossfades their sound: crossfade, wipe-left / wipe-right (a hard edge sweeps across), slide-left (enters from the right) / slide-right (from the left), zoom (settles in from larger while fading in), blur (sharpens while fading in). dip fades through black. Adding one to a clip that has one replaces it.",
 		input: {
 			clipId: z.string(),
-			kind: z.enum(["crossfade", "dip"]).default("crossfade"),
+			kind: z.enum(TRANSITION_KINDS).default("crossfade"),
 			durationMs: z.number().min(40).max(5000).default(600),
 		},
 	},

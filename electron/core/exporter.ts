@@ -14,6 +14,7 @@ import {
 	trackAudible,
 	voiceoverTrack,
 } from "./project";
+import { BLUR_FROM, overlaps, ZOOM_FROM } from "./transitions";
 import type {
 	Asset,
 	Clip,
@@ -110,7 +111,7 @@ function effectiveFadeOut(data: ProjectData, clip: MediaClip): number {
 			x.type === "media" &&
 			x.id !== clip.id &&
 			x.trackId === clip.trackId &&
-			x.transitionIn?.kind === "crossfade" &&
+			overlaps(x.transitionIn) &&
 			x.startMs < clipEnd(clip) &&
 			x.startMs > clip.startMs,
 	);
@@ -163,8 +164,13 @@ function panFilter(pan: number): string {
 /** Filter chain for one audio clip, delayed to its timeline position. */
 function audioChain(input: string, src: AudioSource, label: string): string {
 	const { clip } = src;
+	// Overlapping transitions crossfade the sound, even when the picture doesn't fade.
+	const fadeIn = Math.max(
+		clip.fadeInMs,
+		overlaps(clip.transitionIn) ? (clip.transitionIn?.durationMs ?? 0) : 0,
+	);
 	const fades = [
-		clip.fadeInMs > 0 ? `afade=t=in:st=0:d=${s(clip.fadeInMs)}` : "",
+		fadeIn > 0 ? `afade=t=in:st=0:d=${s(fadeIn)}` : "",
 		src.fadeOutMs > 0
 			? `afade=t=out:st=${s(clip.durationMs - src.fadeOutMs)}:d=${s(src.fadeOutMs)}`
 			: "",
@@ -540,7 +546,17 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const cropH = 1 - c.top - c.bottom;
 		// Keyframes are stored in clip-local ms; keyframeExpr takes a variable in local seconds (`t` here).
 		const kf = clip.keyframes ?? {};
-		const S = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, "t") : String(t.scale);
+		// The transition into this clip, as expressions of local seconds (same easing as the preview).
+		const tr =
+			clip.transitionIn && clip.transitionIn.kind !== "dip" ? clip.transitionIn : undefined;
+		const enteredAt = (T: string) => {
+			const p = `clip((${T})/${s(tr?.durationMs ?? 1)},0,1)`;
+			return `(${p})*(${p})*(3-2*(${p}))`;
+		};
+		const zoomIn = (T: string) =>
+			tr?.kind === "zoom" ? `*(1+${ZOOM_FROM}*(1-${enteredAt(T)}))` : "";
+		const animatedScale = !!kf.scale?.length || tr?.kind === "zoom";
+		const S = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, "t") : String(t.scale)}${zoomIn("t")}`;
 		const zoom = zoomExprs(clip.zooms, "t");
 		const zoomChain = zoom
 			? `,scale=w='trunc(iw*${zoom.scale}/2)*2':h='trunc(ih*${zoom.scale}/2)*2':eval=frame:flags=bicubic,crop=w=${sw}:h=${sh}:x='max(0,min(iw-${sw},${zoom.x}*iw-${sw}/2))':y='max(0,min(ih-${sh},${zoom.y}*ih-${sh}/2))'`
@@ -548,7 +564,13 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const colorChain =
 			gradeFilters(clip.color)
 				.map((f) => `,${f}`)
-				.join("") + effectChain(clip.effects, sh, label);
+				.join("") +
+			effectChain(clip.effects, sh, label) +
+			// Blur transition: a blurred copy dissolves into the sharp picture.
+			(tr?.kind === "blur"
+				? `,split[tbA${label}][tbB${label}];[tbB${label}]gblur=sigma=${((BLUR_FROM * sh) / 1080).toFixed(2)}:enable='lt(t,${s(tr.durationMs)})'[tbC${label}];` +
+					`[tbC${label}][tbA${label}]blend=all_expr='A*(1-${enteredAt("T")})+B*${enteredAt("T")}':enable='lt(t,${s(tr.durationMs)})'`
+				: "");
 		// Chroma key removes the screen colour before anything is composited.
 		const keyChain = clip.key
 			? `,format=yuva420p,chromakey=color=0x${clip.key.color.slice(1)}:similarity=${clip.key.similarity.toFixed(3)}:blend=${clip.key.blend.toFixed(3)}`
@@ -559,10 +581,15 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				: "";
 		const baseW = sw * cropW * fitBase;
 		const baseH = sh * cropH * fitBase;
-		const size = kf.scale?.length
+		const size = animatedScale
 			? `,scale=w='max(2,trunc(${baseW.toFixed(2)}*(${S})/2)*2)':h='max(2,trunc(${baseH.toFixed(2)}*(${S})/2)*2)':eval=frame`
 			: `,scale=${Math.max(2, Math.round((baseW * t.scale) / 2) * 2)}:${Math.max(2, Math.round((baseH * t.scale) / 2) * 2)}`;
-		const opacity = t.opacity < 1 ? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}` : "";
+		const opacity =
+			(t.opacity < 1 ? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}` : "") +
+			// Wipes: the alpha is cut off beyond a moving edge while the transition runs.
+			(tr?.kind === "wipe-left" || tr?.kind === "wipe-right"
+				? `,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*${tr.kind === "wipe-left" ? `gte(X,W*(1-${enteredAt("T")}))` : `lte(X,W*${enteredAt("T")})`}':enable='lt(t,${s(tr.durationMs)})'`
+				: "");
 		const fades = [
 			clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",
 			clip.fadeOutMs > 0
@@ -618,9 +645,15 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		}
 		// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
 		const local = `(t-${start})`;
-		const X = kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x);
+		const slide =
+			tr?.kind === "slide-left"
+				? `+(1-${enteredAt(local)})`
+				: tr?.kind === "slide-right"
+					? `-(1-${enteredAt(local)})`
+					: "";
+		const X = `${kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x)}${slide}`;
 		const Y = kf.y?.length ? keyframeExpr(kf.y, t.y, local) : String(t.y);
-		const Sg = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale);
+		const Sg = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale)}${zoomIn(local)}`;
 		const dx = `${(((c.left - c.right) / 2) * sw * fitBase).toFixed(3)}*(${Sg})`;
 		const dy = `${(((c.top - c.bottom) / 2) * sh * fitBase).toFixed(3)}*(${Sg})`;
 		chains.push(

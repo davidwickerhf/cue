@@ -342,4 +342,81 @@ describe("compositing", () => {
 		store.undo("user");
 		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(1);
 	}, 90000);
+
+	it("exports wipes, slides, zoom and blur transitions", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-transitions-"));
+		const red = path.join(dir, "red.mp4");
+		const blue = path.join(dir, "blue.mp4");
+		for (const [file, color] of [
+			[red, "red"],
+			[blue, "blue"],
+		])
+			await ffmpeg([
+				"-f",
+				"lavfi",
+				"-i",
+				`color=c=${color}:s=320x180:r=30:d=3`,
+				"-pix_fmt",
+				"yuv420p",
+				file,
+			]);
+		const isRed = ([r, g, b]: number[]) => r > 150 && g < 90 && b < 90;
+		const isBlue = ([r, g, b]: number[]) => b > 150 && r < 90 && g < 90;
+		for (const kind of [
+			"wipe-left",
+			"wipe-right",
+			"slide-left",
+			"slide-right",
+			"zoom",
+			"blur",
+		] as const) {
+			const store = new ProjectStore({
+				mediaUrl: (f) => f,
+				recentFile: path.join(dir, "recent.json"),
+				autoProxies: () => false,
+			});
+			await store.create({ path: path.join(dir, kind), name: kind });
+			store.apply({ type: "setCanvas", canvas: { width: 320, height: 180 } }, "user");
+			const [a, b] = await store.importMedia([red, blue], "user");
+			store.apply(
+				{
+					type: "addClips",
+					clips: [
+						{ type: "media", trackId: "V1", assetId: a.id, startMs: 0, durationMs: 2000 },
+						{ type: "media", trackId: "V1", assetId: b.id, startMs: 2000, durationMs: 2000 },
+					],
+				},
+				"user",
+			);
+			const incoming = store.current.clips.find(
+				(c) => c.type === "media" && c.assetId === b.id,
+			) as MediaClip;
+			store.apply(
+				{ type: "addTransition", clipId: incoming.id, transition: { kind, durationMs: 1000 } },
+				"user",
+			);
+			const moved = store.current.clips.find((c) => c.id === incoming.id) as MediaClip;
+			expect(moved.startMs).toBe(1000);
+			store.apply(
+				{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
+				"user",
+			);
+			const out = (await store.export("video", `${kind}.mp4`, "user")).outputs[0];
+			// Halfway through (1.5 s): the incoming blue has covered half the frame.
+			const leftPx = await pixel(out, 1.5, 40, 90, 320);
+			const rightPx = await pixel(out, 1.5, 280, 90, 320);
+			if (kind === "wipe-left" || kind === "slide-left") {
+				expect(isRed(leftPx)).toBe(true);
+				expect(isBlue(rightPx)).toBe(true);
+			} else if (kind === "wipe-right" || kind === "slide-right") {
+				expect(isBlue(leftPx)).toBe(true);
+				expect(isRed(rightPx)).toBe(true);
+			} else {
+				// Fading in: a mix of both.
+				expect(isRed(leftPx) || isBlue(leftPx)).toBe(false);
+			}
+			// Afterwards only the incoming clip shows.
+			expect(isBlue(await pixel(out, 2.5, 160, 90, 320))).toBe(true);
+		}
+	}, 180000);
 });

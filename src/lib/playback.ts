@@ -1,4 +1,5 @@
 import { valueAt, zoomAt } from "../../electron/core/anim";
+import { BLUR_FROM, entered, overlaps, ZOOM_FROM } from "../../electron/core/transitions";
 import type {
 	Asset,
 	Clip,
@@ -121,7 +122,7 @@ function audioFadeOut(clips: Clip[], clip: MediaClip): number {
 		if (
 			x.type === "media" &&
 			x.id !== clip.id &&
-			x.transitionIn?.kind === "crossfade" &&
+			overlaps(x.transitionIn) &&
 			x.startMs < clipEnd(clip) &&
 			x.startMs > clip.startMs
 		) {
@@ -660,8 +661,14 @@ class PlaybackEngine {
 		const local = ms - clip.startMs;
 		const t = clip.transform;
 		const kf = clip.keyframes;
-		const scale = valueAt(kf?.scale, local, t.scale);
-		const x = valueAt(kf?.x, local, t.x);
+		// How far the transition into this clip has got (1 once it is over).
+		const tr = clip.transitionIn;
+		const p = entered(tr, local);
+		const scale =
+			valueAt(kf?.scale, local, t.scale) * (tr?.kind === "zoom" ? 1 + ZOOM_FROM * (1 - p) : 1);
+		const x =
+			valueAt(kf?.x, local, t.x) +
+			(tr?.kind === "slide-left" ? 1 - p : tr?.kind === "slide-right" ? p - 1 : 0);
 		const y = valueAt(kf?.y, local, t.y);
 		let opacity = t.opacity;
 		if (clip.fadeInMs > 0 && local < clip.fadeInMs) opacity *= local / clip.fadeInMs;
@@ -680,9 +687,12 @@ class PlaybackEngine {
 		frame.height = `${h}px`;
 		frame.transform = `translate3d(${x * W - w / 2}px, ${y * H - h / 2}px, 0)`;
 		frame.opacity = String(Math.max(0, Math.min(1, opacity)));
+		// A wipe uncovers the picture from one side, on top of any crop.
+		const left = Math.max(c.left, tr?.kind === "wipe-left" ? 1 - p : 0);
+		const right = Math.max(c.right, tr?.kind === "wipe-right" ? 1 - p : 0);
 		frame.clipPath =
-			c.left || c.top || c.right || c.bottom
-				? `inset(${c.top * 100}% ${c.right * 100}% ${c.bottom * 100}% ${c.left * 100}%)`
+			left || c.top || right || c.bottom
+				? `inset(${c.top * 100}% ${right * 100}% ${c.bottom * 100}% ${left * 100}%)`
 				: "none";
 		const mask = clip.mask ? `url(${maskUrl(clip.mask, ar)})` : "none";
 		if (frame.maskImage !== mask) {
@@ -702,6 +712,7 @@ class PlaybackEngine {
 		element.style.filter = joinFilters(
 			cssFilter(look?.color),
 			effectsFilter(look?.effects, h / 1080),
+			tr?.kind === "blur" && p < 1 ? `blur(${((1 - p) * BLUR_FROM * h) / 1080}px)` : "",
 		);
 		this.showVignette(slot, look?.effects);
 		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
@@ -1042,7 +1053,11 @@ class PlaybackEngine {
 				const fades = ctx.createGain();
 				// The track's own level and pan live on its bus, so the mixer reacts instantly.
 				const level = 1;
-				const fadeIn = clip.fadeInMs;
+				// Overlapping transitions crossfade the sound even when the picture doesn't fade.
+				const fadeIn = Math.max(
+					clip.fadeInMs,
+					overlaps(clip.transitionIn) ? (clip.transitionIn?.durationMs ?? 0) : 0,
+				);
 				const fadeOut = audioFadeOut(index.byTrack.get(clip.trackId) ?? [], clip);
 				const localFrom = from - clip.startMs;
 				const at = (local: number) => {

@@ -42,6 +42,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { transitionLabel } from "../../../electron/core/transitions";
 import type {
 	Asset,
 	Clip,
@@ -1804,7 +1805,7 @@ function ClipView({
 						width: Math.max(4, media.transitionIn.durationMs * pxPerMs),
 						clipPath: "polygon(0 0, 100% 50%, 0 100%)",
 					}}
-					title={media.transitionIn.kind === "crossfade" ? "Crossfade" : "Dip to black"}
+					title={transitionLabel(media.transitionIn.kind)}
 				/>
 			)}
 			{media?.zooms?.map((z) => (
