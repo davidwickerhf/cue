@@ -66,9 +66,9 @@ export async function Header({ home = false }: { home?: boolean }) {
 				<a href={`${base}#faq`} className="hover:text-white">
 					FAQ
 				</a>
-				<a href={`${REPO}#readme`} className="hover:text-white">
+				<Link href="/docs" className="hover:text-white">
 					Docs
-				</a>
+				</Link>
 				<Link href="/changelog" className="hover:text-white">
 					Changelog
 				</Link>
@@ -108,6 +108,9 @@ export function Footer({ home = false }: { home?: boolean }) {
 						<a href={`${base}#faq`} className="text-muted hover:text-white">
 							FAQ
 						</a>
+						<Link href="/docs" className="text-muted hover:text-white">
+							Docs
+						</Link>
 						<Link href="/changelog" className="text-muted hover:text-white">
 							Changelog
 						</Link>
