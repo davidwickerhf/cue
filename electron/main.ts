@@ -42,7 +42,13 @@ import { resolveInProject } from "./core/paths";
 import { isProjectFile, PROJECT_EXTENSION } from "./core/project";
 import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtime";
 import { ProjectStore } from "./core/store";
-import type { EditorCommand, ProjectSnapshot, RecorderStatus, TextClip } from "./core/types";
+import type {
+	DenoiseMode,
+	EditorCommand,
+	ProjectSnapshot,
+	RecorderStatus,
+	TextClip,
+} from "./core/types";
 
 app.setName("Cue");
 const MEDIA_SCHEME = "cue-media";
@@ -888,8 +894,16 @@ function registerIpc() {
 	);
 	ipcMain.handle("cue:peaks", (_event, assetId: string) => store.peaks(assetId));
 	ipcMain.handle("cue:thumbnails", (_event, assetId: string) => store.thumbnails(assetId));
-	ipcMain.handle("cue:audioProxy", async (_event, assetId: string, speed: number) =>
-		mediaUrl(await store.audioProxy(assetId, speed)),
+	ipcMain.handle(
+		"cue:audioProxy",
+		async (_event, assetId: string, speed: number, denoise?: DenoiseMode) =>
+			mediaUrl(
+				await store.audioProxy(
+					assetId,
+					speed,
+					denoise === "light" || denoise === "voice" ? denoise : "off",
+				),
+			),
 	);
 	ipcMain.handle("cue:importDialog", (_event, place?: { trackId: string; startMs: number }) =>
 		importDialog(place),

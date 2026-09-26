@@ -5,6 +5,7 @@ import type {
 	Asset,
 	Bin,
 	Clip,
+	DenoiseMode,
 	ExportSettings,
 	LineStatus,
 	LineView,
@@ -86,6 +87,12 @@ export const DEFAULT_TEXT_STYLE: TextStyle = {
 // ---------------------------------------------------------------------------
 
 const id = z.string().min(1).max(80);
+
+export const DENOISE_MODES = ["off", "light", "voice"] as const;
+/** Older projects and agents use true/false; true meant the light (FFT) filter. */
+export const denoiseSchema = z
+	.union([z.boolean(), z.enum(DENOISE_MODES)])
+	.transform((v): DenoiseMode => (v === true ? "light" : v === false ? "off" : v));
 const ms = z.number().min(0);
 
 export const lineInputSchema = z.object({
@@ -327,7 +334,7 @@ const mediaClipSchema = z.object({
 	fadeInMs: ms.default(0),
 	fadeOutMs: ms.default(0),
 	transform: transformSchema.default(DEFAULT_TRANSFORM),
-	denoise: z.boolean().default(false),
+	denoise: denoiseSchema.default("off"),
 	keyframes: z.record(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema)).optional(),
 	zooms: z.array(zoomSchema).optional(),
 	color: colorSchema.optional(),
@@ -689,7 +696,7 @@ export function takeClip(
 		fadeInMs: 0,
 		fadeOutMs: 0,
 		transform: { ...DEFAULT_TRANSFORM },
-		denoise: false,
+		denoise: "off",
 		lineId: asset.lineId,
 		name: asset.lineId ? `${asset.lineId} · ${asset.name}` : asset.name,
 	};

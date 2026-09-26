@@ -22,6 +22,8 @@ export const CHANGELOG: Release[] = [
 			"Smoother playback: no blank frames at cuts or crossfades, sound decoded around the playhead, drift corrected smoothly.",
 			"Saves never overlap or drop an edit, and quitting waits for them. Agents cannot write files outside the export folder.",
 			"The History panel fetches only new steps after an edit.",
+			"Edits send the window only what changed (a few KB instead of the whole project at 500 clips).",
+			"Voice noise removal with RNNoise: Reduce background noise is now Off, Light or Voice (ML), and the preview plays the cleaned sound.",
 		],
 	},
 	{

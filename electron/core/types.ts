@@ -1,4 +1,7 @@
 /** Who performed an operation. Every change is attributed so the UI can show agent activity. */
+/** Noise reduction for a clip: off, a light FFT filter, or the RNNoise speech model. */
+export type DenoiseMode = "off" | "light" | "voice";
+
 export type Actor = "user" | "agent" | "system";
 
 // ---------------------------------------------------------------------------
@@ -248,8 +251,8 @@ export interface MediaClip {
 	fadeInMs: number;
 	fadeOutMs: number;
 	transform: Transform;
-	/** Reduce background noise in this clip's audio. */
-	denoise: boolean;
+	/** Reduce background noise in this clip's audio: an FFT filter (light) or the RNNoise voice model. */
+	denoise: DenoiseMode;
 	keyframes?: Partial<Record<KeyframeProp, Keyframe[]>>;
 	zooms?: Zoom[];
 	color?: ColorGrade;

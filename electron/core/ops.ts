@@ -15,6 +15,7 @@ import {
 	DEFAULT_TEXT_STYLE,
 	DEFAULT_TRANSFORM,
 	defaultTracks,
+	denoiseSchema,
 	effectsSchema,
 	exportSchema,
 	groupTracks,
@@ -74,7 +75,7 @@ export const mediaClipInput = z.object({
 	fadeInMs: ms.min(0).optional(),
 	fadeOutMs: ms.min(0).optional(),
 	transform: transformSchema.partial().extend({ crop: cropSchema.partial() }).partial().optional(),
-	denoise: z.boolean().optional(),
+	denoise: denoiseSchema.optional(),
 	name: z.string().max(120).optional(),
 });
 
@@ -109,7 +110,7 @@ export const clipPatch = z
 		fadeInMs: ms.min(0),
 		fadeOutMs: ms.min(0),
 		transform: transformSchema.partial().extend({ crop: cropSchema.partial() }).partial(),
-		denoise: z.boolean(),
+		denoise: denoiseSchema,
 		color: colorSchema.partial(),
 		text: z.string().max(4000),
 		style: textStyleSchema.partial(),
@@ -676,7 +677,7 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 			...input.transform,
 			crop: { ...NO_CROP, ...input.transform?.crop },
 		},
-		denoise: input.denoise ?? false,
+		denoise: input.denoise ?? "off",
 		name: input.name ?? a.name,
 	});
 }

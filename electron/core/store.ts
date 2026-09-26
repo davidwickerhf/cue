@@ -75,6 +75,7 @@ import type {
 	Actor,
 	Asset,
 	Clip,
+	DenoiseMode,
 	MediaClip,
 	MediaInfo,
 	ProjectData,
@@ -1768,24 +1769,25 @@ export class ProjectStore extends EventEmitter {
 		return pending.length;
 	}
 
-	/** Playback audio for an asset at a speed (extracted and/or time-stretched, cached). */
-	audioProxy(assetId: string, speed: number): Promise<string> {
+	/** Playback audio for an asset at a speed (extracted, time-stretched and/or denoised, cached). */
+	audioProxy(assetId: string, speed: number, denoise: DenoiseMode = "off"): Promise<string> {
 		const asset = this.current.assets.find((a) => a.id === assetId);
 		if (!asset) return Promise.reject(new Error(`No media "${assetId}".`));
 		const rounded = Math.round(speed * 1000) / 1000;
 		if (
 			rounded === 1 &&
+			denoise === "off" &&
 			asset.kind === "audio" &&
 			/\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(asset.path)
 		)
 			return Promise.resolve(this.assetPath(assetId));
-		const key = `${this.cacheKey(assetId)}@${rounded}`;
+		const key = `${this.cacheKey(assetId)}@${rounded}${denoise === "off" ? "" : `-${denoise}`}`;
 		let pending = this.audioProxies.get(key);
 		if (!pending) {
 			const file = path.join(this.projectDir, CACHE_DIR, "audio", `${key}.m4a`);
 			pending = existsSync(file)
 				? Promise.resolve(file)
-				: makeAudioProxy(this.assetPath(assetId), file, rounded).then(() => file);
+				: makeAudioProxy(this.assetPath(assetId), file, rounded, denoise).then(() => file);
 			pending.catch(() => this.audioProxies.delete(key));
 			this.audioProxies.set(key, pending);
 		}

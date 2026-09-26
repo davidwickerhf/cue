@@ -14,6 +14,8 @@
   extraResources: [
     { from: "dist-mcp", to: "mcp" },
     { from: "build/native", to: "native", filter: ["cue-vision"] },
+    // The RNNoise model for voice denoise, with its BSD licence.
+    { from: "resources/rnnoise", to: "rnnoise" },
   ],
   fileAssociations: [
     { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/icon.icns" },

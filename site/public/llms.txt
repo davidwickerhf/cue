@@ -25,7 +25,7 @@ The MCP server starts Cue when needed and gives every client a written guide to 
 - Sequences: several timelines per project and nested sequences.
 - Look and motion: keyframes, push-in zooms, crop, colour grading and LUTs, adjustment layers, masks, chroma key.
 - Titles: eleven templates, all installed fonts, outlines, gradients, in and out animations, editing directly on the viewer.
-- Audio: mixer with level, pan, solo and meters, ducking under voiceover, denoise, loudness normalisation, beat detection and cut-to-the-beat.
+- Audio: mixer with level, pan, solo and meters, ducking under voiceover, denoise (FFT or the RNNoise voice model), loudness normalisation, beat detection and cut-to-the-beat.
 - Speech: word-level transcripts, text-based editing (delete words to cut), filler-word removal, search by meaning, chapters, SRT and VTT captions.
 - Voiceover: teleprompter recording with takes per line, AI voices.
 - AI providers: on-device whisper.cpp, macOS voices, Ollama and LM Studio, or OpenAI with your own key (stored in the macOS keychain). Footage stays on the Mac unless a cloud model is chosen.

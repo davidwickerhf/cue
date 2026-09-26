@@ -456,11 +456,28 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 							/>
 						</Field>
 					</div>
-					<Toggle
-						label="Reduce background noise (on export)"
-						checked={clip.denoise}
-						onChange={(denoise) => patch({ denoise })}
-					/>
+					{/* Not a Field: a <label> would pass clicks on its text to the first option. */}
+					<div className="flex flex-col items-start gap-1 text-[12px]">
+						<span className="text-muted">Reduce background noise</span>
+						<Segmented
+							size="xs"
+							value={clip.denoise}
+							options={[
+								{ value: "off", label: "Off" },
+								{
+									value: "light",
+									label: "Light",
+									title: "A gentle filter for steady hiss and hum",
+								},
+								{
+									value: "voice",
+									label: "Voice (ML)",
+									title: "RNNoise: a speech model that removes most non-speech noise",
+								},
+							]}
+							onChange={(denoise) => patch({ denoise })}
+						/>
+					</div>
 				</Section>
 			)}
 			{visual && (

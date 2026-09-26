@@ -1,7 +1,13 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 import type { MethodName } from "./control/contract";
 import type { ProjectPatch } from "./core/delta";
-import type { AppState, EditorCommand, ProjectSummary, RecorderStatus } from "./core/types";
+import type {
+	AppState,
+	DenoiseMode,
+	EditorCommand,
+	ProjectSummary,
+	RecorderStatus,
+} from "./core/types";
 
 const api = {
 	/** The same methods agents use, performed as the user. */
@@ -76,8 +82,8 @@ const api = {
 		};
 	},
 	peaks: (assetId: string) => ipcRenderer.invoke("cue:peaks", assetId) as Promise<number[]>,
-	audioProxy: (assetId: string, speed: number) =>
-		ipcRenderer.invoke("cue:audioProxy", assetId, speed) as Promise<string>,
+	audioProxy: (assetId: string, speed: number, denoise: DenoiseMode = "off") =>
+		ipcRenderer.invoke("cue:audioProxy", assetId, speed, denoise) as Promise<string>,
 	thumbnails: (assetId: string) =>
 		ipcRenderer.invoke("cue:thumbnails", assetId) as Promise<{
 			intervalMs: number;

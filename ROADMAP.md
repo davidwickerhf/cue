@@ -100,7 +100,7 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [x] Animated word-by-word captions
 - [x] Recipes: reusable edit templates for people and agents
 - [x] Music-driven montage (beat_montage: cuts on every 1, 2 or 4 beats, fresh shots first, push-ins on stills)
-- [ ] Auto-mix: levelled dialogue and ML noise removal (levelling done: auto_mix and the mixer's Auto-mix and LUFS readout; ML noise removal still to do)
+- [x] Auto-mix: levelled dialogue and ML noise removal (auto_mix and the mixer's Auto-mix and LUFS readout; per-clip denoise Off / Light / Voice (ML) with RNNoise, heard in the preview too)
 
 ## 7. Website, SEO and getting the word out
 

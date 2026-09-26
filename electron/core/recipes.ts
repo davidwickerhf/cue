@@ -247,7 +247,7 @@ export const BUILT_IN_RECIPES: Recipe[] = [
 			{ tool: "auto_mix", params: {}, label: "Level the mix" },
 			{
 				tool: "update_clip",
-				params: { id: "{clipId}", patch: { denoise: true } },
+				params: { id: "{clipId}", patch: { denoise: "voice" } },
 				each: "{voiceClipIds}",
 				label: "Remove noise",
 			},

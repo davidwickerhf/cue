@@ -10,6 +10,7 @@ import type {
 	Asset,
 	Clip,
 	ColorGrade,
+	DenoiseMode,
 	Effects,
 	MediaClip,
 	ProjectSnapshot,
@@ -444,10 +445,10 @@ class PlaybackEngine {
 			if (!track || !asset?.hasAudio || asset.kind === "image" || !this.audible(clip, track))
 				continue;
 			// Only sound that is already decoded: scrubbing must never wait.
-			const key = bufferKey(asset, clip.speed);
+			const key = bufferKey(asset, clip.speed, clip.denoise);
 			const pending = this.buffers.get(key);
 			if (!pending) {
-				void this.buffer(asset, clip.speed);
+				void this.buffer(asset, clip.speed, clip.denoise);
 				continue;
 			}
 			void pending.then((buffer) => {
@@ -1063,14 +1064,14 @@ class PlaybackEngine {
 		this.meter.set({ left: Math.max(l, prev.left * 0.85), right: Math.max(r, prev.right * 0.85) });
 	}
 
-	/** Decoded audio for an asset at a speed, from a small extracted or time-stretched file. */
-	private buffer(asset: Asset, speed: number): Promise<AudioBuffer | null> {
+	/** Decoded audio for an asset at a speed, from a small extracted, time-stretched or denoised file. */
+	private buffer(asset: Asset, speed: number, denoise?: DenoiseMode): Promise<AudioBuffer | null> {
 		// Keyed by file too, so relinked media and re-rendered sequences are heard as they are now.
-		const key = bufferKey(asset, speed);
+		const key = bufferKey(asset, speed, denoise);
 		let cached = this.buffers.get(key);
 		if (!cached) {
 			cached = window.cue
-				.audioProxy(asset.id, speed)
+				.audioProxy(asset.id, speed, denoise ?? "off")
 				.then((url) => fetch(url))
 				.then((res) => res.arrayBuffer())
 				.then((bytes) => this.audio().decodeAudioData(bytes))
@@ -1094,20 +1095,26 @@ class PlaybackEngine {
 		const now = this.currentMs;
 		const near = (c: MediaClip) =>
 			clipEnd(c) > now - KEEP_BEHIND_MS && c.startMs < now + WARM_AHEAD_MS;
-		const wanted = new Map<string, { asset: Asset; speed: number; distance: number }>();
+		const wanted = new Map<
+			string,
+			{ asset: Asset; speed: number; denoise: DenoiseMode; distance: number }
+		>();
 		for (const c of this.project.data.clips) {
 			if (c.type !== "media" || !near(c)) continue;
 			const asset = index.assets.get(c.assetId);
 			if (!asset?.hasAudio || asset.kind === "image") continue;
-			const key = bufferKey(asset, c.speed);
+			const key = bufferKey(asset, c.speed, c.denoise);
 			const distance = Math.max(0, c.startMs - now);
 			const seen = wanted.get(key);
-			if (!seen || distance < seen.distance) wanted.set(key, { asset, speed: c.speed, distance });
+			if (!seen || distance < seen.distance)
+				wanted.set(key, { asset, speed: c.speed, denoise: c.denoise, distance });
 		}
 		for (const key of this.buffers.keys()) if (!wanted.has(key)) this.buffers.delete(key);
 		let chain = Promise.resolve();
-		for (const { asset, speed } of [...wanted.values()].sort((a, b) => a.distance - b.distance))
-			chain = chain.then(() => this.buffer(asset, speed).then(() => undefined));
+		for (const { asset, speed, denoise } of [...wanted.values()].sort(
+			(a, b) => a.distance - b.distance,
+		))
+			chain = chain.then(() => this.buffer(asset, speed, denoise).then(() => undefined));
 	}
 
 	private audible(clip: MediaClip, track: Track): boolean {
@@ -1160,7 +1167,7 @@ class PlaybackEngine {
 				continue;
 			if (clipEnd(clip) <= this.currentMs) continue;
 			this.scheduledClips.add(clip.id);
-			void this.buffer(asset, clip.speed).then((buffer) => {
+			void this.buffer(asset, clip.speed, clip.denoise).then((buffer) => {
 				if (!buffer || !this.playing || this.scheduleGen !== gen) return;
 				const nowMs = this.startMs + (performance.now() - this.startPerf);
 				const from = Math.max(nowMs, clip.startMs);
@@ -1258,8 +1265,10 @@ const WARM_AHEAD_MS = 60_000;
 /** …and kept this far behind it. */
 const KEEP_BEHIND_MS = 30_000;
 
-function bufferKey(asset: Asset, speed: number) {
-	return `${asset.id}|${asset.path}@${Math.round(speed * 1000) / 1000}`;
+/** Denoised sound is a separate proxy, so the preview hears what the export will. */
+function bufferKey(asset: Asset, speed: number, denoise?: DenoiseMode) {
+	const clean = denoise && denoise !== "off" ? `~${denoise}` : "";
+	return `${asset.id}|${asset.path}@${Math.round(speed * 1000) / 1000}${clean}`;
 }
 
 export const playback = new PlaybackEngine();
