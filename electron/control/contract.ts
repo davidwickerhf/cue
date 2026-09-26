@@ -838,6 +838,45 @@ export const contract = {
 			replace: z.boolean().default(true),
 		},
 	},
+	review_edit: {
+		description:
+			"Director's notes: a quick on-device review of the open timeline. Returns notes {id, atMs, endMs?, kind, severity tip|warning|problem, message, clipId?, fix?} for flash frames and tiny gaps, very short clips, jump cuts, long static shots, titles too fast to read, too small or outside title safe, music that starts or stops abruptly, long pauses in the voiceover, vertical video without captions, no music bed, offline media and disabled clips. A fix is a ready tool call {tool, params, label}: call that tool with those params to apply it. measureAudio also measures the mix's loudness and peaks (slower).",
+		input: { measureAudio: z.boolean().default(false) },
+	},
+	list_recipes: {
+		description:
+			"Recipes: reusable edits, each a list of tool calls (built-in ones and those saved by the user or agents). Returns id, name, description and steps.",
+		input: {},
+	},
+	run_recipe: {
+		description:
+			"Run a recipe's steps in order on the open project. Placeholders in the params are filled in from the project first. Stops at the first failing step (optional steps are skipped instead) and says which one failed. dryRun returns the resolved calls without running them.",
+		input: { id: z.string(), dryRun: z.boolean().default(false) },
+	},
+	save_recipe: {
+		description:
+			"Save a recipe (e.g. what you just did, to repeat on other projects). steps: [{tool, params, label?, optional?, each?}]. Params may use placeholders filled in when it runs: {playheadMs}, {selectedClipIds}, {selectedClipId}, {durationMs}, {projectName}, {voiceoverAssetId} (the main speech media), {musicAssetId}, {firstVideoClipId}, {firstMusicClipId}, {voiceClipIds}, {captionSource}. each: '{voiceClipIds}' or '{selectedClipIds}' runs the step once per clip with {clipId} set. Saving with the name of one of your recipes replaces it.",
+		input: {
+			name: z.string().min(1).max(120),
+			description: z.string().max(1000).default(""),
+			steps: z
+				.array(
+					z.object({
+						tool: z.string(),
+						params: z.record(z.string(), z.unknown()).default({}),
+						label: z.string().max(200).optional(),
+						each: z.string().optional(),
+						optional: z.boolean().optional(),
+					}),
+				)
+				.min(1)
+				.max(50),
+		},
+	},
+	delete_recipe: {
+		description: "Delete a saved recipe (built-in recipes stay).",
+		input: { id: z.string() },
+	},
 	generate_image: {
 		description:
 			"Generate a still image (title card, B-roll, background). With trackId it is placed at startMs for 5 s.",
@@ -959,6 +998,10 @@ export const contract = {
 					"settings",
 				])
 				.optional(),
+			dock: z
+				.enum(["none", "mixer", "scopes", "agent", "history", "markers", "notes"])
+				.optional()
+				.describe("pane beside the viewer; notes shows the director's notes"),
 			fitTimeline: z.boolean().optional(),
 			zoom: z.number().min(4).max(600).optional(),
 			openSource: z.string().optional().describe("asset id"),
@@ -966,7 +1009,7 @@ export const contract = {
 				.enum(["editing", "audio", "colour", "voiceover", "titles", "agent", "review"])
 				.optional()
 				.describe(
-					"editing; audio (mixer docked, tall audio tracks); colour (scopes, before/after, colour tools); voiceover (script and teleprompter); titles (safe areas, text tools); agent (chat and history); review (big viewer, markers list)",
+					"editing; audio (mixer docked, tall audio tracks); colour (scopes, before/after, colour tools); voiceover (script and teleprompter); titles (safe areas, text tools); agent (chat and history); review (big viewer, director's notes)",
 				),
 		},
 	},

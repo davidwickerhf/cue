@@ -93,12 +93,12 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [x] Alternative cuts as branches, compared side by side (branch_sequence, promote_branch, and an A/B compare above the timeline that flips with ` at the same playhead)
 - [x] Search shots by content, on device (Apple Vision labels, on-screen text, faces and transcripts)
 - [x] Rough cut from a brief or script (rough_cut: on-device word matching against transcripts, with a confidence per line)
-- [ ] Director's notes with one-click fixes
+- [x] Director's notes with one-click fixes
 - [x] Voice editing (hold the mic button in the Agent panel and say what to change)
 - [x] Smart reframe that follows faces (follow_faces, and variants with followFaces)
 - [x] One-click variants (lengths and aspect ratios)
 - [x] Animated word-by-word captions
-- [ ] Recipes: reusable edit templates for people and agents
+- [x] Recipes: reusable edit templates for people and agents
 - [x] Music-driven montage (beat_montage: cuts on every 1, 2 or 4 beats, fresh shots first, push-ins on stills)
 - [ ] Auto-mix: levelled dialogue and ML noise removal (levelling done: auto_mix and the mixer's Auto-mix and LUFS readout; ML noise removal still to do)
 

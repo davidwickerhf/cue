@@ -641,4 +641,5 @@ export type EditorCommand =
 			openSource?: string;
 			zoom?: number;
 			workspace?: string;
+			dock?: string;
 	  };

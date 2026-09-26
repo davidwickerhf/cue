@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 126,
+	"count": 143,
 	"groups": [
 		{
 			"title": "Overview",
@@ -237,12 +237,88 @@
 				},
 				{
 					"name": "list_media",
-					"description": "The media library: id, kind, duration, origin (import/recording/tts/generated), which line a take belongs to.",
-					"inputs": []
+					"description": "The media library: id, kind, name, duration, origin (import/recording/tts/generated), the line a take belongs to, bin (id and path), tags, rating (0–5), note, whether and where it is used, and technical info (codec, fps, bitrate, file size, audio channels and sample rate, recording date). filter narrows it: binId (media directly in that bin; null for media in no bin), tag, kind, unused (no timeline uses it), minRating, query (words to find in the name, tags, note or transcript).",
+					"inputs": [
+						{
+							"name": "filter",
+							"type": "object",
+							"required": false,
+							"nullable": true
+						}
+					]
 				},
 				{
 					"name": "remove_media",
-					"description": "Remove a media item and every clip that uses it.",
+					"description": "Remove media items (id, or ids for several) and every clip that uses them, as one undo step.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "ids",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "rename_media",
+					"description": "Rename a media item in the library (the file on disk keeps its name).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "list_bins",
+					"description": "The bins (folders) of the media library: id, name, parentId for sub-bins, and how many items each holds directly.",
+					"inputs": []
+				},
+				{
+					"name": "create_bin",
+					"description": "Create a bin (folder) for media. parentId makes it a sub-bin of a top-level bin (bins nest one level deep). Returns the new bin's id in created.",
+					"inputs": [
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "parentId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "rename_bin",
+					"description": "Rename a bin.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "remove_bin",
+					"description": "Delete a bin. Nothing is lost: its media and sub-bins move up to where the bin was (its parent, or the top level).",
 					"inputs": [
 						{
 							"name": "id",
@@ -250,6 +326,100 @@
 							"required": true
 						}
 					]
+				},
+				{
+					"name": "move_media",
+					"description": "File media items in a bin, or at the top level with binId null.",
+					"inputs": [
+						{
+							"name": "assetIds",
+							"type": "string[]",
+							"required": true
+						},
+						{
+							"name": "binId",
+							"type": "string",
+							"required": true,
+							"nullable": true
+						}
+					]
+				},
+				{
+					"name": "tag_media",
+					"description": "Tag, rate and annotate media items. add and remove are lists of tags (merged with the tags they have; case doesn't matter). rating 1–5 stars (5 is a favourite), 0 clears it. note replaces the note; an empty note clears it. Fields you leave out stay as they are.",
+					"inputs": [
+						{
+							"name": "assetIds",
+							"type": "string[]",
+							"required": true
+						},
+						{
+							"name": "add",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "remove",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "rating",
+							"type": "integer",
+							"required": false
+						},
+						{
+							"name": "note",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "list_capture_sources",
+					"description": "What can be recorded: screens and windows (ids for record_screen), cameras and microphones, and whether macOS allows Cue to record the screen, camera and microphone (granted, denied, not-determined).",
+					"inputs": []
+				},
+				{
+					"name": "record_screen",
+					"description": "Start recording a screen or window, optionally with the camera and microphone, in the editor window (a 3-2-1 countdown, then a recording bar the user can stop). Tell the user before calling. Returns once recording has started; call stop_screen_recording to finish, or it stops by itself after maxSeconds. The result is imported and placed at the playhead: the screen on a free video track, the camera on the track above (as a picture-in-picture bubble when bubble is true), linked together; the microphone is recorded into the screen's sound.",
+					"inputs": [
+						{
+							"name": "sourceId",
+							"type": "string",
+							"required": false,
+							"note": "A screen or window id from list_capture_sources; omit for the main screen; 'none' records the camera alone"
+						},
+						{
+							"name": "camera",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						},
+						{
+							"name": "microphone",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						},
+						{
+							"name": "bubble",
+							"type": "boolean",
+							"required": false,
+							"default": "true",
+							"note": "Show the camera small in the bottom-right corner"
+						},
+						{
+							"name": "maxSeconds",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "stop_screen_recording",
+					"description": "Stop the screen or camera recording started with record_screen (or by the user), then import it and return the new media and clips.",
+					"inputs": []
 				},
 				{
 					"name": "add_track",
@@ -1548,6 +1718,46 @@
 							"type": "boolean",
 							"required": false,
 							"default": "true"
+						},
+						{
+							"name": "followFaces",
+							"type": "boolean",
+							"required": false,
+							"default": "false",
+							"note": "pan wide shots to follow faces in narrower shapes (on-device, macOS)"
+						}
+					]
+				},
+				{
+					"name": "search_shots",
+					"description": "Find moments in the media by what they show, text on screen or what is said there, e.g. 'dog on a beach', 'whiteboard', 'the word pricing on a slide'. Runs on this Mac (Apple Vision labels, text recognition and faces, plus transcripts); the first search indexes each video, which takes a moment. Returns source ranges (assetId, startMs, endMs) best first, ready for add_clips (inMs = startMs) or insert_edit.",
+					"inputs": [
+						{
+							"name": "query",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "assetIds",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "limit",
+							"type": "integer",
+							"required": false,
+							"default": "12"
+						}
+					]
+				},
+				{
+					"name": "follow_faces",
+					"description": "Pan a video clip so the main face stays in the middle of the frame: sets smoothed x keyframes (one undoable step). For pictures wider than the frame, e.g. 16:9 footage in a 9:16 edit (reframe or make_variants first). Faces are found on this Mac.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
 						}
 					]
 				},
@@ -1834,6 +2044,74 @@
 					]
 				},
 				{
+					"name": "review_edit",
+					"description": "Director's notes: a quick on-device review of the open timeline. Returns notes {id, atMs, endMs?, kind, severity tip|warning|problem, message, clipId?, fix?} for flash frames and tiny gaps, very short clips, jump cuts, long static shots, titles too fast to read, too small or outside title safe, music that starts or stops abruptly, long pauses in the voiceover, vertical video without captions, no music bed, offline media and disabled clips. A fix is a ready tool call {tool, params, label}: call that tool with those params to apply it. measureAudio also measures the mix's loudness and peaks (slower).",
+					"inputs": [
+						{
+							"name": "measureAudio",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						}
+					]
+				},
+				{
+					"name": "list_recipes",
+					"description": "Recipes: reusable edits, each a list of tool calls (built-in ones and those saved by the user or agents). Returns id, name, description and steps.",
+					"inputs": []
+				},
+				{
+					"name": "run_recipe",
+					"description": "Run a recipe's steps in order on the open project. Placeholders in the params are filled in from the project first. Stops at the first failing step (optional steps are skipped instead) and says which one failed. dryRun returns the resolved calls without running them.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "dryRun",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						}
+					]
+				},
+				{
+					"name": "save_recipe",
+					"description": "Save a recipe (e.g. what you just did, to repeat on other projects). steps: [{tool, params, label?, optional?, each?}]. Params may use placeholders filled in when it runs: {playheadMs}, {selectedClipIds}, {selectedClipId}, {durationMs}, {projectName}, {voiceoverAssetId} (the main speech media), {musicAssetId}, {firstVideoClipId}, {firstMusicClipId}, {voiceClipIds}, {captionSource}. each: '{voiceClipIds}' or '{selectedClipIds}' runs the step once per clip with {clipId} set. Saving with the name of one of your recipes replaces it.",
+					"inputs": [
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "description",
+							"type": "string",
+							"required": false,
+							"default": "\"\""
+						},
+						{
+							"name": "steps",
+							"type": "object[]",
+							"required": false,
+							"default": "{}"
+						}
+					]
+				},
+				{
+					"name": "delete_recipe",
+					"description": "Delete a saved recipe (built-in recipes stay).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
 					"name": "generate_image",
 					"description": "Generate a still image (title card, B-roll, background). With trackId it is placed at startMs for 5 s.",
 					"inputs": [
@@ -2083,6 +2361,12 @@
 							"required": false
 						},
 						{
+							"name": "dock",
+							"type": "\"none\" | \"mixer\" | \"scopes\" | \"agent\" | \"history\" | \"markers\" | \"notes\"",
+							"required": false,
+							"note": "pane beside the viewer; notes shows the director's notes"
+						},
+						{
 							"name": "fitTimeline",
 							"type": "boolean",
 							"required": false
@@ -2102,7 +2386,7 @@
 							"name": "workspace",
 							"type": "\"editing\" | \"audio\" | \"colour\" | \"voiceover\" | \"titles\" | \"agent\" | \"review\"",
 							"required": false,
-							"note": "editing; audio (mixer docked, tall audio tracks); colour (scopes, before/after, colour tools); voiceover (script and teleprompter); titles (safe areas, text tools); agent (chat and history); review (big viewer, markers list)"
+							"note": "editing; audio (mixer docked, tall audio tracks); colour (scopes, before/after, colour tools); voiceover (script and teleprompter); titles (safe areas, text tools); agent (chat and history); review (big viewer, director's notes)"
 						}
 					]
 				},

@@ -348,6 +348,7 @@ const controller = new Controller(store, {
 	runtime,
 	projectsDir: () => appSettings.projectsDir,
 	captureSources: () => captureSources(false),
+	recipesFile: path.join(dataDir, "recipes.json"),
 	appSettings: {
 		get: () => appSettings,
 		set: async (patch) => {

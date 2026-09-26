@@ -56,6 +56,7 @@ import type {
 } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
 import { agentDraft } from "../../lib/chat";
+import { notes } from "../../lib/notes";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
@@ -1377,6 +1378,7 @@ function Ruler({
 }) {
 	const inPoint = editor.use((s) => s.inPoint);
 	const outPoint = editor.use((s) => s.outPoint);
+	const noteDots = notes.use((s) => s.list);
 	const steps = [100, 250, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000];
 	const step = steps.find((s) => s * pxPerMs >= 72) ?? 120000;
 	const first = Math.max(0, Math.floor(from / (step * pxPerMs)));
@@ -1420,6 +1422,25 @@ function Ruler({
 					title="In/out range (I, O, / to play, X to clear)"
 				/>
 			)}
+			{/* Director's notes, while the Notes pane is open: small dots, under the markers. */}
+			{noteDots.map((n) => (
+				<button
+					key={n.id}
+					type="button"
+					title={n.message}
+					onPointerDown={(e) => e.stopPropagation()}
+					onClick={() => playback.seek(n.atMs)}
+					className={cn(
+						"absolute top-0.5 z-10 size-1.5 -translate-x-1/2 rounded-full opacity-80 hover:opacity-100",
+						n.severity === "problem"
+							? "bg-danger"
+							: n.severity === "warning"
+								? "bg-warning"
+								: "bg-accent",
+					)}
+					style={{ left: n.atMs * pxPerMs }}
+				/>
+			))}
 			{markers.map((m) => (
 				<button
 					key={m.id}
