@@ -71,6 +71,21 @@ const CODECS: Record<string, string> = {
 	png: "PNG",
 	mjpeg: "JPEG",
 };
+// ffmpeg's demuxer names, as people know the formats.
+const FORMATS: Record<string, string> = {
+	mov: "MP4 / QuickTime",
+	matroska: "Matroska / WebM",
+	wav: "WAV",
+	mp3: "MP3",
+	flac: "FLAC",
+	ogg: "Ogg",
+	aiff: "AIFF",
+	avi: "AVI",
+	png_pipe: "PNG",
+	jpeg_pipe: "JPEG",
+	webp_pipe: "WebP",
+	gif: "GIF",
+};
 const codec = (name?: string) => (name ? (CODECS[name] ?? name.toUpperCase()) : undefined);
 
 function channels(info: MediaInfo): string | undefined {
@@ -112,7 +127,7 @@ function detailRows(asset: Asset): [string, string][] {
 		["Bitrate", info?.bitrateKbps ? bitrate(info.bitrateKbps) : undefined],
 		["Rotation", info?.rotation ? `${info.rotation}°` : undefined],
 		["File size", asset.size !== undefined ? bytes(asset.size) : undefined],
-		["Container", info?.format],
+		["Container", info?.format ? (FORMATS[info.format] ?? info.format) : undefined],
 		["Recorded", info?.creationTime ? new Date(info.creationTime).toLocaleString() : undefined],
 		["Added", asset.createdAt ? new Date(asset.createdAt).toLocaleString() : undefined],
 		[
