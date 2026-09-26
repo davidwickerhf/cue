@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HarnessInfo } from "../../../electron/agents/harness";
 import { notify } from "../../lib/api";
 import {
+	agentDraft,
 	type ChatItem,
 	chat,
 	newChat,
@@ -21,7 +22,6 @@ import {
 	setHarness,
 	stop,
 	switchProjectChat,
-	agentDraft,
 } from "../../lib/chat";
 import { useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
@@ -182,7 +182,8 @@ function ChatView() {
 						onChange={(e) => setDraft(e.target.value)}
 						onKeyDown={(e) => {
 							e.stopPropagation();
-							if (e.key === "Enter" && !e.shiftKey) {
+							// Enter while composing (Japanese, Chinese…) confirms the text, it doesn't send.
+							if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
 								e.preventDefault();
 								submit();
 							}

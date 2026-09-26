@@ -8,7 +8,9 @@ import {
 	ChartLine,
 	Copy,
 	Cursor,
+	DotsSixVertical,
 	Eye,
+	EyeSlash as EyeOff,
 	EyeSlash,
 	FilmStrip,
 	LinkSimple,
@@ -18,19 +20,17 @@ import {
 	MagnifyingGlassMinus,
 	MagnifyingGlassPlus,
 	Microphone,
+	Pause,
 	Plus,
+	Robot,
 	Scissors,
 	SpeakerHigh,
 	SpeakerSlash,
+	Stack,
 	Star,
 	TextT,
 	Trash,
 	Waveform as WaveIcon,
-	DotsSixVertical,
-	Stack,
-	EyeSlash as EyeOff,
-	Pause,
-	Robot,
 } from "@phosphor-icons/react";
 import {
 	Fragment,
@@ -50,16 +50,16 @@ import type {
 	Track,
 } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
+import { agentDraft } from "../../lib/chat";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
-import { agentDraft } from "../../lib/chat";
-import { SequenceTabs } from "./SequenceTabs";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime } from "../../lib/utils";
 import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
 import { IconButton, Segmented } from "../ui/controls";
 import { Filmstrip, Tiled, Waveform } from "./ClipVisuals";
+import { SequenceTabs } from "./SequenceTabs";
 
 const HEADER_W = 212;
 const RULER_H = 28;
@@ -113,8 +113,10 @@ export function Timeline() {
 	const dragRef = useRef<Drag | null>(null);
 	// A dropped edit stays drawn where it was dropped until the project confirms it, so nothing flickers back.
 	const [committed, setCommitted] = useState<{ drag: Drag; revision: number } | null>(null);
-	const drag = liveDrag ?? committed?.drag ?? null;
+	// A committed drag is shown until the edit arrives; never on top of the new positions
+	// (which would draw the move twice for a frame).
 	const revision = project?.revision ?? 0;
+	const drag = liveDrag ?? (committed?.revision === revision ? committed.drag : null);
 	useEffect(() => {
 		if (committed && revision !== committed.revision) setCommitted(null);
 	}, [revision, committed]);
@@ -447,7 +449,12 @@ export function Timeline() {
 			});
 		};
 		if (d.kind === "move" && (Math.abs(d.deltaMs) >= 1 || d.targetTrack)) {
-			if (d.copy) void run("duplicate_clips", { ids: d.ids, offsetMs: Math.round(d.deltaMs) });
+			if (d.copy)
+				void run("duplicate_clips", {
+					ids: d.ids,
+					offsetMs: Math.round(d.deltaMs),
+					trackId: d.targetTrack ?? undefined,
+				});
 			else
 				commit(
 					run("move_clips", {
@@ -566,9 +573,10 @@ export function Timeline() {
 				onPointerUp={onUp}
 				onPointerCancel={onUp}
 				onPointerDown={(e) => {
+					// Clicking empty timeline deselects; the ruler only moves the playhead.
 					if (
 						e.button === 0 &&
-						!(e.target as HTMLElement).closest("[data-clip],[data-track-header]")
+						!(e.target as HTMLElement).closest("[data-clip],[data-track-header],[data-ruler]")
 					)
 						window.cue.selectClips([]);
 				}}
@@ -1205,6 +1213,7 @@ function Ruler({
 	const count = Math.ceil(width / (step * pxPerMs));
 	return (
 		<div
+			data-ruler
 			role="slider"
 			aria-label="Timeline position"
 			aria-valuenow={0}
@@ -1458,6 +1467,7 @@ function ClipView({
 			{media && asset?.kind === "video" && track?.kind === "video" && (
 				<Filmstrip
 					assetId={asset.id}
+					file={asset.path}
 					inMs={sourceIn}
 					speed={media.speed}
 					width={width}
@@ -1471,6 +1481,7 @@ function ClipView({
 			{media && asset?.hasAudio && track?.kind === "audio" && (
 				<Waveform
 					assetId={asset.id}
+					file={asset.path}
 					inMs={sourceIn}
 					spanMs={media.durationMs * media.speed}
 					width={width}

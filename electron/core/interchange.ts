@@ -1,7 +1,7 @@
 import path from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
-import { resolveInProject } from "./paths";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { allSequences } from "./ops";
+import { resolveInProject } from "./paths";
 import { projectDuration } from "./project";
 import type { Asset, Clip, MediaClip, ProjectData, TextClip, Track } from "./types";
 
@@ -464,12 +464,15 @@ function parseStack(stack: OtioNode, baseDir: string, found: { fps: number }): I
 								key: meta.key,
 							}
 						: undefined;
+				// Source times count from the media's own start timecode (Resolve starts at 01:00:00:00).
+				const available = ref.available_range as { start_time?: unknown } | null | undefined;
+				const origin = available?.start_time ? toMs(available.start_time) : 0;
 				clips.push({
 					type: "media",
 					file,
 					startMs: Math.round(cursor),
 					durationMs: Math.max(1, Math.round(duration)),
-					inMs: Math.round(sr ? toMs(sr.start_time) : 0),
+					inMs: Math.max(0, Math.round((sr ? toMs(sr.start_time) : 0) - origin)),
 					speed,
 					// Foreign timelines carry picture and sound on separate tracks.
 					volume: meta?.type === "media" ? meta.volume : video && hasAudioTracks ? 0 : undefined,

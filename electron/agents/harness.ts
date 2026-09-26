@@ -256,11 +256,28 @@ async function prepare(
 			"js_repl",
 			"plugins",
 			"image_generation",
+			"hooks",
+			"multi_agent",
+			"view_image",
+			"in_app_browser",
+			"skill_mcp_dependency_install",
+			"workspace_dependencies",
+			"worktrees",
+			"sleep_tool",
+			"goals",
+			"tool_suggest",
+			"skill_search",
 		].flatMap((f) => ["--disable", f]);
 		const common = [
 			"--json",
 			"--skip-git-repo-check",
+			// Not the user's config.toml (their MCP servers, hooks, profiles) nor exec rules: Cue only.
+			"--ignore-user-config",
+			"--ignore-rules",
 			...locked,
+			// As a setting rather than -s, so resumed sessions stay read-only too.
+			"-c",
+			'sandbox_mode="read-only"',
 			"-c",
 			'web_search="disabled"',
 			"-c",
@@ -277,7 +294,7 @@ async function prepare(
 		];
 		const args = sessionId
 			? ["exec", "resume", ...common, sessionId, prompt]
-			: ["exec", "-C", work, "-s", "read-only", ...common, prompt];
+			: ["exec", "-C", work, ...common, prompt];
 		return { args, parse: parseCodex, cwd: work };
 	}
 	// Gemini CLI reads MCP servers and tool limits from .gemini/settings.json in its working folder.

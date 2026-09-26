@@ -1,26 +1,26 @@
 import { z } from "zod";
-import { withKeyframe } from "./anim";
+import { splitKeyframes, splitZooms, withKeyframe } from "./anim";
 import {
 	aiSchema,
 	assertUnique,
+	CLIP_LABELS,
 	clipEnd,
 	colorSchema,
 	cropSchema,
+	DEFAULT_KEY,
+	DEFAULT_MASK,
 	DEFAULT_TEXT_STYLE,
 	DEFAULT_TRANSFORM,
+	defaultTracks,
 	exportSchema,
+	groupTracks,
 	keyframeSchema,
+	keySchema,
 	lineInputSchema,
+	maskSchema,
 	NEUTRAL_COLOR,
 	NO_CROP,
 	newId,
-	CLIP_LABELS,
-	DEFAULT_KEY,
-	defaultTracks,
-	DEFAULT_MASK,
-	groupTracks,
-	keySchema,
-	maskSchema,
 	normaliseLine,
 	settingsSchema,
 	sortLines,
@@ -163,6 +163,7 @@ export const opSchema = z.discriminatedUnion("type", [
 		type: z.literal("duplicateClips"),
 		ids: z.array(z.string()).min(1),
 		offsetMs: ms.optional(),
+		trackId: z.string().optional(),
 	}),
 	z.object({
 		type: z.literal("removeRanges"),
@@ -383,6 +384,40 @@ export function allSequences(data: ProjectData) {
 	];
 }
 
+/**
+ * Moves a clip and everything after it on its track by `deltaMs`, along with
+ * the clips linked to them on other tracks (so linked sound stays in sync).
+ */
+function shiftTrackFrom(data: ProjectData, from: Clip, deltaMs: number): ProjectData {
+	const moving = new Set(
+		data.clips
+			.filter((x) => x.trackId === from.trackId && x.startMs >= from.startMs - 1)
+			.map((x) => x.id),
+	);
+	const groups = new Set(
+		data.clips.filter((x) => moving.has(x.id) && x.groupId).map((x) => x.groupId as string),
+	);
+	for (const x of data.clips) if (x.groupId && groups.has(x.groupId)) moving.add(x.id);
+	return {
+		...data,
+		clips: data.clips.map((x) =>
+			moving.has(x.id) ? { ...x, startMs: Math.max(0, x.startMs + deltaMs) } : x,
+		),
+	};
+}
+
+/** Removes every clip of a media item, in every sequence. */
+function withoutAssetClips(data: ProjectData, assetId: string): ProjectData {
+	const keep = (c: Clip) => !(c.type === "media" && c.assetId === assetId);
+	return {
+		...data,
+		clips: data.clips.filter(keep),
+		...(data.sequences
+			? { sequences: data.sequences.map((q) => ({ ...q, clips: q.clips.filter(keep) })) }
+			: {}),
+	};
+}
+
 /** Puts the open timeline away with the others. */
 function stash(data: ProjectData): ProjectData {
 	const open = activeSequence(data);
@@ -542,27 +577,52 @@ function splitOne(
 		throw new Error(`${sec(atMs)} is not inside clip ${c.id}.`);
 	unlocked(data, c.trackId);
 	const leftLength = Math.round(atMs - c.startMs);
-	const right: Clip =
-		c.type === "media"
-			? {
-					...c,
-					id: newId("c"),
-					startMs: Math.round(atMs),
-					durationMs: c.durationMs - leftLength,
-					inMs: Math.round(c.inMs + leftLength * c.speed),
-					fadeInMs: 0,
-				}
-			: {
-					...c,
-					id: newId("c"),
-					startMs: Math.round(atMs),
-					durationMs: c.durationMs - leftLength,
-					animationIn: "none",
-				};
-	const left: Clip =
-		c.type === "media"
-			? { ...c, durationMs: leftLength, fadeOutMs: 0 }
-			: { ...c, durationMs: leftLength, animationOut: "none" };
+	let right: Clip;
+	let left: Clip;
+	if (c.type === "media") {
+		// Keyframes and zooms are clip-local, so each half gets its own part of them.
+		const keyframes: [MediaClip["keyframes"], MediaClip["keyframes"]] = [{}, {}];
+		for (const [prop, list] of Object.entries(c.keyframes ?? {})) {
+			const [l, r] = splitKeyframes(list, leftLength);
+			if (l?.length) (keyframes[0] as Record<string, unknown>)[prop] = l;
+			if (r?.length) (keyframes[1] as Record<string, unknown>)[prop] = r;
+		}
+		const [zoomsLeft, zoomsRight] = splitZooms(c.zooms, leftLength);
+		right = {
+			...c,
+			id: newId("c"),
+			startMs: Math.round(atMs),
+			durationMs: c.durationMs - leftLength,
+			inMs: Math.round(c.inMs + leftLength * c.speed),
+			fadeInMs: 0,
+			keyframes: c.keyframes ? keyframes[1] : undefined,
+			zooms: zoomsRight,
+		};
+		// The cut itself is the right half's entrance, so it has no transition.
+		delete (right as MediaClip).transitionIn;
+		left = {
+			...c,
+			durationMs: leftLength,
+			fadeOutMs: 0,
+			keyframes: c.keyframes ? keyframes[0] : undefined,
+			zooms: zoomsLeft,
+		};
+		if (!c.keyframes) {
+			delete (left as MediaClip).keyframes;
+			delete (right as MediaClip).keyframes;
+		}
+		if (!zoomsLeft) delete (left as MediaClip).zooms;
+		if (!zoomsRight) delete (right as MediaClip).zooms;
+	} else {
+		right = {
+			...c,
+			id: newId("c"),
+			startMs: Math.round(atMs),
+			durationMs: c.durationMs - leftLength,
+			animationIn: "none",
+		};
+		left = { ...c, durationMs: leftLength, animationOut: "none" };
+	}
 	const index = data.clips.findIndex((candidate) => candidate.id === c.id);
 	const clips = [...data.clips];
 	clips.splice(index, 1, left, right);
@@ -639,7 +699,9 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 	if (rawOp.type === "fitNested") {
 		const fit = (clips: Clip[]): Clip[] => {
 			let next = clips;
-			for (const c of clips) {
+			for (const { id } of clips) {
+				// Earlier fits may have moved this clip; always work from where it is now.
+				const c = next.find((x) => x.id === id) as Clip;
 				if (c.type !== "media" || c.assetId !== rawOp.assetId) continue;
 				// Only clips that reached the old end of the sequence follow its new length.
 				if (c.inMs + c.durationMs * c.speed < rawOp.fromMs - 2) continue;
@@ -743,10 +805,15 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			};
 		case "removeAsset": {
 			const a = asset(data, op.id);
-			const clips = data.clips.filter((c) => !(c.type === "media" && c.assetId === op.id));
+			const before = allSequences(data).reduce((n, q) => n + q.clips.length, 0);
+			const next = withoutAssetClips(
+				{ ...data, assets: data.assets.filter((x) => x.id !== op.id) },
+				op.id,
+			);
+			const after = allSequences(next).reduce((n, q) => n + q.clips.length, 0);
 			return {
-				data: { ...data, assets: data.assets.filter((x) => x.id !== op.id), clips },
-				summary: `Removed "${a.name}" and ${data.clips.length - clips.length} clip(s)`,
+				data: next,
+				summary: `Removed "${a.name}" and ${before - after} clip(s)`,
 			};
 		}
 
@@ -860,12 +927,15 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "moveClips": {
 			let next = data;
 			const ids = op.trackId ? op.ids : withGroups(data, op.ids);
+			// One shared delta, limited by the earliest clip, so grouped clips stay in sync at 0.
+			const earliest = Math.min(...ids.map((id) => clip(data, id).startMs));
+			const deltaMs = Math.round(Math.max(op.deltaMs, -earliest));
 			for (const id of ids) {
 				const c = clip(next, id);
 				unlocked(next, c.trackId);
 				const moved = validateClip(next, {
 					...c,
-					startMs: Math.max(0, Math.round(c.startMs + op.deltaMs)),
+					startMs: Math.max(0, Math.round(c.startMs + deltaMs)),
 					trackId: op.trackId ?? c.trackId,
 				} as Clip);
 				next = replaceClip(next, moved);
@@ -954,17 +1024,38 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "duplicateClips": {
 			let next = data;
 			const created: string[] = [];
+			// Copies of linked clips are linked to each other, not to the originals.
+			const groups = new Map<string, string>();
 			for (const id of op.ids) {
 				const c = clip(next, id);
+				const groupId = c.groupId
+					? (groups.get(c.groupId) ?? groups.set(c.groupId, newId("g")).get(c.groupId))
+					: undefined;
 				const copy = validateClip(next, {
 					...c,
 					id: newId("c"),
 					startMs: Math.round(op.offsetMs !== undefined ? c.startMs + op.offsetMs : clipEnd(c)),
+					trackId: op.trackId ?? c.trackId,
+					groupId,
 					...(c.type === "media" ? { lineId: undefined } : {}),
 				} as Clip);
+				if (!groupId) delete (copy as { groupId?: string }).groupId;
 				next = { ...next, clips: [...next.clips, copy] };
 				created.push(copy.id);
 			}
+			// A group needs two copies; a lone copy is simply unlinked.
+			const members = new Map<string, number>();
+			for (const c of next.clips)
+				if (created.includes(c.id) && c.groupId)
+					members.set(c.groupId, (members.get(c.groupId) ?? 0) + 1);
+			next = {
+				...next,
+				clips: next.clips.map((c) => {
+					if (!created.includes(c.id) || !c.groupId || (members.get(c.groupId) ?? 0) > 1) return c;
+					const { groupId: _alone, ...rest } = c;
+					return rest as Clip;
+				}),
+			};
 			return { data: next, summary: `Duplicated ${created.length} clip(s)`, created };
 		}
 
@@ -1479,14 +1570,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			if (op.transition.kind === "crossfade") {
 				// Overlap the clips by d: this clip and everything after it on the track move left.
 				const shift = d - Math.max(0, clipEnd(left) - c.startMs);
-				next = {
-					...next,
-					clips: next.clips.map((x) =>
-						x.trackId === c.trackId && x.startMs >= c.startMs - 1
-							? { ...x, startMs: Math.max(0, x.startMs - shift) }
-							: x,
-					),
-				};
+				next = shiftTrackFrom(next, c, -shift);
 				const moved = clip(next, c.id) as MediaClip;
 				next = replaceClip(next, {
 					...moved,
@@ -1513,14 +1597,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			const left = leftNeighbour(data, c, c.transitionIn.durationMs + 60);
 			if (c.transitionIn.kind === "crossfade") {
 				const shift = left ? Math.max(0, clipEnd(left) - c.startMs) : 0;
-				next = {
-					...next,
-					clips: next.clips.map((x) =>
-						x.trackId === c.trackId && x.startMs >= c.startMs - 1
-							? { ...x, startMs: x.startMs + shift }
-							: x,
-					),
-				};
+				next = shiftTrackFrom(next, c, shift);
 			} else if (left && left.type === "media") next = replaceClip(next, { ...left, fadeOutMs: 0 });
 			const { transitionIn: _gone, ...rest } = clip(next, c.id) as MediaClip;
 			next = replaceClip(next, { ...rest, fadeInMs: 0 });
@@ -1740,6 +1817,8 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				const fallback = next.assets.filter((x) => x.lineId === a.lineId).at(-1);
 				if (fallback) next = placeTake(next, fallback);
 			}
+			// Any other use of the take (a copy, another sequence) goes with it.
+			next = withoutAssetClips(next, a.id);
 			return { data: next, summary: `Deleted take ${a.name}${a.lineId ? ` of ${a.lineId}` : ""}` };
 		}
 

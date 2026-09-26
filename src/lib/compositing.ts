@@ -61,6 +61,8 @@ void main(){
 export interface Keyer {
 	canvas: HTMLCanvasElement;
 	draw(source: HTMLVideoElement | HTMLImageElement, key: ChromaKey): void;
+	/** Frees the WebGL context. */
+	dispose(): void;
 }
 
 /** A canvas that shows a video frame with one colour keyed out. */
@@ -117,6 +119,10 @@ export function createKeyer(): Keyer | null {
 			gl.uniform1f(uBlend, key.blend);
 			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
 			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+		},
+		dispose() {
+			gl.getExtension("WEBGL_lose_context")?.loseContext();
+			canvas.remove();
 		},
 	};
 }

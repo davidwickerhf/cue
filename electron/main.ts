@@ -14,7 +14,6 @@ import {
 	shell,
 	systemPreferences,
 } from "electron";
-import { contract, type MethodName } from "./control/contract";
 import {
 	type ChatEvent,
 	detectHarnesses,
@@ -22,6 +21,7 @@ import {
 	type HarnessInfo,
 	runHarness,
 } from "./agents/harness";
+import { contract, type MethodName } from "./control/contract";
 import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
@@ -303,24 +303,42 @@ async function sendChat(
 	if (!appSettings.agent.enabled)
 		throw new Error("Agent access is turned off in Settings → Agent.");
 	chats.get(chatId)?.stop();
+	// Each turn has its own entry. Events from a turn that was replaced are dropped,
+	// and a stop that arrives while the harness is still starting is applied once it runs.
+	let handle: { stop: () => void } | null = null;
+	let stopped = false;
+	const entry = {
+		stop: () => {
+			stopped = true;
+			handle?.stop();
+		},
+	};
+	chats.set(chatId, entry);
+	const current = () => chats.get(chatId) === entry;
 	const emit = (event: ChatEvent) => {
+		if (!current()) return;
 		if (event.kind === "done") chats.delete(chatId);
 		if (win && !win.isDestroyed()) win.webContents.send("cue:chatEvent", chatId, event);
 	};
-	const handle = await runHarness(
-		{
-			...input,
-			// Cue's own runtime runs the MCP bridge, so no separate Node install is needed.
-			bridge: {
-				command: process.execPath,
-				args: [mcpScriptPath()],
-				env: { ELECTRON_RUN_AS_NODE: "1", CUE_DATA_DIR: dataDir },
+	try {
+		handle = await runHarness(
+			{
+				...input,
+				// Cue's own runtime runs the MCP bridge, so no separate Node install is needed.
+				bridge: {
+					command: process.execPath,
+					args: [mcpScriptPath()],
+					env: { ELECTRON_RUN_AS_NODE: "1", CUE_DATA_DIR: dataDir },
+				},
+				workDir: path.join(dataDir, "agent", input.harness),
 			},
-			workDir: path.join(dataDir, "agent", input.harness),
-		},
-		emit,
-	);
-	chats.set(chatId, handle);
+			emit,
+		);
+	} catch (error) {
+		if (current()) chats.delete(chatId);
+		throw error;
+	}
+	if (stopped) handle.stop();
 }
 
 function mcpScriptPath(): string {
@@ -345,7 +363,9 @@ function mayServe(file: string): boolean {
 	}
 	const snapshot = store.snapshot();
 	if (!snapshot) return false;
-	if (resolved.startsWith(`${snapshot.dir}${path.sep}`)) return true;
+	// Inside the project folder: pictures and sound only (caches, renders, takes), never other files.
+	if (resolved.startsWith(`${snapshot.dir}${path.sep}`))
+		return path.extname(resolved).toLowerCase() in MIME;
 	return snapshot.data.assets.some((a) => resolveInProject(snapshot.dir, a.path) === resolved);
 }
 
@@ -399,6 +419,16 @@ async function serveMedia(request: Request): Promise<Response> {
 	});
 }
 
+/** Whether a text field has focus, so ⌘Z edits the text rather than the timeline. */
+async function typing(): Promise<boolean> {
+	if (!win || win.isDestroyed()) return false;
+	return win.webContents
+		.executeJavaScript(
+			`(() => { const e = document.activeElement; return !!e && (e.isContentEditable || /^(INPUT|TEXTAREA)$/.test(e.tagName)); })()`,
+		)
+		.catch(() => false);
+}
+
 function createWindow() {
 	win = new BrowserWindow({
 		width: 1560,
@@ -445,6 +475,11 @@ function createWindow() {
 	} else win.once("ready-to-show", () => win?.show());
 	win.on("closed", () => {
 		win = null;
+		// Nothing will answer requests sent to the old window.
+		for (const [id, request] of waiting) {
+			waiting.delete(id);
+			request.reject(new Error("The Cue window was closed."));
+		}
 		controller.updateRecorder({
 			uiReady: false,
 			micReady: false,
@@ -453,9 +488,18 @@ function createWindow() {
 		});
 	});
 	win.webContents.setWindowOpenHandler(({ url }) => {
-		void shell.openExternal(url);
+		if (/^https?:/.test(url)) void shell.openExternal(url);
 		return { action: "deny" };
 	});
+	// The window only ever shows Cue. A dropped file or a stray link must not replace
+	// it (a loaded page would get window.cue); web links open in the browser instead.
+	win.webContents.on("will-navigate", (event, url) => {
+		if (url === win?.webContents.getURL()) return;
+		event.preventDefault();
+		if (/^https?:/.test(url) && !url.startsWith(process.env.VITE_DEV_SERVER_URL ?? "\0"))
+			void shell.openExternal(url);
+	});
+	win.webContents.on("will-attach-webview", (event) => event.preventDefault());
 	if (process.env.VITE_DEV_SERVER_URL) void win.loadURL(process.env.VITE_DEV_SERVER_URL);
 	else
 		void win.loadFile(
@@ -647,12 +691,18 @@ function buildMenu() {
 					{
 						label: "Undo",
 						accelerator: "CmdOrCtrl+Z",
-						click: guard(() => controller.call("undo", {}, "user")),
+						click: guard(async () => {
+							if (await typing()) win?.webContents.undo();
+							else await controller.call("undo", {}, "user");
+						}),
 					},
 					{
 						label: "Redo",
 						accelerator: "CmdOrCtrl+Shift+Z",
-						click: guard(() => controller.call("redo", {}, "user")),
+						click: guard(async () => {
+							if (await typing()) win?.webContents.redo();
+							else await controller.call("redo", {}, "user");
+						}),
 					},
 					{ type: "separator" },
 					{ role: "cut" },
@@ -881,13 +931,16 @@ if (process.env.CUE_LAG) {
 
 /** Files opened from Finder before the app was ready. */
 let pendingOpen: string | null = null;
+/** Set once startup has created the first window. */
+let started = false;
 
 if (!process.env.CUE_USER_DATA && !app.requestSingleInstanceLock()) app.quit();
 else {
 	// Double-clicking a .cueproj (or dropping one on the Dock icon).
 	app.on("open-file", (event, file) => {
 		event.preventDefault();
-		if (!app.isReady()) pendingOpen = file;
+		// Until startup has made the window, it opens this file itself (no second window).
+		if (!started) pendingOpen = file;
 		else {
 			if (!win || win.isDestroyed()) createWindow();
 			void openPath(file).catch((error) => store.log("system", String(error)));
@@ -901,6 +954,13 @@ else {
 	});
 
 	app.whenReady().then(async () => {
+		app.setAboutPanelOptions({
+			applicationName: "Cue",
+			applicationVersion: app.getVersion(),
+			copyright: "© 2026 David Henry Francis Wicker",
+			website: "https://wicker.life",
+			credits: "Open source under the MIT License. cue.wicker.life",
+		});
 		await loadAppSettings();
 		protocol.handle(MEDIA_SCHEME, serveMedia);
 		session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
@@ -922,12 +982,20 @@ else {
 			app.getVersion(),
 			() => appSettings.agent.enabled,
 		);
-		app.on("before-quit", () => {
+		// Quitting waits (briefly) for the last save, so no edit is lost.
+		let flushed = false;
+		app.on("before-quit", (event) => {
+			if (flushed) return;
+			event.preventDefault();
+			flushed = true;
 			for (const chat of chats.values()) chat.stop();
 			void control.close();
-			void store.flush();
+			void Promise.race([store.flush(), new Promise((r) => setTimeout(r, 5000))])
+				.catch((error) => store.log("system", `Could not save before quitting: ${error}`))
+				.finally(() => app.quit());
 		});
 		createWindow();
+		started = true;
 		// Warm up the model scan so Settings and the Generate panel open instantly.
 		void scanInventory().catch(() => {});
 		const initial =

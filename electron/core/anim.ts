@@ -54,6 +54,46 @@ export function withKeyframe(list: Keyframe[] | undefined, next: Keyframe): Keyf
 	);
 }
 
+/**
+ * Cuts keyframes at clip-local `atMs`: the left part keeps what comes before
+ * (ending on the value at the cut), the right part starts at 0 with that value.
+ */
+export function splitKeyframes(
+	list: Keyframe[] | undefined,
+	atMs: number,
+): [Keyframe[] | undefined, Keyframe[] | undefined] {
+	if (!list || list.length === 0) return [list, list];
+	const value = valueAt(list, atMs, list[0].value);
+	// The ease of the segment the cut falls in carries on across it.
+	const ease = [...list].reverse().find((k) => k.atMs <= atMs)?.ease ?? list[0].ease;
+	const left = list.filter((k) => k.atMs < atMs - 10);
+	const right = list.filter((k) => k.atMs > atMs + 10).map((k) => ({ ...k, atMs: k.atMs - atMs }));
+	return [
+		[...left, { atMs: Math.round(atMs), value, ease }],
+		[{ atMs: 0, value, ease }, ...right],
+	];
+}
+
+/** Cuts zooms at clip-local `atMs`, keeping each part on its side of the cut. */
+export function splitZooms(
+	zooms: Zoom[] | undefined,
+	atMs: number,
+): [Zoom[] | undefined, Zoom[] | undefined] {
+	if (!zooms || zooms.length === 0) return [zooms, zooms];
+	const left = zooms
+		.filter((z) => z.startMs < atMs)
+		.map((z) => ({ ...z, endMs: Math.min(z.endMs, Math.round(atMs)) }));
+	const right = zooms
+		.filter((z) => z.endMs > atMs)
+		.map((z) => ({
+			...z,
+			id: z.startMs < atMs ? `${z.id}b` : z.id,
+			startMs: Math.max(0, Math.round(z.startMs - atMs)),
+			endMs: Math.round(z.endMs - atMs),
+		}));
+	return [left.length ? left : undefined, right.length ? right : undefined];
+}
+
 // ---------------------------------------------------------------------------
 // ffmpeg expressions (the variable is local seconds, e.g. `t` or `(t-3.2)`)
 // ---------------------------------------------------------------------------

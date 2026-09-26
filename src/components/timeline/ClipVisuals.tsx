@@ -3,20 +3,23 @@ import { useEffect, useRef, useState } from "react";
 const peaksCache = new Map<string, Promise<number[]>>();
 const thumbsCache = new Map<string, Promise<{ intervalMs: number; urls: string[] }>>();
 
-function loadPeaks(assetId: string) {
-	let p = peaksCache.get(assetId);
+// Keyed by media id and file, so relinked media and re-rendered sequences load afresh.
+function loadPeaks(assetId: string, file: string) {
+	const key = `${assetId}|${file}`;
+	let p = peaksCache.get(key);
 	if (!p) {
 		p = window.cue.peaks(assetId).catch(() => []);
-		peaksCache.set(assetId, p);
+		peaksCache.set(key, p);
 	}
 	return p;
 }
 
-function loadThumbs(assetId: string) {
-	let p = thumbsCache.get(assetId);
+function loadThumbs(assetId: string, file: string) {
+	const key = `${assetId}|${file}`;
+	let p = thumbsCache.get(key);
 	if (!p) {
 		p = window.cue.thumbnails(assetId).catch(() => ({ intervalMs: 0, urls: [] }));
-		thumbsCache.set(assetId, p);
+		thumbsCache.set(key, p);
 	}
 	return p;
 }
@@ -26,6 +29,7 @@ const PEAKS_PER_SECOND = 50;
 /** Waveform of the part of the source a clip plays. */
 export function Waveform({
 	assetId,
+	file,
 	inMs,
 	spanMs,
 	width,
@@ -33,6 +37,8 @@ export function Waveform({
 	color = "rgba(255,255,255,0.85)",
 }: {
 	assetId: string;
+	/** The media's file, so a new file loads new peaks. */
+	file: string;
 	inMs: number;
 	spanMs: number;
 	width: number;
@@ -43,11 +49,11 @@ export function Waveform({
 	const [peaks, setPeaks] = useState<number[] | null>(null);
 	useEffect(() => {
 		let alive = true;
-		void loadPeaks(assetId).then((p) => alive && setPeaks(p));
+		void loadPeaks(assetId, file).then((p) => alive && setPeaks(p));
 		return () => {
 			alive = false;
 		};
-	}, [assetId]);
+	}, [assetId, file]);
 	useEffect(() => {
 		const el = canvas.current;
 		if (!el || !peaks || width <= 0) return;
@@ -84,6 +90,7 @@ export function Waveform({
 /** Frames from the source laid across a video clip. */
 export function Filmstrip({
 	assetId,
+	file,
 	inMs,
 	speed,
 	width,
@@ -91,6 +98,8 @@ export function Filmstrip({
 	pxPerMs,
 }: {
 	assetId: string;
+	/** The media's file, so a new file loads new frames. */
+	file: string;
 	inMs: number;
 	speed: number;
 	width: number;
@@ -100,11 +109,11 @@ export function Filmstrip({
 	const [thumbs, setThumbs] = useState<{ intervalMs: number; urls: string[] } | null>(null);
 	useEffect(() => {
 		let alive = true;
-		void loadThumbs(assetId).then((t) => alive && setThumbs(t));
+		void loadThumbs(assetId, file).then((t) => alive && setThumbs(t));
 		return () => {
 			alive = false;
 		};
-	}, [assetId]);
+	}, [assetId, file]);
 	if (!thumbs || thumbs.urls.length === 0) return null;
 	const tileW = Math.max(24, height * (16 / 9));
 	const count = Math.min(200, Math.ceil(width / tileW));

@@ -117,6 +117,8 @@ function audibleClips(ctx: ExportContext, onlyTracks?: Set<string>): AudioSource
 			const a = assetOf(data, c.assetId);
 			if (
 				c.disabled ||
+				// A nested sequence with nothing in it has no render.
+				(a.sequenceId && !a.path) ||
 				// Solo is for the full mix; a voiceover-only export ignores it.
 				(onlyTracks ? t.muted : !trackAudible(data, t)) ||
 				t.hidden ||
@@ -158,7 +160,7 @@ function audioChain(input: string, src: AudioSource, label: string): string {
 	].filter(Boolean);
 	const keyed = clip.keyframes?.volume?.length;
 	const volume = keyed
-		? `volume='${src.gain.toFixed(4)}*(${keyframeExpr(clip.keyframes?.volume, 1, "t*1000")})':eval=frame`
+		? `volume='${src.gain.toFixed(4)}*(${keyframeExpr(clip.keyframes?.volume, 1, "t")})':eval=frame`
 		: `volume=${src.gain.toFixed(3)}`;
 	return (
 		`${input}atrim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},asetpts=PTS-STARTPTS${tempo(clip.speed)}` +
@@ -393,7 +395,19 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		.filter((t) => (t.kind === "video" || t.kind === "text") && !t.hidden);
 	const layers: Clip[] = visualTracks.flatMap((t) =>
 		data.clips
-			.filter((c) => c.trackId === t.id && !c.disabled)
+			.filter(
+				(c) =>
+					c.trackId === t.id &&
+					!c.disabled &&
+					// A nested sequence with nothing in it has no render: it shows nothing.
+					!(
+						c.type === "media" &&
+						(() => {
+							const a = assetOf(data, c.assetId);
+							return a.sequenceId && !a.path;
+						})()
+					),
+			)
 			.sort((a, b) => a.startMs - b.startMs),
 	);
 	const textClips = layers.filter(
@@ -410,6 +424,8 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	];
 	let current = "base";
 	let n = 0;
+	// Labels for adjustment layers have their own counter: `n` must stay equal to the input count.
+	let adjustments = 0;
 	const addInput = (args: string[]) => {
 		inputs.push(...args);
 		return n++;
@@ -449,7 +465,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				(f) => `${f}:enable='between(t,${start},${end})'`,
 			);
 			if (filters.length) {
-				const out = `adj${n++}`;
+				const out = `adj${adjustments++}`;
 				chains.push(`[${current}]${filters.join(",")},format=yuva420p[${out}]`);
 				current = out;
 			}
@@ -463,9 +479,9 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const fitBase = Math.min(W / sw, H / sh);
 		const cropW = 1 - c.left - c.right;
 		const cropH = 1 - c.top - c.bottom;
-		// Keyframed values are in clip-local milliseconds; filters see local seconds as `t`.
+		// Keyframes are stored in clip-local ms; keyframeExpr takes a variable in local seconds (`t` here).
 		const kf = clip.keyframes ?? {};
-		const S = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, "t*1000") : String(t.scale);
+		const S = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, "t") : String(t.scale);
 		const zoom = zoomExprs(clip.zooms, "t");
 		const zoomChain = zoom
 			? `,scale=w='trunc(iw*${zoom.scale}/2)*2':h='trunc(ih*${zoom.scale}/2)*2':eval=frame:flags=bicubic,crop=w=${sw}:h=${sh}:x='max(0,min(iw-${sw},${zoom.x}*iw-${sw}/2))':y='max(0,min(ih-${sh},${zoom.y}*ih-${sh}/2))'`
@@ -538,7 +554,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			chains.push(`${source}${zoomChain}${colorChain}${keyChain}${finish}`);
 		}
 		// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
-		const local = `(t-${start})*1000`;
+		const local = `(t-${start})`;
 		const X = kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x);
 		const Y = kf.y?.length ? keyframeExpr(kf.y, t.y, local) : String(t.y);
 		const Sg = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale);

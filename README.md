@@ -189,7 +189,7 @@ Issues and pull requests are welcome. Please run `npm test` and `npm run typeche
 
 ## License and credits
 
-Cue is released under the [MIT License](LICENSE).
+Cue is made by [David Henry Francis Wicker](https://wicker.life) and released under the [MIT License](LICENSE). © 2026 David Henry Francis Wicker.
 
 - The stack and layout take inspiration from [Recordly](https://github.com/webadderallorg/Recordly); no Recordly code is used. The demos on the website and in this README were recorded in Cue and rendered with Recordly.
 - Video processing by [FFmpeg](https://ffmpeg.org) via [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static).

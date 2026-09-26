@@ -4,7 +4,10 @@
 	"version": "0.1.1",
 	"private": true,
 	"description": "A fast, lightweight video editor for macOS that you and an AI agent edit together.",
-	"author": "David Wicker",
+	"author": {
+		"name": "David Henry Francis Wicker",
+		"url": "https://wicker.life"
+	},
 	"type": "module",
 	"main": "dist-electron/main.cjs",
 	"scripts": {

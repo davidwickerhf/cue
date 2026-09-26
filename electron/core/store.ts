@@ -13,6 +13,25 @@ import {
 	exportVoiceover,
 	type TextRender,
 } from "./exporter";
+import { type HistoryEntry, ProjectHistory } from "./history";
+import {
+	detectBeats as detectBeatsIn,
+	editTranscript,
+	extractJson,
+	sourceToTimeline,
+	transcriptForPrompt,
+} from "./intelligence";
+import {
+	fromOtio,
+	type ImportedStack,
+	INTERCHANGE_EXTENSIONS,
+	type InterchangeFormat,
+	toEdl,
+	toFcpxml,
+	toMlt,
+	toOtio,
+} from "./interchange";
+import { makePoster } from "./library";
 import {
 	analyseSpeech,
 	computePeaks,
@@ -26,39 +45,20 @@ import {
 	probe,
 	toWav,
 } from "./media";
-import {
-	fromOtio,
-	type ImportedStack,
-	INTERCHANGE_EXTENSIONS,
-	type InterchangeFormat,
-	toEdl,
-	toFcpxml,
-	toMlt,
-	toOtio,
-} from "./interchange";
-import {
-	detectBeats as detectBeatsIn,
-	editTranscript,
-	extractJson,
-	sourceToTimeline,
-	transcriptForPrompt,
-} from "./intelligence";
-import { type HistoryEntry, ProjectHistory } from "./history";
-import { makePoster } from "./library";
-import { findMoved, isOffline } from "./relink";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
 	DEFAULT_TEXT_STYLE,
 	deriveLines,
 	emptyProject,
+	isProjectFile,
 	type LineInput,
 	newId,
 	PROJECT_EXTENSION,
-	isProjectFile,
 	parseProject,
 	projectDuration,
 } from "./project";
+import { findMoved, isOffline } from "./relink";
 import type { AiRuntime } from "./runtime";
 import { parseSrt } from "./srt";
 import type {
@@ -113,6 +113,8 @@ export class ProjectStore extends EventEmitter {
 	private activityId = 0;
 	private saveTimer: NodeJS.Timeout | null = null;
 	private dirty = false;
+	/** The save in progress, if any; saves never overlap. */
+	private saving: Promise<void> = Promise.resolve();
 	private revision = 0;
 	/** Assets whose playback proxy is ready. */
 	private proxies = new Set<string>();
@@ -159,7 +161,9 @@ export class ProjectStore extends EventEmitter {
 			),
 			proxyUrls: this.data.settings.useProxies
 				? Object.fromEntries(
-						[...this.proxies].map((id) => [id, this.options.mediaUrl(this.proxyPath(id))]),
+						this.data.assets
+							.filter((a) => this.proxies.has(this.cacheKey(a.id)))
+							.map((a) => [a.id, this.options.mediaUrl(this.proxyPath(a.id))]),
 					)
 				: {},
 			durationMs: projectDuration(this.data),
@@ -175,6 +179,7 @@ export class ProjectStore extends EventEmitter {
 	private history: ProjectHistory | null = null;
 	/** Inside a transaction, steps are recorded once at the end. */
 	private batching = 0;
+	private transactions: Promise<void> = Promise.resolve();
 
 	private record(actor: Actor, summary: string, kind: HistoryEntry["kind"]) {
 		if (!this.history || !this.data || this.batching) return;
@@ -578,7 +583,25 @@ export class ProjectStore extends EventEmitter {
 			markers: seq.markers,
 		};
 		const length = projectDuration(data);
-		if (length <= 0) return rendered;
+		if (length <= 0) {
+			// An emptied sequence has no picture or sound; clips of it are skipped on export.
+			if (asset.path || asset.hasAudio) {
+				this.data = applyOp(this.current, {
+					type: "updateAsset",
+					id: asset.id,
+					patch: { path: "", hasAudio: false },
+				}).data;
+				this.touch();
+			}
+			return rendered;
+		}
+		// Whether the nested sequence makes any sound, so its clips are mixed (or not).
+		const hasAudio = seq.clips.some((c) => {
+			if (c.type !== "media" || c.disabled) return false;
+			const t = seq.tracks.find((x) => x.id === c.trackId);
+			const a = this.current.assets.find((x) => x.id === c.assetId);
+			return !!a?.hasAudio && !!t && !t.muted && c.volume > 0;
+		});
 		const used = new Set(seq.clips.flatMap((c) => (c.type === "media" ? [c.assetId] : [])));
 		const key = JSON.stringify([
 			seq.tracks,
@@ -618,12 +641,12 @@ export class ProjectStore extends EventEmitter {
 			rendered++;
 		}
 		const stored = relativeToProject(this.projectDir, file);
-		if (asset.path !== stored || asset.durationMs !== length) {
+		if (asset.path !== stored || asset.durationMs !== length || asset.hasAudio !== hasAudio) {
 			// Pointing at a new render is housekeeping, not an edit: no undo step.
 			let next = applyOp(this.current, {
 				type: "updateAsset",
 				id: asset.id,
-				patch: { path: stored, durationMs: length },
+				patch: { path: stored, durationMs: length, hasAudio },
 			}).data;
 			if (asset.durationMs !== length && asset.durationMs > 0)
 				next = applyOp(next, {
@@ -732,7 +755,7 @@ export class ProjectStore extends EventEmitter {
 		this.dirty = false;
 		this.revision++;
 		this.proxies = new Set(
-			data.assets.filter((a) => existsSync(this.proxyPath(a.id))).map((a) => a.id),
+			data.assets.filter((a) => existsSync(this.proxyPath(a.id))).map((a) => this.cacheKey(a.id)),
 		);
 		this.audioProxies.clear();
 		await this.remember();
@@ -777,26 +800,42 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	private proxyPath(assetId: string): string {
-		return path.join(this.projectDir, CACHE_DIR, "proxy", `${assetId}.mp4`);
+		return path.join(this.projectDir, CACHE_DIR, "proxy", `${this.cacheKey(assetId)}.mp4`);
+	}
+
+	/**
+	 * Name for files derived from a media item (proxies, peaks, thumbnails). It
+	 * includes the file's path, so relinked media or a new render of a nested
+	 * sequence never reuses what was made from the old file.
+	 */
+	private cacheKey(assetId: string): string {
+		const file = this.data?.assets.find((a) => a.id === assetId)?.path ?? "";
+		let hash = 0;
+		for (let i = 0; i < file.length; i++) hash = (hash * 31 + file.charCodeAt(i)) | 0;
+		return `${assetId}-${(hash >>> 0).toString(36)}`;
 	}
 
 	private autoBuildProxies() {
 		if (this.options.autoProxies?.() ?? true) this.buildProxies();
 	}
 
-	/** Builds missing playback proxies in the background, one at a time. */
-	buildProxies(): void {
-		if (!this.data?.settings.useProxies) return;
+	/** Builds missing playback proxies in the background, one at a time. Returns how many were queued. */
+	buildProxies(): number {
+		if (!this.data?.settings.useProxies) return 0;
 		const pending = this.data.assets.filter(
 			(a) =>
-				a.kind === "video" && !this.proxies.has(a.id) && (a.height > 720 || a.durationMs > 20000),
+				a.kind === "video" &&
+				!a.sequenceId &&
+				!this.proxies.has(this.cacheKey(a.id)) &&
+				(a.height > 720 || a.durationMs > 20000),
 		);
 		for (const asset of pending) {
 			this.proxyQueue = this.proxyQueue.then(async () => {
-				if (!this.data?.assets.some((a) => a.id === asset.id) || this.proxies.has(asset.id)) return;
+				const key = this.cacheKey(asset.id);
+				if (!this.data?.assets.some((a) => a.id === asset.id) || this.proxies.has(key)) return;
 				try {
 					await makeVideoProxy(this.assetPath(asset.id), this.proxyPath(asset.id));
-					this.proxies.add(asset.id);
+					this.proxies.add(key);
 					this.revision++;
 					this.emit("change");
 				} catch (error) {
@@ -807,6 +846,7 @@ export class ProjectStore extends EventEmitter {
 				}
 			});
 		}
+		return pending.length;
 	}
 
 	/** Playback audio for an asset at a speed (extracted and/or time-stretched, cached). */
@@ -820,10 +860,10 @@ export class ProjectStore extends EventEmitter {
 			/\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(asset.path)
 		)
 			return Promise.resolve(this.assetPath(assetId));
-		const key = `${assetId}@${rounded}`;
+		const key = `${this.cacheKey(assetId)}@${rounded}`;
 		let pending = this.audioProxies.get(key);
 		if (!pending) {
-			const file = path.join(this.projectDir, CACHE_DIR, "audio", `${assetId}@${rounded}.m4a`);
+			const file = path.join(this.projectDir, CACHE_DIR, "audio", `${key}.m4a`);
 			pending = existsSync(file)
 				? Promise.resolve(file)
 				: makeAudioProxy(this.assetPath(assetId), file, rounded).then(() => file);
@@ -1051,18 +1091,34 @@ export class ProjectStore extends EventEmitter {
 			this.apply({ type: "addMarker", atMs: m.atMs, label: m.label.slice(0, 120) }, actor);
 	}
 
-	async flush(): Promise<void> {
+	/**
+	 * Writes the project if it changed. Saves run one at a time, each writing the
+	 * state as it was when it started; the project only counts as saved if nothing
+	 * changed meanwhile, so an edit made during a write is saved by the next one.
+	 */
+	flush(): Promise<void> {
 		void this.history?.flush();
 		if (this.saveTimer) {
 			clearTimeout(this.saveTimer);
 			this.saveTimer = null;
 		}
+		const next = this.saving.then(() => this.save());
+		this.saving = next.catch(() => {});
+		return next;
+	}
+
+	private async save(): Promise<void> {
 		if (!this.dirty || !this.file || !this.data) return;
-		const tmp = `${this.file}.tmp`;
-		await fs.writeFile(tmp, `${JSON.stringify(this.data, null, "\t")}\n`);
-		await fs.rename(tmp, this.file);
-		this.dirty = false;
-		this.emit("change");
+		const file = this.file;
+		const revision = this.revision;
+		const json = `${JSON.stringify(this.data, null, "\t")}\n`;
+		const tmp = `${file}.tmp`;
+		await fs.writeFile(tmp, json);
+		await fs.rename(tmp, file);
+		if (this.file === file && this.revision === revision) {
+			this.dirty = false;
+			this.emit("change");
+		}
 	}
 
 	async recent(): Promise<RecentProject[]> {
@@ -1093,7 +1149,30 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/** Runs several edits as one undo step. */
-	async transaction<T>(actor: Actor, summary: string, fn: () => Promise<T> | T): Promise<T> {
+	/**
+	 * Runs several edits as one step. Transactions run one at a time; callers that
+	 * edit from outside (the controller) wait for `settled()` first, so nothing is
+	 * merged into, or reverted with, a transaction it wasn't part of.
+	 */
+	transaction<T>(actor: Actor, summary: string, fn: () => Promise<T> | T): Promise<T> {
+		const run = this.transactions.then(() => this.runTransaction(actor, summary, fn));
+		this.transactions = run.then(
+			() => {},
+			() => {},
+		);
+		return run;
+	}
+
+	/** Resolves once no transaction is running. */
+	settled(): Promise<void> {
+		return this.transactions;
+	}
+
+	private async runTransaction<T>(
+		actor: Actor,
+		summary: string,
+		fn: () => Promise<T> | T,
+	): Promise<T> {
 		const before = this.current;
 		const past = this.past;
 		this.batching++;
@@ -1626,7 +1705,7 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	async peaks(assetId: string): Promise<number[]> {
-		const cache = path.join(this.projectDir, CACHE_DIR, "peaks", `${assetId}.json`);
+		const cache = path.join(this.projectDir, CACHE_DIR, "peaks", `${this.cacheKey(assetId)}.json`);
 		try {
 			return JSON.parse(await fs.readFile(cache, "utf8")) as number[];
 		} catch {}
@@ -1639,7 +1718,7 @@ export class ProjectStore extends EventEmitter {
 	async thumbnails(assetId: string): Promise<{ intervalMs: number; urls: string[] }> {
 		const asset = this.current.assets.find((a) => a.id === assetId);
 		if (!asset || asset.kind !== "video") return { intervalMs: 0, urls: [] };
-		const dir = path.join(this.projectDir, CACHE_DIR, "thumbs", assetId);
+		const dir = path.join(this.projectDir, CACHE_DIR, "thumbs", this.cacheKey(assetId));
 		const meta = path.join(dir, "meta.json");
 		let info: { intervalMs: number; count: number };
 		try {

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { TITLE_IDS } from "../core/titles";
 import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
@@ -8,6 +7,7 @@ import {
 	settingsSchema,
 	textStyleSchema,
 } from "../core/project";
+import { TITLE_IDS } from "../core/titles";
 
 /**
  * The agent-facing API. Each entry becomes an MCP tool (through the bridge)
@@ -444,8 +444,9 @@ export const contract = {
 		input: {},
 	},
 	duplicate_clips: {
-		description: "Copy clips right after themselves, or offsetMs from their start.",
-		input: { ids, offsetMs: z.number().optional() },
+		description:
+			"Copy clips right after themselves, or offsetMs from their start; trackId puts the copies on another track.",
+		input: { ids, offsetMs: z.number().optional(), trackId: z.string().optional() },
 	},
 	select_clips: {
 		description: "Select clips in the editor so the user sees what you mean.",

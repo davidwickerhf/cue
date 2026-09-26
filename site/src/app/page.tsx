@@ -326,8 +326,23 @@ export default async function Home() {
 								MIT license
 							</a>
 						</div>
+						<div className="flex flex-col gap-3">
+							<p className="font-medium">Author</p>
+							<a href="https://wicker.life" className="text-muted hover:text-white">
+								wicker.life
+							</a>
+							<a href="https://github.com/davidwickerhf" className="text-muted hover:text-white">
+								GitHub
+							</a>
+						</div>
 					</div>
 				</Reveal>
+				<p className="mx-auto max-w-[1080px] px-5 pb-2 text-[12px] leading-relaxed text-[#8a8a8a]">
+					© {new Date().getFullYear()} David Henry Francis Wicker ·{" "}
+					<a href="https://wicker.life" className="underline underline-offset-4 hover:text-white">
+						wicker.life
+					</a>
+				</p>
 				<p className="mx-auto max-w-[1080px] px-5 pb-10 text-[12px] leading-relaxed text-[#5f5f5f]">
 					Demo footage: Sintel and Big Buck Bunny © Blender Foundation (durian.blender.org, peach.blender.org), CC BY 3.0. Demos
 					recorded with{" "}

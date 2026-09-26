@@ -14,8 +14,8 @@ import type { MediaClip, ProjectSnapshot, TextClip } from "../../../electron/cor
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
-import { layout } from "../../lib/workspace";
 import { cn, formatTime } from "../../lib/utils";
+import { layout } from "../../lib/workspace";
 import {
 	ColorInput,
 	Field,
@@ -249,7 +249,7 @@ function KeyButton({
 }) {
 	const keys = clip.keyframes?.[prop] ?? [];
 	const here = keys.find((k) => Math.abs(k.atMs - local) <= 20);
-	const inside = local >= 0 && local <= clip.durationMs;
+	const inside = useInside(clip);
 	return (
 		<button
 			type="button"
@@ -267,7 +267,8 @@ function KeyButton({
 					: void run("set_keyframe", {
 							clipId: clip.id,
 							prop,
-							atMs: Math.round(local),
+							// Where the playhead is now, not when this last rendered.
+							atMs: Math.round(Math.max(0, Math.min(clip.durationMs, localNow(clip)))),
 							value,
 							ease: "ease",
 						})
@@ -279,6 +280,18 @@ function KeyButton({
 		>
 			<span className={cn("size-2 rotate-45 border border-current", here && "bg-current")} />
 		</button>
+	);
+}
+
+/** The playhead in the clip's own time, read when needed (e.g. on click). */
+function localNow(clip: MediaClip) {
+	return playback.currentMs - clip.startMs;
+}
+
+/** Whether the playhead is over the clip; re-renders only when that changes. */
+function useInside(clip: MediaClip) {
+	return playback.clock.use(
+		(s) => s.currentMs >= clip.startMs && s.currentMs <= clip.startMs + clip.durationMs,
 	);
 }
 
@@ -300,7 +313,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 			void run("set_keyframe", {
 				clipId: clip.id,
 				prop,
-				atMs: Math.round(Math.max(0, Math.min(clip.durationMs, local))),
+				atMs: Math.round(Math.max(0, Math.min(clip.durationMs, localNow(clip)))),
 				value,
 				ease: "ease",
 			});
@@ -532,7 +545,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 					</div>
 				</Section>
 			)}
-			{visual && <ZoomSection clip={clip} local={local} />}
+			{visual && <ZoomSection clip={clip} />}
 			{visual && <ColorSection clip={clip} />}
 			{visual && <MaskSection clip={clip} />}
 			{visual && asset?.kind === "video" && <KeySection clip={clip} />}
@@ -572,9 +585,9 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 	);
 }
 
-function ZoomSection({ clip, local }: { clip: MediaClip; local: number }) {
+function ZoomSection({ clip }: { clip: MediaClip }) {
 	const zooms = clip.zooms ?? [];
-	const inside = local >= 0 && local < clip.durationMs;
+	const inside = useInside(clip);
 	return (
 		<Section
 			title="Zoom"
@@ -584,14 +597,15 @@ function ZoomSection({ clip, local }: { clip: MediaClip; local: number }) {
 					variant="ghost"
 					className="h-6 text-[11px]"
 					isDisabled={!inside}
-					onPress={() =>
+					onPress={() => {
+						const local = Math.max(0, localNow(clip));
 						void run("add_zoom", {
 							clipId: clip.id,
 							startMs: Math.round(local),
 							endMs: Math.round(Math.min(clip.durationMs, local + 2500)),
 							scale: 1.8,
-						})
-					}
+						});
+					}}
 				>
 					Add at playhead
 				</Button>

@@ -1,7 +1,7 @@
 import type { Asset, ProjectSnapshot } from "../../electron/core/types";
 import { notify, run } from "./api";
 import { playback } from "./playback";
-import { app, createStore } from "./state";
+import { app, createStore, editor } from "./state";
 
 /**
  * The source monitor: a clip from the media bin opened on its own, with its
@@ -99,3 +99,15 @@ export async function sourceEdit(mode: "insert" | "overwrite") {
 		outMs: outMs ?? undefined,
 	});
 }
+
+// A different project or sequence starts clean: no source clip open, no in and out points.
+let openTimeline = "";
+app.subscribe(() => {
+	const project = app.get().state?.project;
+	const key = project ? `${project.path}|${project.data.sequence?.id ?? "main"}` : "";
+	if (key === openTimeline) return;
+	const projectChanged = key.split("|")[0] !== openTimeline.split("|")[0];
+	openTimeline = key;
+	if (projectChanged) closeSource();
+	editor.set({ inPoint: null, outPoint: null });
+});

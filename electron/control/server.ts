@@ -31,9 +31,12 @@ export async function startControlServer(
 		};
 		if (req.headers.authorization !== `Bearer ${token}`)
 			return reply(401, { error: "Unauthorised" });
+		// Health answers even with agent access off, so the bridge sees Cue is running
+		// (and reports the setting) instead of trying to launch it again.
+		if (req.method === "GET" && req.url === "/health")
+			return reply(200, { ok: true, version, enabled: enabled() });
 		if (!enabled())
 			return reply(403, { error: "Agent access is turned off in Cue → Settings → Agent." });
-		if (req.method === "GET" && req.url === "/health") return reply(200, { ok: true, version });
 		if (req.method !== "POST" || req.url !== "/rpc") return reply(404, { error: "Not found" });
 		let body = "";
 		for await (const chunk of req) {

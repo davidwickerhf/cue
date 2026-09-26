@@ -25,6 +25,8 @@ interface Slot {
 	pendingSeek: number | null;
 	/** WebGL canvas for chroma-keyed clips, made on first use. */
 	keyer?: Keyer | null;
+	/** Set once the slot's layer is rebuilt; stops its frame callbacks. */
+	disposed?: boolean;
 	keyedClip?: MediaClip | null;
 }
 
@@ -103,6 +105,10 @@ class PlaybackEngine {
 	private analysers: [AnalyserNode, AnalyserNode] | null = null;
 	private buffers = new Map<string, Promise<AudioBuffer | null>>();
 	private scheduled: AudioScheduledSourceNode[] = [];
+	/** Bumped on every reschedule; audio still decoding for an older schedule is dropped. */
+	private scheduleGen = 0;
+	/** Clips already scheduled in the current generation. */
+	private scheduledClips = new Set<string>();
 	private startPerf = 0;
 	private startMs = 0;
 	private stopAtMs: number | null = null;
@@ -112,6 +118,9 @@ class PlaybackEngine {
 	private tickListeners = new Set<(ms: number) => void>();
 	private meterData = new Float32Array(1024);
 	private frameCount = 0;
+	private stageW = 0;
+	private stageH = 0;
+	private warmTimer: ReturnType<typeof setTimeout> | undefined;
 	/** Playback rate for J/K/L shuttle; negative plays backwards (seeking), anything but 1 is silent. */
 	private rate = 1;
 
@@ -135,16 +144,14 @@ class PlaybackEngine {
 	attach(stage: HTMLDivElement, anchor: HTMLElement) {
 		this.stage = stage;
 		this.anchor = anchor;
+		this.measure();
 		this.rebuildLayers();
 		this.render(this.currentMs);
 	}
 
 	detach() {
 		this.pause();
-		for (const layer of this.videoLayers.values()) layer.root.remove();
-		for (const layer of this.textLayers.values()) layer.canvas.remove();
-		this.videoLayers.clear();
-		this.textLayers.clear();
+		this.removeLayers();
 		this.stage = null;
 		this.anchor = null;
 	}
@@ -176,8 +183,18 @@ class PlaybackEngine {
 		else this.render(this.currentMs);
 	}
 
+	/**
+	 * Reads the viewer's size once. Every layer fills the viewer, so frames use this
+	 * instead of reading element sizes (which would force a layout on every frame).
+	 */
+	private measure() {
+		this.stageW = this.stage?.clientWidth ?? 0;
+		this.stageH = this.stage?.clientHeight ?? 0;
+	}
+
 	/** Redraw after the viewer changes size. */
 	refresh() {
+		this.measure();
 		for (const layer of this.textLayers.values()) layer.key = "";
 		this.render(this.currentMs);
 	}
@@ -221,6 +238,8 @@ class PlaybackEngine {
 			this.clock.set({ currentMs: now });
 			this.render(now);
 			if ((this.frameCount++ & 1) === 0) this.readMeter();
+			// Schedule sound a little ahead of the playhead rather than all at once.
+			if (this.frameCount % 30 === 0) this.scheduleAhead();
 			for (const listener of this.tickListeners) listener(now);
 			this.raf = requestAnimationFrame(loop);
 		};
@@ -261,6 +280,9 @@ class PlaybackEngine {
 		} else {
 			this.clock.set({ currentMs: target });
 			this.render(target);
+			// Have the sound around the new position ready by the time play is pressed.
+			clearTimeout(this.warmTimer);
+			this.warmTimer = setTimeout(() => this.warmAudio(), 300);
 		}
 	}
 
@@ -331,15 +353,28 @@ class PlaybackEngine {
 		};
 	}
 
+	/** Removes every layer, releasing its decoders and WebGL contexts, not just the DOM nodes. */
+	private removeLayers() {
+		for (const layer of this.videoLayers.values()) {
+			for (const slot of layer.slots) {
+				slot.disposed = true;
+				slot.keyer?.dispose();
+				slot.video.removeAttribute("src");
+				slot.video.load();
+			}
+			layer.root.remove();
+		}
+		for (const layer of this.textLayers.values()) layer.canvas.remove();
+		this.videoLayers.clear();
+		this.textLayers.clear();
+	}
+
 	/** One DOM layer per visual track, stacked in track order like the exporter. */
 	private rebuildLayers() {
 		const stage = this.stage;
 		const project = this.project;
 		if (!stage || !project) return;
-		for (const layer of this.videoLayers.values()) layer.root.remove();
-		for (const layer of this.textLayers.values()) layer.canvas.remove();
-		this.videoLayers.clear();
-		this.textLayers.clear();
+		this.removeLayers();
 		const makeSlot = (root: HTMLDivElement): Slot => {
 			const frame = document.createElement("div");
 			frame.className = "absolute top-0 left-0 overflow-hidden";
@@ -375,15 +410,15 @@ class PlaybackEngine {
 			const redraw = () => {
 				if (slot.keyer && slot.keyedClip?.key && video.style.display !== "none")
 					slot.keyer.draw(video, slot.keyedClip.key);
-				video.requestVideoFrameCallback(redraw);
-				// A paused video only has its frame once a seek or load finishes.
-				const redrawOnce = () => {
-					if (slot.keyer && slot.keyedClip?.key) slot.keyer.draw(video, slot.keyedClip.key);
-				};
-				video.addEventListener("seeked", redrawOnce);
-				video.addEventListener("loadeddata", redrawOnce);
 			};
-			video.requestVideoFrameCallback(redraw);
+			const onFrame = () => {
+				redraw();
+				if (!slot.disposed) video.requestVideoFrameCallback(onFrame);
+			};
+			video.requestVideoFrameCallback(onFrame);
+			// A paused video only has its frame once a seek or load finishes.
+			video.addEventListener("seeked", redraw);
+			video.addEventListener("loadeddata", redraw);
 			return slot;
 		};
 		for (const track of [...project.data.tracks].reverse()) {
@@ -418,15 +453,53 @@ class PlaybackEngine {
 					if (c.type === "media" && ms < clipEnd(c)) active.push(c);
 				}
 			}
-			// The two most recent clips: the later one draws on top (crossfades).
+			// The two most recent clips; the later one draws on top (crossfades). A clip keeps
+			// the slot it is already in, so a crossfade never reloads (and blanks) the outgoing picture.
 			const shown = active.slice(-2);
-			this.renderSlot(layer.slots[0], shown.length === 2 ? shown[0] : undefined, ms, layer.root);
-			this.renderSlot(layer.slots[1], shown.length === 2 ? shown[1] : shown[0], ms, layer.root);
+			const assigned: (MediaClip | undefined)[] = [undefined, undefined];
+			for (const c of shown) {
+				const i = layer.slots.findIndex((slot) => slot.clipId === c.id);
+				if (i >= 0 && !assigned[i]) assigned[i] = c;
+			}
+			for (const c of shown) {
+				if (assigned.includes(c)) continue;
+				const free = assigned.findIndex((a, i) => !a && layer.slots[i].clipId === null);
+				assigned[free >= 0 ? free : assigned.findIndex((a) => !a)] = c;
+			}
+			const top = shown.at(-1);
+			layer.slots.forEach((slot, i) => {
+				this.renderSlot(slot, assigned[i], ms);
+				slot.frame.style.zIndex = assigned[i] && assigned[i] === top ? "1" : "0";
+			});
+			// An idle slot loads the next clip ahead of time, so the cut to it is instant.
+			const idle = layer.slots.find((_, i) => !assigned[i]);
+			if (idle) {
+				const next = (index.byTrack.get(trackId) ?? []).find(
+					(c): c is MediaClip =>
+						c.type === "media" && c.startMs > ms && c.startMs - ms < PRELOAD_MS,
+				);
+				if (next) this.preload(idle, next);
+			}
 		}
 		this.drawText(ms);
 	}
 
-	private renderSlot(slot: Slot, clip: MediaClip | undefined, ms: number, root: HTMLDivElement) {
+	/** Loads a clip's first frame into a hidden slot. */
+	private preload(slot: Slot, clip: MediaClip) {
+		const project = this.project;
+		const asset = this.index?.assets.get(clip.assetId);
+		if (!project || asset?.kind !== "video") return;
+		const url = project.proxyUrls[clip.assetId] ?? project.assetUrls[clip.assetId];
+		if (slot.src !== url) {
+			slot.video.src = url;
+			slot.src = url;
+			slot.pendingSeek = null;
+		}
+		const target = clip.inMs / 1000;
+		if (Math.abs(slot.video.currentTime - target) > 0.015) this.seekVideo(slot, target);
+	}
+
+	private renderSlot(slot: Slot, clip: MediaClip | undefined, ms: number) {
 		const project = this.project;
 		const index = this.index;
 		if (!clip || !project || !index) {
@@ -436,7 +509,7 @@ class PlaybackEngine {
 			return;
 		}
 		const asset = index.assets.get(clip.assetId);
-		if (asset?.kind === "adjustment") return this.renderAdjustment(slot, clip, ms, root);
+		if (asset?.kind === "adjustment") return this.renderAdjustment(slot, clip, ms);
 		if (slot.frame.style.backdropFilter) slot.frame.style.backdropFilter = "";
 		const isImage = asset?.kind === "image";
 		const url = isImage
@@ -452,8 +525,8 @@ class PlaybackEngine {
 		if (clip.fadeInMs > 0 && local < clip.fadeInMs) opacity *= local / clip.fadeInMs;
 		if (clip.fadeOutMs > 0 && local > clip.durationMs - clip.fadeOutMs)
 			opacity *= (clip.durationMs - local) / clip.fadeOutMs;
-		const W = root.clientWidth;
-		const H = root.clientHeight;
+		const W = this.stageW;
+		const H = this.stageH;
 		const ar = asset?.width && asset.height ? asset.width / asset.height : W / Math.max(1, H);
 		const fit = Math.min(W / ar, H) * scale;
 		const w = fit * ar;
@@ -520,22 +593,29 @@ class PlaybackEngine {
 			slot.pendingSeek = null;
 		}
 		const target = (clip.inMs + local * clip.speed) / 1000;
-		const rate = Math.min(16, clip.speed * Math.abs(this.rate));
-		if (video.playbackRate !== rate) video.playbackRate = rate;
+		const base = Math.min(16, clip.speed * Math.abs(this.rate));
 		if (this.playing && this.rate > 0) {
-			const drift = Math.abs(video.currentTime - target);
+			// Positive when the picture is behind the clock.
+			const error = target - video.currentTime;
+			const drift = Math.abs(error);
+			// Small drift is corrected by playing slightly faster or slower (invisible);
+			// only a large jump seeks, which would stall the picture for a moment.
+			const rate =
+				drift > 0.02 && drift <= 0.5 ? base * (1 + Math.max(-0.08, Math.min(0.08, error))) : base;
+			if (Math.abs(video.playbackRate - rate) > 0.001) video.playbackRate = rate;
 			if (video.paused) {
 				if (drift > 0.05) this.seekVideo(slot, target);
 				void video.play().catch(() => {});
-			} else if (drift > 0.25) this.seekVideo(slot, target);
+			} else if (drift > 0.5) this.seekVideo(slot, target);
 		} else {
+			if (video.playbackRate !== base) video.playbackRate = base;
 			if (!video.paused) video.pause();
 			if (Math.abs(video.currentTime - target) > 0.015) this.seekVideo(slot, target);
 		}
 	}
 
 	/** An adjustment layer: a full-frame backdrop filter grading everything drawn below it. */
-	private renderAdjustment(slot: Slot, clip: MediaClip, ms: number, root: HTMLDivElement) {
+	private renderAdjustment(slot: Slot, clip: MediaClip, ms: number) {
 		const frame = slot.frame.style;
 		const local = ms - clip.startMs;
 		let opacity = clip.transform.opacity;
@@ -543,13 +623,13 @@ class PlaybackEngine {
 		if (clip.fadeOutMs > 0 && local > clip.durationMs - clip.fadeOutMs)
 			opacity *= (clip.durationMs - local) / clip.fadeOutMs;
 		frame.display = "";
-		frame.width = `${root.clientWidth}px`;
-		frame.height = `${root.clientHeight}px`;
+		frame.width = `${this.stageW}px`;
+		frame.height = `${this.stageH}px`;
 		frame.transform = "none";
 		frame.opacity = String(Math.max(0, Math.min(1, opacity)));
 		frame.clipPath = "none";
 		frame.maskImage = clip.mask
-			? `url(${maskUrl(clip.mask, root.clientWidth / Math.max(1, root.clientHeight))})`
+			? `url(${maskUrl(clip.mask, this.stageW / Math.max(1, this.stageH))})`
 			: "none";
 		frame.maskSize = "100% 100%";
 		frame.backdropFilter = cssFilter(clip.color) === "none" ? "" : cssFilter(clip.color);
@@ -582,8 +662,8 @@ class PlaybackEngine {
 				}
 			}
 			const canvas = layer.canvas;
-			const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
-			const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+			const w = Math.max(1, Math.round(this.stageW * dpr));
+			const h = Math.max(1, Math.round(this.stageH * dpr));
 			const frames = active.map((c) => ({ c, f: textFrame(c, ms - c.startMs, H) }));
 			// Skip the redraw when nothing on this layer looks different from the last frame.
 			const key = `${w}x${h}|${frames.map(({ c, f }) => `${c.id}:${f.alpha.toFixed(3)}:${f.scale.toFixed(3)}:${f.offsetY.toFixed(1)}:${f.reveal}`).join(",")}`;
@@ -696,7 +776,8 @@ class PlaybackEngine {
 
 	/** Decoded audio for an asset at a speed, from a small extracted or time-stretched file. */
 	private buffer(asset: Asset, speed: number): Promise<AudioBuffer | null> {
-		const key = `${asset.id}@${Math.round(speed * 1000) / 1000}`;
+		// Keyed by file too, so relinked media and re-rendered sequences are heard as they are now.
+		const key = bufferKey(asset, speed);
 		let cached = this.buffers.get(key);
 		if (!cached) {
 			cached = window.cue
@@ -713,31 +794,31 @@ class PlaybackEngine {
 		return cached;
 	}
 
-	/** Start decoding what the timeline will need, nearest to the playhead first, one at a time. */
+	/**
+	 * Decodes the sound needed around the playhead (nearest first, one at a time)
+	 * and lets go of sound that is far away or no longer used, so memory stays
+	 * bounded however long the project is.
+	 */
 	private warmAudio() {
 		const index = this.index;
 		if (!index || !this.project) return;
 		const now = this.currentMs;
-		const seen = new Set<string>();
-		const wanted = this.project.data.clips
-			.filter(
-				(c): c is MediaClip =>
-					c.type === "media" &&
-					!!index.assets.get(c.assetId)?.hasAudio &&
-					index.assets.get(c.assetId)?.kind !== "image",
-			)
-			.sort((a, b) => Math.abs(a.startMs - now) - Math.abs(b.startMs - now))
-			.filter((c) => {
-				const key = `${c.assetId}@${c.speed}`;
-				if (seen.has(key)) return false;
-				seen.add(key);
-				return true;
-			});
-		let chain = Promise.resolve();
-		for (const c of wanted) {
+		const near = (c: MediaClip) =>
+			clipEnd(c) > now - KEEP_BEHIND_MS && c.startMs < now + WARM_AHEAD_MS;
+		const wanted = new Map<string, { asset: Asset; speed: number; distance: number }>();
+		for (const c of this.project.data.clips) {
+			if (c.type !== "media" || !near(c)) continue;
 			const asset = index.assets.get(c.assetId);
-			if (asset) chain = chain.then(() => this.buffer(asset, c.speed).then(() => undefined));
+			if (!asset?.hasAudio || asset.kind === "image") continue;
+			const key = bufferKey(asset, c.speed);
+			const distance = Math.max(0, c.startMs - now);
+			const seen = wanted.get(key);
+			if (!seen || distance < seen.distance) wanted.set(key, { asset, speed: c.speed, distance });
 		}
+		for (const key of this.buffers.keys()) if (!wanted.has(key)) this.buffers.delete(key);
+		let chain = Promise.resolve();
+		for (const { asset, speed } of [...wanted.values()].sort((a, b) => a.distance - b.distance))
+			chain = chain.then(() => this.buffer(asset, speed).then(() => undefined));
 	}
 
 	private audible(clip: MediaClip, track: Track): boolean {
@@ -750,6 +831,8 @@ class PlaybackEngine {
 	}
 
 	private clearScheduled() {
+		this.scheduleGen++;
+		this.scheduledClips.clear();
 		for (const source of this.scheduled) {
 			try {
 				source.stop();
@@ -760,14 +843,22 @@ class PlaybackEngine {
 
 	private reschedule() {
 		this.clearScheduled();
+		this.scheduleAhead();
+	}
+
+	/** Schedules the clips that start before the lookahead, once each per generation. */
+	private scheduleAhead() {
 		const project = this.project;
 		const index = this.index;
 		if (!project || !index || !this.playing || this.rate !== 1) return;
 		const ctx = this.audio();
 		const master = this.master as GainNode;
-		const scheduledAtPerf = this.startPerf;
+		const gen = this.scheduleGen;
+		const horizon = this.currentMs + SCHEDULE_AHEAD_MS;
+		this.warmAudio();
 		for (const clip of project.data.clips) {
 			if (clip.type !== "media") continue;
+			if (clip.startMs > horizon || this.scheduledClips.has(clip.id)) continue;
 			const track = index.tracks.get(clip.trackId);
 			const asset = index.assets.get(clip.assetId);
 			if (
@@ -779,8 +870,9 @@ class PlaybackEngine {
 			)
 				continue;
 			if (clipEnd(clip) <= this.currentMs) continue;
+			this.scheduledClips.add(clip.id);
 			void this.buffer(asset, clip.speed).then((buffer) => {
-				if (!buffer || !this.playing || this.startPerf !== scheduledAtPerf) return;
+				if (!buffer || !this.playing || this.scheduleGen !== gen) return;
 				const nowMs = this.startMs + (performance.now() - this.startPerf);
 				const from = Math.max(nowMs, clip.startMs);
 				if (from >= clipEnd(clip)) return;
@@ -839,6 +931,20 @@ class PlaybackEngine {
 			});
 		}
 	}
+}
+
+/** A hidden slot loads the next clip this long before it starts. */
+const PRELOAD_MS = 1500;
+
+/** Sound is scheduled this far ahead of the playhead… */
+const SCHEDULE_AHEAD_MS = 20_000;
+/** …decoded this far ahead… */
+const WARM_AHEAD_MS = 60_000;
+/** …and kept this far behind it. */
+const KEEP_BEHIND_MS = 30_000;
+
+function bufferKey(asset: Asset, speed: number) {
+	return `${asset.id}|${asset.path}@${Math.round(speed * 1000) / 1000}`;
 }
 
 export const playback = new PlaybackEngine();

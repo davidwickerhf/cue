@@ -3,9 +3,9 @@ import type { TextClip } from "../../electron/core/types";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
-import { applyWorkspace, BUILT_IN } from "../lib/workspace";
 import { app, editor, findLine, type SidebarPanel } from "../lib/state";
 import { rasterise } from "../lib/textDraw";
+import { applyWorkspace, BUILT_IN } from "../lib/workspace";
 
 /** Carries out commands from the main process (and therefore from agents). */
 export function useEditorCommands() {

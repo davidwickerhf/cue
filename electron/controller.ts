@@ -4,13 +4,13 @@ import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
 import type { TextRender } from "./core/exporter";
-import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
-import type { AiRuntime } from "./core/runtime";
 import { scanProjects, summarise } from "./core/library";
 import { activeSequence, allSequences } from "./core/ops";
+import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
+import type { AiRuntime } from "./core/runtime";
 import { parseSrt } from "./core/srt";
-import { TITLE_TEMPLATES } from "./core/titles";
 import type { ProjectStore } from "./core/store";
+import { TITLE_TEMPLATES } from "./core/titles";
 import type {
 	Actor,
 	AgentStatus,
@@ -24,6 +24,50 @@ import type {
 	RecorderStatus,
 	TextClip,
 } from "./core/types";
+
+/** Calls that only read, so they never wait for a transaction. */
+const READ_ONLY =
+	/^(get_|list_|render_frame$|search_|find_moments$|focus_window$|pause$|seek$|play$)/;
+
+/** File types each kind of output may have, for paths chosen by an agent. */
+const OUTPUT_TYPES: Record<string, string[]> = {
+	video: [".mp4", ".mov", ".m4v", ".mkv", ".webm"],
+	audio: [".wav", ".m4a", ".mp3", ".aac", ".flac"],
+	voiceover: [".wav", ".m4a", ".mp3", ".aac", ".flac"],
+	captions: [".srt", ".vtt"],
+	otio: [".otio"],
+	fcpxml: [".fcpxml"],
+	mlt: [".mlt"],
+	edl: [".edl"],
+	frame: [".png"],
+	project: [".cueproj"],
+};
+
+/**
+ * Checks where an agent wants to write. Agents may create new files anywhere
+ * (with the right file type) and overwrite files only in the project's export
+ * folder, so a tool call can never replace media, projects or documents.
+ */
+async function checkAgentOutput(
+	target: string,
+	projectDir: string,
+	kind: string,
+	folderOk = false,
+): Promise<void> {
+	const stat = await fs.stat(target).catch(() => null);
+	const inExports = !path.relative(path.join(projectDir, "export"), target).startsWith("..");
+	if (stat?.isDirectory()) {
+		if (folderOk && !path.relative(projectDir, target).startsWith("..")) return;
+		throw new Error(`Agents can only write into folders inside the project: ${target}`);
+	}
+	const types = OUTPUT_TYPES[kind];
+	if (!folderOk && types && !types.includes(path.extname(target).toLowerCase()))
+		throw new Error(`A ${kind} output must end in ${types.join(", ")}: ${target}`);
+	if (stat && !inExports)
+		throw new Error(
+			`${target} already exists. Agents only overwrite files in the project's export folder; choose a new name.`,
+		);
+}
 
 interface PendingRecording {
 	lineId: string;
@@ -175,6 +219,8 @@ export class Controller extends EventEmitter {
 	}
 
 	async call(method: MethodName, params: unknown, actor: Actor): Promise<unknown> {
+		// Edits wait for a running transaction (an import, a freeze frame) to finish.
+		if (!READ_ONLY.test(method)) await this.store.settled();
 		switch (method) {
 			case "get_state":
 				return this.describeState();
@@ -205,7 +251,16 @@ export class Controller extends EventEmitter {
 				await this.refreshRecent();
 				return { closed: true };
 			case "save_project_as": {
-				const file = await this.store.saveAs(parseInput("save_project_as", params).path, actor);
+				const target = parseInput("save_project_as", params).path;
+				if (actor === "agent") {
+					const file = path.resolve(target);
+					await checkAgentOutput(
+						file.endsWith(".cueproj") ? file : `${file}.cueproj`,
+						"/",
+						"project",
+					);
+				}
+				const file = await this.store.saveAs(target, actor);
 				await this.afterOpen();
 				return { path: file };
 			}
@@ -506,9 +561,17 @@ export class Controller extends EventEmitter {
 				const { assetId, fillers } = parseInput("remove_filler_words", params);
 				return this.store.removeFillers(assetId, actor, fillers);
 			}
-			case "build_proxies":
-				this.store.buildProxies();
-				return { started: true };
+			case "build_proxies": {
+				if (!this.store.current.settings.useProxies)
+					throw new Error("Playback copies are turned off for this project (settings.useProxies).");
+				const queued = this.store.buildProxies();
+				return {
+					queued,
+					note: queued
+						? "Building in the background."
+						: "Every video that needs one has a playback copy.",
+				};
+			}
 			case "duplicate_clips":
 				return this.store.apply(
 					{ type: "duplicateClips", ...parseInput("duplicate_clips", params) },
@@ -525,7 +588,8 @@ export class Controller extends EventEmitter {
 				);
 			case "import_script": {
 				const { file, replace } = parseInput("import_script", params);
-				const text = await fs.readFile(path.resolve(file), "utf8");
+				// Relative paths are relative to the project, like every other path an agent gives.
+				const text = await fs.readFile(path.resolve(this.store.projectDir, file), "utf8");
 				const lines = file.toLowerCase().endsWith(".srt")
 					? parseSrt(text)
 					: (JSON.parse(text) as LineInput[]);
@@ -622,7 +686,8 @@ export class Controller extends EventEmitter {
 				);
 			case "set_in_out": {
 				const input = parseInput("set_in_out", params);
-				this.hooks.sendCommand({ type: "setInOut", ...input });
+				if (!this.hooks.sendCommand({ type: "setInOut", ...input }))
+					throw new Error("The Cue window is not open.");
 				return {
 					inMs: input.inMs ?? this.recorder.inMs ?? null,
 					outMs: input.outMs ?? this.recorder.outMs ?? null,
@@ -769,6 +834,13 @@ export class Controller extends EventEmitter {
 				return { redone: this.store.redo(actor) };
 			case "export": {
 				const { kind, out, range } = parseInput("export", params);
+				if (actor === "agent" && out)
+					await checkAgentOutput(
+						path.resolve(this.store.projectDir, out),
+						this.store.projectDir,
+						kind,
+						kind === "stems",
+					);
 				return this.job(`Exporting ${kind}`, () =>
 					this.store.export(kind, out, actor, this.hooks.renderText, range),
 				);
@@ -780,6 +852,7 @@ export class Controller extends EventEmitter {
 				const file = out
 					? path.resolve(this.store.projectDir, out)
 					: path.join(this.store.projectDir, "export", name);
+				if (actor === "agent") await checkAgentOutput(file, this.store.projectDir, "frame");
 				await fs.mkdir(path.dirname(file), { recursive: true });
 				await fs.copyFile(frame, file);
 				this.store.log(
@@ -908,11 +981,17 @@ export class Controller extends EventEmitter {
 			}, budget);
 			this.pending.set(requestId, { lineId: l.id, resolve, reject, timer });
 		});
-		this.command({ type: "record", lineId: l.id, prerollMs: preroll, requestId });
-		if (!input.wait) {
-			done.catch(() => {});
-			return { started: l.id, requestId };
+		// Without `wait` nobody awaits the take, so its failure must not go unhandled.
+		done.catch(() => {});
+		try {
+			this.command({ type: "record", lineId: l.id, prerollMs: preroll, requestId });
+		} catch (error) {
+			const pending = this.pending.get(requestId);
+			if (pending) clearTimeout(pending.timer);
+			this.pending.delete(requestId);
+			throw error;
 		}
+		if (!input.wait) return { started: l.id, requestId };
 		const take = await done;
 		return this.describeTake(this.requireLine(l.id), take);
 	}

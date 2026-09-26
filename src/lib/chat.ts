@@ -44,7 +44,8 @@ export const agentDraft = createStore<{ text: string | null }>({ text: null });
 
 const storageKey = (projectPath: string) => `cue.chat.${projectPath}`;
 
-function save() {
+function write() {
+	saveTimer = undefined;
 	const { chat: c, projectPath } = chat.get();
 	if (!projectPath) return;
 	try {
@@ -55,6 +56,23 @@ function save() {
 	} catch {}
 }
 
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Saves shortly after the last change, not on every streamed word. */
+function save() {
+	clearTimeout(saveTimer);
+	saveTimer = setTimeout(write, 500);
+}
+
+/** Writes a pending save now (before switching projects or closing). */
+function flushSave() {
+	if (saveTimer === undefined) return;
+	clearTimeout(saveTimer);
+	write();
+}
+
+window.addEventListener("beforeunload", flushSave);
+
 function update(fn: (c: Chat) => Chat) {
 	chat.set({ chat: fn(chat.get().chat) });
 	save();
@@ -63,6 +81,7 @@ function update(fn: (c: Chat) => Chat) {
 /** Switches the conversation when another project opens. */
 export function switchProjectChat(projectPath: string | null) {
 	if (chat.get().projectPath === projectPath) return;
+	flushSave();
 	let restored: Chat | null = null;
 	try {
 		const raw = projectPath ? localStorage.getItem(storageKey(projectPath)) : null;

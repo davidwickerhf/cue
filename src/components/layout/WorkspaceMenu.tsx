@@ -7,8 +7,8 @@ import {
 	deleteWorkspace,
 	type Layout,
 	layout,
-	saveWorkspace,
 	savedWorkspaces,
+	saveWorkspace,
 } from "../../lib/workspace";
 
 const same = (a: Layout, b: Layout) => JSON.stringify(a) === JSON.stringify(b);

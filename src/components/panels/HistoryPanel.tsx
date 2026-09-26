@@ -1,6 +1,6 @@
 import {
-	ArrowCounterClockwise,
 	ArrowClockwise,
+	ArrowCounterClockwise,
 	ClockCounterClockwise,
 	Gear,
 	Robot,

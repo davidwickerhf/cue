@@ -7,12 +7,12 @@ import {
 } from "@phosphor-icons/react";
 import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
-import { exportDialog } from "../ExportDialog";
-import { WindowDots } from "../WindowDots";
-import { WorkspaceMenu } from "./WorkspaceMenu";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
+import { exportDialog } from "../ExportDialog";
 import { IconButton } from "../ui/controls";
+import { WindowDots } from "../WindowDots";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 
 export function EditorHeader() {
 	const project = useProject();

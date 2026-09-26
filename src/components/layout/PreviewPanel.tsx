@@ -2,11 +2,11 @@ import { CaretLeft, CaretRight, Pause, Play, SkipBack } from "@phosphor-icons/re
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Clip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
-import { SourceMonitor, ViewerTabs } from "./SourceMonitor";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { useApp, useProject } from "../../lib/state";
 import { cn, formatSeconds } from "../../lib/utils";
+import { SourceMonitor, ViewerTabs } from "./SourceMonitor";
 
 export function PreviewPanel() {
 	const project = useProject();
@@ -38,7 +38,7 @@ export function PreviewPanel() {
 	useEffect(() => {
 		// Re-lay out pictures and text when the viewer is resized.
 		playback.refresh();
-	}, [size.w]);
+	}, [size.w, size.h]);
 
 	return (
 		<section className="relative flex min-w-0 flex-1 flex-col bg-viewer">

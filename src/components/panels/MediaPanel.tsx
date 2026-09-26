@@ -13,11 +13,11 @@ import {
 import { useEffect, useState } from "react";
 import type { Asset, ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
-import { openSource } from "../../lib/source";
-import { locate } from "../RelinkMedia";
 import { playback } from "../../lib/playback";
+import { openSource } from "../../lib/source";
 import { useProject } from "../../lib/state";
 import { cn, formatTime } from "../../lib/utils";
+import { locate } from "../RelinkMedia";
 import { Empty, IconButton, Section, Segmented } from "../ui/controls";
 
 type Filter = "all" | "video" | "audio" | "image" | "takes";
@@ -112,7 +112,8 @@ function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot 
 		return () => {
 			alive = false;
 		};
-	}, [asset.id, asset.kind]);
+		// A new file (relinked, re-rendered) has new frames.
+	}, [asset.id, asset.kind, asset.path]);
 
 	const addAtPlayhead = () => {
 		const trackId = trackFor(project, asset);

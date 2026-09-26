@@ -24,6 +24,16 @@ function typing(target: EventTarget | null) {
 	);
 }
 
+/** Keys that may auto-repeat while held. */
+const REPEATABLE = new Set(["arrowleft", "arrowright", "arrowup", "arrowdown", "=", "+", "-"]);
+
+/** A dialog or menu is open, so its keys (Space, Delete, Esc…) must not reach the timeline. */
+function overlayOpen() {
+	return !!document.querySelector(
+		'[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+	);
+}
+
 /** Copied clips, positioned relative to the earliest one. */
 let clipboard: Clip[] = [];
 
@@ -60,7 +70,9 @@ export function useShortcuts() {
 	useEffect(() => {
 		let shuttleRate = 0;
 		const onKey = (e: KeyboardEvent) => {
-			if (typing(e.target) || appSettings.get().open) return;
+			if (typing(e.target) || appSettings.get().open || overlayOpen()) return;
+			// Holding a key repeats only movement and zoom, never edits.
+			if (e.repeat && !REPEATABLE.has(e.key.toLowerCase())) return;
 			const state = app.get().state;
 			const project = state?.project;
 			if (!project) return;
@@ -133,7 +145,8 @@ export function useShortcuts() {
 			else if (key === "end") playback.seek(project.durationMs);
 			else if (key === "i" && !mod) editor.set({ inPoint: Math.round(playback.currentMs) });
 			else if (key === "o" && !mod) editor.set({ outPoint: Math.round(playback.currentMs) });
-			else if (key === "x" && e.altKey) editor.set({ inPoint: null, outPoint: null });
+			// ⌥ changes e.key on macOS (⌥X types ≈), so this one checks the physical key.
+			else if (e.code === "KeyX" && e.altKey) editor.set({ inPoint: null, outPoint: null });
 			else if (key === "/" && !mod) {
 				const { inPoint, outPoint } = editor.get();
 				playback.play({ fromMs: inPoint ?? playback.currentMs, toMs: outPoint ?? undefined });
@@ -229,14 +242,19 @@ export function useShortcuts() {
 			}
 		};
 		// The Edit menu's copy/cut/paste arrive as clipboard events rather than key presses.
+		// Selected text (a transcript, the chat, a log) copies as text as usual.
 		const onClipboard = (e: ClipboardEvent) => {
 			if (typing(e.target) || typing(document.activeElement)) return;
+			if (e.type !== "paste" && !(window.getSelection()?.isCollapsed ?? true)) return;
 			const state = app.get().state;
 			const project = state?.project;
 			if (!project) return;
 			const selectedClips = project.data.clips.filter((c) => state.selectedClipIds.includes(c.id));
-			if (e.type === "paste") pasteAt(playback.currentMs);
-			else if (selectedClips.length) {
+			if (e.type === "paste") {
+				if (clipboard.length === 0) return;
+				pasteAt(playback.currentMs);
+			} else {
+				if (selectedClips.length === 0) return;
 				clipboard = selectedClips;
 				if (e.type === "cut") void run("delete_clips", { ids: selectedClips.map((c) => c.id) });
 			}

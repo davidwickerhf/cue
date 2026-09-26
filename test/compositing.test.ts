@@ -118,4 +118,66 @@ describe("compositing", () => {
 		// And after it, colour is back.
 		expect(isRed(await pixel(out, 5, 160, 90, 320))).toBe(true);
 	}, 90000);
+
+	it("animates keyframes over time and exports adjustment layers with audio", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-kf-"));
+		const box = path.join(dir, "box.mp4");
+		const tone = path.join(dir, "tone.wav");
+		await ffmpeg(["-f", "lavfi", "-i", "color=c=red:s=40x40:r=30:d=5", "-pix_fmt", "yuv420p", box]);
+		await ffmpeg(["-f", "lavfi", "-i", "sine=frequency=440:duration=5", tone]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Keyframes" });
+		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180 } }, "user");
+		const [pic, sound] = await store.importMedia([box, tone], "user");
+		const audioTrack = store.current.tracks.find((t) => t.kind === "audio")?.id as string;
+		store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{ type: "media", trackId: "V1", assetId: pic.id, startMs: 0, durationMs: 5000 },
+					{ type: "media", trackId: audioTrack, assetId: sound.id, startMs: 0, durationMs: 5000 },
+				],
+			},
+			"user",
+		);
+		const clip = store.current.clips.find(
+			(c) => c.type === "media" && c.assetId === pic.id,
+		) as MediaClip;
+		store.apply({ type: "updateClip", id: clip.id, patch: { transform: { scale: 0.25 } } }, "user");
+		for (const [atMs, value] of [
+			[0, 0.2],
+			[4000, 0.8],
+		])
+			store.apply(
+				{
+					type: "setKeyframe",
+					clipId: clip.id,
+					prop: "x",
+					keyframe: { atMs, value, ease: "linear" },
+				},
+				"user",
+			);
+		store.apply({ type: "addAdjustment", startMs: 0, durationMs: 1000 }, "user");
+		const adj = store.current.clips.find(
+			(c) => c.type === "media" && c.assetId === "a_adjust",
+		) as MediaClip;
+		store.apply({ type: "updateClip", id: adj.id, patch: { color: { saturation: 0 } } }, "user");
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
+			"user",
+		);
+		const out = (await store.export("video", "out.mp4", "user")).outputs[0];
+		const isRed = ([r, g, b]: number[]) => r > 150 && g < 80 && b < 80;
+		// Halfway through the move the box is in the middle, not already at the end.
+		expect(isRed(await pixel(out, 2, 160, 90, 320))).toBe(true);
+		expect(isRed(await pixel(out, 2, 256, 90, 320))).toBe(false);
+		expect(isRed(await pixel(out, 4.5, 256, 90, 320))).toBe(true);
+		// The export has sound as well.
+		const probe = await run(ffmpegPath(), ["-i", out, "-hide_banner"]).catch((e) => e);
+		expect(String(probe.stderr)).toContain("Audio:");
+	}, 90000);
 });
