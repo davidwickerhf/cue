@@ -1,9 +1,18 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { keyframeExpr, zoomExprs } from "./anim";
 import { toSrt, toVtt } from "./captions";
 import { ffmpeg } from "./media";
-import { clipEnd, deriveLines, projectDuration, resolveInProject, sourceSpan, stemName, voiceoverTrack } from "./project";
+import {
+	clipEnd,
+	deriveLines,
+	projectDuration,
+	sourceSpan,
+	stemName,
+	voiceoverTrack,
+} from "./project";
+import { resolveInProject } from "./paths";
 import type { Asset, Clip, MediaClip, ProjectData, TextClip, Track } from "./types";
 
 /** A text clip rendered by the editor window: one still, or a frame sequence for animated text. */
@@ -62,6 +71,16 @@ interface AudioSource {
 	gain: number;
 	voiceover: boolean;
 	duck: boolean;
+	/** Fade-out including any crossfade into the next clip on the track. */
+	fadeOutMs: number;
+}
+
+/** How long a clip's sound should fade out: its own fade, or the crossfade overlap with the next clip. */
+function effectiveFadeOut(data: ProjectData, clip: MediaClip): number {
+	const next = data.clips.find(
+		(x) => x.type === "media" && x.id !== clip.id && x.trackId === clip.trackId && x.transitionIn?.kind === "crossfade" && x.startMs < clipEnd(clip) && x.startMs > clip.startMs,
+	);
+	return Math.max(clip.fadeOutMs, next ? clipEnd(clip) - next.startMs : 0);
 }
 
 /** Audio clips that are heard: unmuted tracks, clips with audio, optional track filter. */
@@ -74,7 +93,7 @@ function audibleClips(ctx: ExportContext, onlyTracks?: Set<string>): AudioSource
 			const t = trackOf(data, c.trackId);
 			const a = assetOf(data, c.assetId);
 			if (t.muted || t.hidden || !a.hasAudio || a.kind === "image" || c.volume === 0 || t.volume === 0) return [];
-			return [{ clip: c, file: resolveInProject(ctx.dir, a.path), gain: c.volume * t.volume, voiceover: !!t.voiceover, duck: !!t.duck && !t.voiceover }];
+			return [{ clip: c, file: resolveInProject(ctx.dir, a.path), gain: c.volume * t.volume, voiceover: !!t.voiceover, duck: !!t.duck && !t.voiceover, fadeOutMs: effectiveFadeOut(data, c) }];
 		});
 }
 
@@ -83,11 +102,13 @@ function audioChain(input: string, src: AudioSource, label: string): string {
 	const { clip } = src;
 	const fades = [
 		clip.fadeInMs > 0 ? `afade=t=in:st=0:d=${s(clip.fadeInMs)}` : "",
-		clip.fadeOutMs > 0 ? `afade=t=out:st=${s(clip.durationMs - clip.fadeOutMs)}:d=${s(clip.fadeOutMs)}` : "",
+		src.fadeOutMs > 0 ? `afade=t=out:st=${s(clip.durationMs - src.fadeOutMs)}:d=${s(src.fadeOutMs)}` : "",
 	].filter(Boolean);
+	const keyed = clip.keyframes?.volume?.length;
+	const volume = keyed ? `volume='${src.gain.toFixed(4)}*(${keyframeExpr(clip.keyframes?.volume, 1, "t*1000")})':eval=frame` : `volume=${src.gain.toFixed(3)}`;
 	return (
 		`${input}atrim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},asetpts=PTS-STARTPTS${tempo(clip.speed)}` +
-		`,aresample=48000,aformat=channel_layouts=stereo${clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : ""},volume=${src.gain.toFixed(3)}` +
+		`,aresample=48000,aformat=channel_layouts=stereo${clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : ""},${volume}` +
 		(fades.length ? `,${fades.join(",")}` : "") +
 		`,adelay=${Math.round(clip.startMs)}:all=1[${label}]`
 	);
@@ -253,14 +274,35 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const file = resolveInProject(ctx.dir, a.path);
 		const t = clip.transform;
 		const c = t.crop;
-		const crop = c.left || c.top || c.right || c.bottom ? `,crop=w=iw*${(1 - c.left - c.right).toFixed(4)}:h=ih*${(1 - c.top - c.bottom).toFixed(4)}:x=iw*${c.left.toFixed(4)}:y=ih*${c.top.toFixed(4)}` : "";
-		// Fit the uncropped source to the canvas, then keep the cropped part at the same scale.
 		const sw = a.width || W;
 		const sh = a.height || H;
-		const fitScale = Math.min(W / sw, H / sh) * t.scale;
-		const fw = Math.max(2, Math.round(sw * (1 - c.left - c.right) * fitScale));
-		const fh = Math.max(2, Math.round(sh * (1 - c.top - c.bottom) * fitScale));
-		const size = `,scale=${fw}:${fh}`;
+		const fitBase = Math.min(W / sw, H / sh);
+		const cropW = 1 - c.left - c.right;
+		const cropH = 1 - c.top - c.bottom;
+		// Keyframed values are in clip-local milliseconds; filters see local seconds as `t`.
+		const kf = clip.keyframes ?? {};
+		const S = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, "t*1000") : String(t.scale);
+		const zoom = zoomExprs(clip.zooms, "t");
+		const zoomChain = zoom
+			? `,scale=w='trunc(iw*${zoom.scale}/2)*2':h='trunc(ih*${zoom.scale}/2)*2':eval=frame:flags=bicubic,crop=w=${sw}:h=${sh}:x='max(0,min(iw-${sw},${zoom.x}*iw-${sw}/2))':y='max(0,min(ih-${sh},${zoom.y}*ih-${sh}/2))'`
+			: "";
+		const grade = clip.color;
+		const colorChain = grade
+			? [
+					grade.brightness !== 0 || grade.contrast !== 1 || grade.saturation !== 1 ? `eq=brightness=${grade.brightness.toFixed(3)}:contrast=${grade.contrast.toFixed(3)}:saturation=${grade.saturation.toFixed(3)}` : "",
+					grade.temperature !== 0 ? `colortemperature=temperature=${Math.round(6500 - grade.temperature * 2500)}` : "",
+					grade.lut ? `lut3d=file='${grade.lut.replace(/'/g, "\\'")}'` : "",
+				]
+					.filter(Boolean)
+					.map((f) => `,${f}`)
+					.join("")
+			: "";
+		const crop = c.left || c.top || c.right || c.bottom ? `,crop=w=iw*${cropW.toFixed(4)}:h=ih*${cropH.toFixed(4)}:x=iw*${c.left.toFixed(4)}:y=ih*${c.top.toFixed(4)}` : "";
+		const baseW = sw * cropW * fitBase;
+		const baseH = sh * cropH * fitBase;
+		const size = kf.scale?.length
+			? `,scale=w='max(2,trunc(${baseW.toFixed(2)}*(${S})/2)*2)':h='max(2,trunc(${baseH.toFixed(2)}*(${S})/2)*2)':eval=frame`
+			: `,scale=${Math.max(2, Math.round((baseW * t.scale) / 2) * 2)}:${Math.max(2, Math.round((baseH * t.scale) / 2) * 2)}`;
 		const opacity = t.opacity < 1 ? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}` : "";
 		const fades = [
 			clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",
@@ -270,18 +312,20 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		let source: string;
 		if (a.kind === "image") {
 			index = addInput(["-loop", "1", "-framerate", String(fps), "-t", s(clip.durationMs), "-i", file]);
-			source = `[${index}:v]fps=${fps}`;
+			source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS`;
 		} else if (a.kind === "video") {
 			index = addInput(["-i", file]);
 			source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
 		} else continue;
-		// Offset of the cropped region's centre from the full source centre, in output pixels.
-		const dx = ((c.left - c.right) / 2) * sw * fitScale;
-		const dy = ((c.top - c.bottom) / 2) * sh * fitScale;
-		chains.push(`${source}${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`);
-		chains.push(
-			`[${current}][${label}]overlay=x='${(t.x * W + dx).toFixed(1)}-w/2':y='${(t.y * H + dy).toFixed(1)}-h/2':enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
-		);
+		chains.push(`${source}${zoomChain}${colorChain}${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`);
+		// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
+		const local = `(t-${start})*1000`;
+		const X = kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x);
+		const Y = kf.y?.length ? keyframeExpr(kf.y, t.y, local) : String(t.y);
+		const Sg = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale);
+		const dx = `${(((c.left - c.right) / 2) * sw * fitBase).toFixed(3)}*(${Sg})`;
+		const dy = `${(((c.top - c.bottom) / 2) * sh * fitBase).toFixed(3)}*(${Sg})`;
+		chains.push(`[${current}][${label}]overlay=x='${W}*(${X})+${dx}-w/2':y='${H}*(${Y})+${dy}-h/2':enable='between(t,${start},${end})':eof_action=pass[o${index}]`);
 		current = `o${index}`;
 	}
 	const scale = data.export.scale;

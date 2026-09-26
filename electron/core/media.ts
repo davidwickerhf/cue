@@ -195,3 +195,47 @@ export async function detectSilences(
 	if (open !== null && options.durationMs !== undefined) out.push({ startMs: from + open, endMs: from + options.durationMs });
 	return out;
 }
+
+/** atempo only accepts 0.5–2 per stage, so chain it. */
+export function atempoChain(speed: number): string {
+	const parts: string[] = [];
+	let rest = speed;
+	while (rest > 2) {
+		parts.push("atempo=2");
+		rest /= 2;
+	}
+	while (rest < 0.5) {
+		parts.push("atempo=0.5");
+		rest /= 0.5;
+	}
+	parts.push(`atempo=${rest.toFixed(4)}`);
+	return parts.join(",");
+}
+
+/**
+ * Small playback copy of a video: 540p with a keyframe every half second, so
+ * the editor can seek and scrub instantly. Uses the GPU encoder on macOS.
+ */
+export async function makeVideoProxy(input: string, output: string): Promise<void> {
+	await fs.mkdir(path.dirname(output), { recursive: true });
+	const tmp = `${output}.part.mp4`;
+	const encoder =
+		process.platform === "darwin"
+			? ["-c:v", "h264_videotoolbox", "-b:v", "2500k", "-realtime", "1"]
+			: ["-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-tune", "fastdecode"];
+	await ffmpeg(["-i", input, "-an", "-vf", "scale=-2:540:flags=bilinear", ...encoder, "-g", "15", "-pix_fmt", "yuv420p", "-movflags", "+faststart", tmp]);
+	await fs.rename(tmp, output);
+}
+
+/**
+ * Audio for playback: extracted from videos (so the editor never downloads a
+ * whole movie to decode its sound) and, for sped-up clips, time-stretched with
+ * pitch preserved, exactly as the export does it.
+ */
+export async function makeAudioProxy(input: string, output: string, speed: number): Promise<void> {
+	await fs.mkdir(path.dirname(output), { recursive: true });
+	const tmp = `${output}.part.m4a`;
+	const filters = speed === 1 ? [] : ["-af", atempoChain(speed)];
+	await ffmpeg(["-i", input, "-vn", ...filters, "-ac", "2", "-ar", "48000", "-c:a", "aac", "-b:a", "192k", tmp]);
+	await fs.rename(tmp, output);
+}

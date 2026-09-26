@@ -8,7 +8,7 @@ import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
 import type { TextRender } from "./core/exporter";
-import { resolveInProject } from "./core/project";
+import { resolveInProject } from "./core/paths";
 import { ProjectStore } from "./core/store";
 import type { EditorCommand, RecorderStatus, TextClip } from "./core/types";
 

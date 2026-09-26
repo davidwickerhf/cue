@@ -67,8 +67,15 @@ export function useEditorCommands() {
 				}
 			}
 		});
+		// Tell the main process where the playhead is (for agents) a few times a second at most.
+		let lastSent = 0;
+		let lastPlaying = false;
 		const offClock = playback.clock.subscribe(() => {
 			const { playing, currentMs } = playback.clock.get();
+			const now = performance.now();
+			if (playing === lastPlaying && now - lastSent < 250) return;
+			lastSent = now;
+			lastPlaying = playing;
 			window.cue.reportRecorder({ playing, currentMs: Math.round(currentMs) });
 		});
 		return () => {

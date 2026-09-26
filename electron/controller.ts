@@ -100,8 +100,11 @@ export class Controller extends EventEmitter {
 	}
 
 	updateRecorder(patch: Partial<RecorderStatus>): void {
-		this.recorder = { ...this.recorder, ...patch };
-		this.changed();
+		const before = this.recorder;
+		this.recorder = { ...before, ...patch };
+		// The playhead position is only for agents asking for it; don't rebroadcast state for it.
+		const meaningful = (Object.keys(patch) as (keyof RecorderStatus)[]).some((k) => k !== "currentMs" && k !== "playing" && before[k] !== patch[k]);
+		if (meaningful) this.changed();
 	}
 
 	selectClips(ids: string[]): void {

@@ -30,7 +30,21 @@ export interface Asset {
 	peakDb?: number | null;
 	/** Prompt, voice or model for generated media. */
 	generation?: { provider: string; model: string; prompt: string; voice?: string };
+	/** Word-level transcript of the speech in this media (source time). */
+	transcript?: Transcript;
 	actor: Actor;
+}
+
+export interface TranscriptWord {
+	text: string;
+	startMs: number;
+	endMs: number;
+}
+
+export interface Transcript {
+	model: string;
+	createdAt: string;
+	words: TranscriptWord[];
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +86,51 @@ export interface Transform {
 	crop: Crop;
 }
 
+export type Ease = "linear" | "ease" | "hold";
+
+export interface Keyframe {
+	/** Clip-local time. */
+	atMs: number;
+	value: number;
+	/** How the value travels to the next keyframe. */
+	ease: Ease;
+}
+
+export type KeyframeProp = "x" | "y" | "scale" | "volume";
+
+/** A push-in on part of a video clip, like the auto-zooms of screen recorders. */
+export interface Zoom {
+	id: string;
+	/** Clip-local start and end. */
+	startMs: number;
+	endMs: number;
+	/** 1.2–4. */
+	scale: number;
+	/** Point of the source frame to zoom into, 0–1. */
+	x: number;
+	y: number;
+	/** Time to zoom in and out. */
+	easeMs: number;
+}
+
+export interface ColorGrade {
+	/** -1–1, 0 is neutral. */
+	brightness: number;
+	/** 0–3, 1 is neutral. */
+	contrast: number;
+	/** 0–3, 1 is neutral. */
+	saturation: number;
+	/** -1 (cool) – 1 (warm). */
+	temperature: number;
+	/** Absolute path of a .cube LUT, applied on export. */
+	lut?: string;
+}
+
+export interface Transition {
+	kind: "crossfade" | "dip";
+	durationMs: number;
+}
+
 export interface MediaClip {
 	id: string;
 	type: "media";
@@ -90,6 +149,13 @@ export interface MediaClip {
 	transform: Transform;
 	/** Reduce background noise in this clip's audio. */
 	denoise: boolean;
+	keyframes?: Partial<Record<KeyframeProp, Keyframe[]>>;
+	zooms?: Zoom[];
+	color?: ColorGrade;
+	/** How this clip enters from the clip before it on the same track. */
+	transitionIn?: Transition;
+	/** Clips with the same group move and delete together (e.g. linked picture and sound). */
+	groupId?: string;
 	/** Voiceover clips remember the script line they belong to. */
 	lineId?: string;
 	name?: string;
@@ -131,6 +197,7 @@ export interface TextClip {
 	animationOut: TextAnimation;
 	/** Captions generated from speech keep a pointer to their source. */
 	source?: { kind: "caption"; assetId?: string };
+	groupId?: string;
 	name?: string;
 }
 
@@ -180,6 +247,8 @@ export interface RecordingSettings {
 	/** Silence kept around trimmed speech. */
 	padMs: number;
 	silenceDb: number;
+	/** Play lightweight copies of large videos in the editor (exports always use the originals). */
+	useProxies: boolean;
 }
 
 export interface ExportSettings {
@@ -247,11 +316,15 @@ export interface ActivityEntry {
 }
 
 export interface ProjectSnapshot {
+	/** Increases with every change, so views can skip work when nothing changed. */
+	revision: number;
 	path: string;
 	dir: string;
 	data: ProjectData;
 	/** Absolute file URL per asset id, loadable by the editor. */
 	assetUrls: Record<string, string>;
+	/** Lightweight playback copies of videos, when ready. */
+	proxyUrls: Record<string, string>;
 	durationMs: number;
 	lines: LineView[];
 	canUndo: boolean;

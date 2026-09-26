@@ -1,4 +1,3 @@
-import path from "node:path";
 import { z } from "zod";
 import type {
 	AiSettings,
@@ -25,6 +24,7 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
 	monitor: "mute",
 	padMs: 250,
 	silenceDb: -42,
+	useProxies: true,
 };
 
 export const DEFAULT_EXPORT: ExportSettings = {
@@ -129,7 +129,28 @@ export const settingsSchema = z.object({
 	monitor: z.enum(["mute", "timeline"]),
 	padMs: z.number().min(0).max(2000),
 	silenceDb: z.number().min(-80).max(-10),
+	useProxies: z.boolean(),
 });
+
+export const keyframeSchema = z.object({ atMs: z.number().min(0), value: z.number(), ease: z.enum(["linear", "ease", "hold"]).default("ease") });
+export const zoomSchema = z.object({
+	id: z.string(),
+	startMs: z.number().min(0),
+	endMs: z.number().min(0),
+	scale: z.number().min(1).max(6),
+	x: z.number().min(0).max(1),
+	y: z.number().min(0).max(1),
+	easeMs: z.number().min(0).max(3000).default(450),
+});
+export const colorSchema = z.object({
+	brightness: z.number().min(-1).max(1),
+	contrast: z.number().min(0).max(3),
+	saturation: z.number().min(0).max(3),
+	temperature: z.number().min(-1).max(1),
+	lut: z.string().optional(),
+});
+export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temperature: 0 };
+export const transitionSchema = z.object({ kind: z.enum(["crossfade", "dip"]), durationMs: z.number().min(40).max(5000) });
 
 export const exportSchema = z.object({
 	stemsDir: z.string().min(1),
@@ -172,6 +193,9 @@ const assetSchema = z.object({
 		.object({ provider: z.string(), model: z.string(), prompt: z.string(), voice: z.string().optional() })
 		.optional(),
 	actor: z.enum(["user", "agent", "system"]).default("user"),
+	transcript: z
+		.object({ model: z.string(), createdAt: z.string(), words: z.array(z.object({ text: z.string(), startMs: z.number(), endMs: z.number() })) })
+		.optional(),
 });
 
 const trackSchema = z.object({
@@ -200,6 +224,11 @@ const mediaClipSchema = z.object({
 	fadeOutMs: ms.default(0),
 	transform: transformSchema.default(DEFAULT_TRANSFORM),
 	denoise: z.boolean().default(false),
+	keyframes: z.record(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema)).optional(),
+	zooms: z.array(zoomSchema).optional(),
+	color: colorSchema.optional(),
+	transitionIn: transitionSchema.optional(),
+	groupId: z.string().optional(),
 	lineId: z.string().optional(),
 	name: z.string().max(120).optional(),
 });
@@ -215,6 +244,7 @@ const textClipSchema = z.object({
 	animationIn: animation.default("fade"),
 	animationOut: animation.default("fade"),
 	source: z.object({ kind: z.literal("caption"), assetId: z.string().optional() }).optional(),
+	groupId: z.string().optional(),
 	name: z.string().max(120).optional(),
 });
 
@@ -330,15 +360,6 @@ export function parseProject(raw: unknown): ProjectData {
 		export: pick(DEFAULT_EXPORT, parsed.export),
 		ai: pick(DEFAULT_AI, parsed.ai),
 	};
-}
-
-export function resolveInProject(projectDir: string, file: string): string {
-	return path.isAbsolute(file) ? file : path.join(projectDir, file);
-}
-
-export function relativeToProject(projectDir: string, file: string): string {
-	const rel = path.relative(projectDir, file);
-	return rel.startsWith("..") || path.isAbsolute(rel) ? file : rel;
 }
 
 export const clipEnd = (clip: Clip) => clip.startMs + clip.durationMs;

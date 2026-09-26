@@ -27,9 +27,23 @@ export function createStore<T extends object>(initial: T) {
 
 export const app = createStore<{ state: AppState | null }>({ state: null });
 
+/** Keeps object identity for parts that did not change, so React skips re-rendering them. */
+function merge(prev: AppState | null, next: AppState): AppState {
+	if (!prev) return next;
+	const sameProject = prev.project && next.project && prev.project.revision === next.project.revision && prev.project.path === next.project.path;
+	return {
+		...next,
+		project: sameProject && prev.project ? (prev.project.dirty === next.project?.dirty ? prev.project : { ...prev.project, dirty: next.project?.dirty ?? false }) : next.project,
+		activity: prev.activity[0]?.id === next.activity[0]?.id ? prev.activity : next.activity,
+		selectedClipIds: prev.selectedClipIds.join() === next.selectedClipIds.join() ? prev.selectedClipIds : next.selectedClipIds,
+		recent: JSON.stringify(prev.recent) === JSON.stringify(next.recent) ? prev.recent : next.recent,
+		jobs: JSON.stringify(prev.jobs) === JSON.stringify(next.jobs) ? prev.jobs : next.jobs,
+	};
+}
+
 export function startSync() {
-	void window.cue.getState().then((state) => app.set({ state }));
-	return window.cue.onState((state) => app.set({ state }));
+	void window.cue.getState().then((state) => app.set((current) => ({ state: merge(current.state, state) })));
+	return window.cue.onState((state) => app.set((current) => ({ state: merge(current.state, state) })));
 }
 
 export const useApp = <S,>(selector: (state: AppState) => S): S | undefined =>

@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { type AiCredentials, chunkCaptions, generateImage, synthesizeSpeech, transcribe } from "./ai";
 import { exportAudioMix, exportCaptions, exportStems, exportVideo, exportVoiceover, type ExportReport, type TextRender } from "./exporter";
-import { analyseSpeech, computePeaks, detectSilences, extractThumbnails, kindOf, probe, toWav } from "./media";
+import { existsSync } from "node:fs";
+import { analyseSpeech, computePeaks, detectSilences, extractThumbnails, kindOf, makeAudioProxy, makeVideoProxy, probe, toWav } from "./media";
 import { type InternalOp, type Op, applyOp } from "./ops";
 import {
 	DEFAULT_TEXT_STYLE,
@@ -15,9 +16,8 @@ import {
 	newId,
 	parseProject,
 	projectDuration,
-	relativeToProject,
-	resolveInProject,
 } from "./project";
+import { resolveInProject, relativeToProject } from "./paths";
 import { parseSrt } from "./srt";
 import type { ActivityEntry, Actor, Asset, ProjectData, ProjectSnapshot, RecentProject, TextClip } from "./types";
 
@@ -58,6 +58,11 @@ export class ProjectStore extends EventEmitter {
 	private activityId = 0;
 	private saveTimer: NodeJS.Timeout | null = null;
 	private dirty = false;
+	private revision = 0;
+	/** Assets whose playback proxy is ready. */
+	private proxies = new Set<string>();
+	private proxyQueue: Promise<void> = Promise.resolve();
+	private audioProxies = new Map<string, Promise<string>>();
 
 	constructor(private readonly options: StoreOptions) {
 		super();
@@ -81,10 +86,14 @@ export class ProjectStore extends EventEmitter {
 		if (!this.data || !this.file) return null;
 		const dir = path.dirname(this.file);
 		return {
+			revision: this.revision,
 			path: this.file,
 			dir,
 			data: this.data,
 			assetUrls: Object.fromEntries(this.data.assets.map((a) => [a.id, this.options.mediaUrl(resolveInProject(dir, a.path))])),
+			proxyUrls: this.data.settings.useProxies
+				? Object.fromEntries([...this.proxies].map((id) => [id, this.options.mediaUrl(this.proxyPath(id))]))
+				: {},
 			durationMs: projectDuration(this.data),
 			lines: deriveLines(this.data),
 			canUndo: this.past.length > 0,
@@ -118,9 +127,53 @@ export class ProjectStore extends EventEmitter {
 		this.past = [];
 		this.future = [];
 		this.dirty = false;
+		this.revision++;
+		this.proxies = new Set(data.assets.filter((a) => existsSync(this.proxyPath(a.id))).map((a) => a.id));
+		this.audioProxies.clear();
 		await this.remember();
 		this.log(actor, `Opened ${path.basename(target)}`);
 		this.emit("change");
+		this.buildProxies();
+	}
+
+	private proxyPath(assetId: string): string {
+		return path.join(this.projectDir, CACHE_DIR, "proxy", `${assetId}.mp4`);
+	}
+
+	/** Builds missing playback proxies in the background, one at a time. */
+	buildProxies(): void {
+		if (!this.data?.settings.useProxies) return;
+		const pending = this.data.assets.filter((a) => a.kind === "video" && !this.proxies.has(a.id) && (a.height > 720 || a.durationMs > 20000));
+		for (const asset of pending) {
+			this.proxyQueue = this.proxyQueue.then(async () => {
+				if (!this.data?.assets.some((a) => a.id === asset.id) || this.proxies.has(asset.id)) return;
+				try {
+					await makeVideoProxy(this.assetPath(asset.id), this.proxyPath(asset.id));
+					this.proxies.add(asset.id);
+					this.revision++;
+					this.emit("change");
+				} catch (error) {
+					this.log("system", `Could not build a playback copy of ${asset.name}: ${(error as Error).message}`);
+				}
+			});
+		}
+	}
+
+	/** Playback audio for an asset at a speed (extracted and/or time-stretched, cached). */
+	audioProxy(assetId: string, speed: number): Promise<string> {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset) return Promise.reject(new Error(`No media "${assetId}".`));
+		const rounded = Math.round(speed * 1000) / 1000;
+		if (rounded === 1 && asset.kind === "audio" && /\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(asset.path)) return Promise.resolve(this.assetPath(assetId));
+		const key = `${assetId}@${rounded}`;
+		let pending = this.audioProxies.get(key);
+		if (!pending) {
+			const file = path.join(this.projectDir, CACHE_DIR, "audio", `${assetId}@${rounded}.m4a`);
+			pending = existsSync(file) ? Promise.resolve(file) : makeAudioProxy(this.assetPath(assetId), file, rounded).then(() => file);
+			pending.catch(() => this.audioProxies.delete(key));
+			this.audioProxies.set(key, pending);
+		}
+		return pending;
 	}
 
 	async create(options: CreateProjectOptions, actor: Actor = "user"): Promise<void> {
@@ -243,6 +296,7 @@ export class ProjectStore extends EventEmitter {
 			at += kind === "image" ? 5000 : asset.durationMs;
 			added.push(asset);
 		}
+		this.buildProxies();
 		return added;
 	}
 
@@ -459,6 +513,61 @@ export class ProjectStore extends EventEmitter {
 		return { ranges, removedMs };
 	}
 
+	/** Word-level transcript of a media item, stored on the asset. */
+	async transcribeAsset(assetId: string, creds: AiCredentials, actor: Actor, language?: string) {
+		const file = await this.audioProxy(assetId, 1);
+		const { segments } = await transcribe(creds, { file, model: this.current.ai.transcriptionModel, language });
+		const words = segments.flatMap((segment) =>
+			segment.words?.length ? segment.words.map((w) => ({ text: w.word.trim(), startMs: w.startMs, endMs: w.endMs })) : [{ text: segment.text, startMs: segment.startMs, endMs: segment.endMs }],
+		);
+		const transcript = { model: this.current.ai.transcriptionModel, createdAt: new Date().toISOString(), words: words.filter((w) => w.text) };
+		this.apply({ type: "setTranscript", assetId, transcript }, actor);
+		return transcript;
+	}
+
+	/** Timeline ranges where a stretch of an asset's source is playing. */
+	private sourceToTimeline(assetId: string, fromMs: number, toMs: number) {
+		return this.current.clips
+			.filter((c): c is import("./types").MediaClip => c.type === "media" && c.assetId === assetId)
+			.flatMap((c) => {
+				const a = Math.max(fromMs, c.inMs);
+				const b = Math.min(toMs, c.inMs + c.durationMs * c.speed);
+				if (b - a < 5) return [];
+				return [{ startMs: Math.round(c.startMs + (a - c.inMs) / c.speed), endMs: Math.round(c.startMs + (b - c.inMs) / c.speed) }];
+			});
+	}
+
+	/**
+	 * Text-based editing: removes words (by index range in the transcript) from
+	 * the timeline, cutting every track so picture, sound and text stay in sync.
+	 */
+	cutWords(assetId: string, ranges: { from: number; to: number }[], actor: Actor) {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		const words = asset?.transcript?.words;
+		if (!words?.length) throw new Error("Transcribe this media first.");
+		const timeline = ranges.flatMap(({ from, to }) => {
+			const a = words[Math.max(0, Math.min(from, to))];
+			const b = words[Math.min(words.length - 1, Math.max(from, to))];
+			if (!a || !b) return [];
+			// Cut from the end of the previous word to the start of the next one, so no breath is left behind.
+			const prevEnd = words[Math.min(from, to) - 1]?.endMs ?? a.startMs;
+			const nextStart = words[Math.max(from, to) + 1]?.startMs ?? b.endMs;
+			return this.sourceToTimeline(assetId, Math.max(prevEnd, a.startMs - 120), Math.min(nextStart, b.endMs + 120));
+		});
+		if (timeline.length === 0) throw new Error("Those words are not on the timeline.");
+		return { summary: this.apply({ type: "removeRanges", ranges: timeline }, actor).summary, ranges: timeline };
+	}
+
+	/** Removes filler words ("um", "uh", …) found in the transcript. */
+	removeFillers(assetId: string, actor: Actor, fillers = ["um", "uh", "uhm", "erm", "er", "ah", "hmm", "mm"]) {
+		const words = this.current.assets.find((a) => a.id === assetId)?.transcript?.words;
+		if (!words?.length) throw new Error("Transcribe this media first.");
+		const set = new Set(fillers.map((f) => f.toLowerCase()));
+		const ranges = words.flatMap((w, i) => (set.has(w.text.toLowerCase().replace(/[^a-z']/g, "")) ? [{ from: i, to: i }] : []));
+		if (ranges.length === 0) return { summary: "No filler words found", ranges: [] };
+		return this.cutWords(assetId, ranges, actor);
+	}
+
 	async peaks(assetId: string): Promise<number[]> {
 		const cache = path.join(this.projectDir, CACHE_DIR, "peaks", `${assetId}.json`);
 		try {
@@ -525,6 +634,7 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	private touch(): void {
+		this.revision++;
 		this.dirty = true;
 		this.emit("change");
 		if (this.saveTimer) clearTimeout(this.saveTimer);

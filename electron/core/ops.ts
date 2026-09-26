@@ -8,6 +8,10 @@ import {
 	NO_CROP,
 	assertUnique,
 	cropSchema,
+	colorSchema,
+	keyframeSchema,
+	NEUTRAL_COLOR,
+	transitionSchema,
 	clipEnd,
 	lineInputSchema,
 	newId,
@@ -18,6 +22,7 @@ import {
 	transformSchema,
 	voiceoverTrack,
 } from "./project";
+import { withKeyframe } from "./anim";
 import type { Asset, Clip, MediaClip, ProjectData, Track } from "./types";
 
 /**
@@ -71,6 +76,7 @@ export const clipPatch = z.object({
 	fadeOutMs: ms.min(0),
 	transform: transformSchema.partial().extend({ crop: cropSchema.partial() }).partial(),
 	denoise: z.boolean(),
+	color: colorSchema.partial(),
 	text: z.string().max(4000),
 	style: textStyleSchema.partial(),
 	animationIn: animation,
@@ -121,6 +127,34 @@ export const opSchema = z.discriminatedUnion("type", [
 		trackIds: z.array(z.string()).optional(),
 	}),
 	z.object({ type: z.literal("detachAudio"), id: z.string(), trackId: z.string().optional() }),
+	// Keyframes, zooms, transitions and groups
+	z.object({ type: z.literal("setKeyframe"), clipId: z.string(), prop: z.enum(["x", "y", "scale", "volume"]), keyframe: keyframeSchema }),
+	z.object({ type: z.literal("removeKeyframe"), clipId: z.string(), prop: z.enum(["x", "y", "scale", "volume"]), atMs: ms }),
+	z.object({ type: z.literal("clearKeyframes"), clipId: z.string(), prop: z.enum(["x", "y", "scale", "volume"]).optional() }),
+	z.object({
+		type: z.literal("addZoom"),
+		clipId: z.string(),
+		startMs: ms.min(0),
+		endMs: ms.min(0),
+		scale: z.number().min(1).max(6).default(1.8),
+		x: z.number().min(0).max(1).default(0.5),
+		y: z.number().min(0).max(1).default(0.5),
+		easeMs: z.number().min(0).max(3000).default(450),
+	}),
+	z.object({
+		type: z.literal("updateZoom"),
+		clipId: z.string(),
+		zoomId: z.string(),
+		patch: z.object({ startMs: ms.min(0), endMs: ms.min(0), scale: z.number().min(1).max(6), x: z.number().min(0).max(1), y: z.number().min(0).max(1), easeMs: z.number().min(0).max(3000) }).partial(),
+	}),
+	z.object({ type: z.literal("removeZoom"), clipId: z.string(), zoomId: z.string() }),
+	z.object({ type: z.literal("addTransition"), clipId: z.string(), transition: transitionSchema }),
+	z.object({ type: z.literal("removeTransition"), clipId: z.string() }),
+	z.object({ type: z.literal("groupClips"), ids: z.array(z.string()).min(2) }),
+	z.object({ type: z.literal("ungroupClips"), ids: z.array(z.string()).min(1) }),
+	z.object({ type: z.literal("slipClip"), id: z.string(), deltaMs: ms }),
+	z.object({ type: z.literal("rollEdit"), leftId: z.string(), rightId: z.string(), toMs: ms.min(0) }),
+	z.object({ type: z.literal("slideClip"), id: z.string(), deltaMs: ms }),
 	// Voiceover script
 	z.object({ type: z.literal("setLines"), lines: z.array(lineInputSchema) }),
 	z.object({ type: z.literal("addLine"), line: lineInputSchema }),
@@ -143,7 +177,8 @@ type ParsedOp = z.output<typeof opSchema>;
 /** Internal operations produced by the store after media work, never sent by clients. */
 export type InternalOp =
 	| { type: "addAsset"; asset: Asset; placeOn?: { trackId: string; startMs: number } }
-	| { type: "addTake"; asset: Asset };
+	| { type: "addTake"; asset: Asset }
+	| { type: "setTranscript"; assetId: string; transcript: Asset["transcript"] };
 
 export interface OpResult {
 	data: ProjectData;
@@ -242,6 +277,30 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 	});
 }
 
+/** Adds every clip that shares a group with one of `ids`. */
+export function withGroups(data: ProjectData, ids: string[]): string[] {
+	const groups = new Set(data.clips.filter((c) => ids.includes(c.id) && c.groupId).map((c) => c.groupId));
+	if (groups.size === 0) return ids;
+	return [...new Set([...ids, ...data.clips.filter((c) => c.groupId && groups.has(c.groupId)).map((c) => c.id)])];
+}
+
+/** Neighbour on the same track that ends where `c` starts (within `slack` ms). */
+function leftNeighbour(data: ProjectData, c: Clip, slack = 60): Clip | undefined {
+	return data.clips
+		.filter((x) => x.id !== c.id && x.trackId === c.trackId && Math.abs(clipEnd(x) - c.startMs) <= slack)
+		.sort((a, b) => clipEnd(b) - clipEnd(a))[0];
+}
+
+function rightNeighbour(data: ProjectData, c: Clip, slack = 60): Clip | undefined {
+	return data.clips.filter((x) => x.id !== c.id && x.trackId === c.trackId && Math.abs(x.startMs - clipEnd(c)) <= slack).sort((a, b) => a.startMs - b.startMs)[0];
+}
+
+function media(data: ProjectData, id: string): MediaClip {
+	const c = clip(data, id);
+	if (c.type !== "media") throw new Error("That is a text clip; this works on media clips.");
+	return c;
+}
+
 function replaceClip(data: ProjectData, next: Clip): ProjectData {
 	return { ...data, clips: data.clips.map((c) => (c.id === next.id ? next : c)) };
 }
@@ -290,6 +349,13 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			created = [c.id];
 		}
 		return { data: next, summary: `Added ${rawOp.asset.kind} "${rawOp.asset.name}"`, created };
+	}
+	if (rawOp.type === "setTranscript") {
+		asset(data, rawOp.assetId);
+		return {
+			data: { ...data, assets: data.assets.map((a) => (a.id === rawOp.assetId ? { ...a, transcript: rawOp.transcript } : a)) },
+			summary: `Transcribed ${asset(data, rawOp.assetId).name} (${rawOp.transcript?.words.length ?? 0} words)`,
+		};
 	}
 	if (rawOp.type === "addTake") {
 		const withAsset = { ...data, assets: [...data.assets, rawOp.asset] };
@@ -358,10 +424,15 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "updateClip": {
 			const current = clip(data, op.id);
 			unlocked(data, current.trackId);
-			const { transform, style, ...rest } = op.patch;
+			const { transform, style, color, ...rest } = op.patch;
 			const merged =
 				current.type === "media"
-					? { ...current, ...rest, transform: { ...current.transform, ...transform, crop: { ...current.transform.crop, ...transform?.crop } } }
+					? {
+							...current,
+							...rest,
+							transform: { ...current.transform, ...transform, crop: { ...current.transform.crop, ...transform?.crop } },
+							...(color ? { color: { ...NEUTRAL_COLOR, ...current.color, ...color } } : {}),
+						}
 					: { ...current, ...rest, style: { ...current.style, ...style } };
 			if (current.type === "media" && (op.patch.text !== undefined || style)) throw new Error("Only text clips have text and style.");
 			const next = validateClip(data, merged as Clip);
@@ -369,13 +440,14 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		}
 		case "moveClips": {
 			let next = data;
-			for (const id of op.ids) {
+			const ids = op.trackId ? op.ids : withGroups(data, op.ids);
+			for (const id of ids) {
 				const c = clip(next, id);
 				unlocked(next, c.trackId);
 				const moved = validateClip(next, { ...c, startMs: Math.max(0, Math.round(c.startMs + op.deltaMs)), trackId: op.trackId ?? c.trackId } as Clip);
 				next = replaceClip(next, moved);
 			}
-			return { data: next, summary: `Moved ${op.ids.length} clip(s) by ${sec(op.deltaMs)}${op.trackId ? ` to ${op.trackId}` : ""}` };
+			return { data: next, summary: `Moved ${ids.length} clip(s) by ${sec(op.deltaMs)}${op.trackId ? ` to ${op.trackId}` : ""}` };
 		}
 		case "trimClip": {
 			const c = clip(data, op.id);
@@ -418,9 +490,10 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			return { data: next, summary: `Split ${created.length} clip(s) at ${sec(op.atMs)}`, created };
 		}
 		case "removeClips": {
-			const removed = op.ids.map((id) => clip(data, id));
+			const ids = withGroups(data, op.ids);
+			const removed = ids.map((id) => clip(data, id));
 			for (const c of removed) unlocked(data, c.trackId);
-			let clips = data.clips.filter((c) => !op.ids.includes(c.id));
+			let clips = data.clips.filter((c) => !ids.includes(c.id));
 			if (op.ripple) {
 				for (const r of [...removed].sort((a, b) => b.startMs - a.startMs)) {
 					clips = clips.map((c) => (c.trackId === r.trackId && c.startMs >= clipEnd(r) ? { ...c, startMs: Math.max(0, c.startMs - r.durationMs) } : c));
@@ -485,9 +558,143 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				trackId = created.created?.[0];
 			}
 			if (!trackId) throw new Error("No audio track available.");
-			const audio: MediaClip = { ...c, id: newId("c"), trackId, transform: { ...DEFAULT_TRANSFORM }, lineId: undefined, name: `${c.name ?? a.name} (audio)` };
-			next = { ...next, clips: [...next.clips.map((x) => (x.id === c.id ? { ...c, volume: 0 } : x)), validateClip(next, audio)] };
+			// Picture and sound stay linked (they move together) until the user unlinks them.
+			const groupId = c.groupId ?? newId("g");
+			const audio: MediaClip = { ...c, id: newId("c"), trackId, transform: { ...DEFAULT_TRANSFORM }, lineId: undefined, groupId, zooms: undefined, keyframes: undefined, color: undefined, name: `${c.name ?? a.name} (audio)` };
+			next = { ...next, clips: [...next.clips.map((x) => (x.id === c.id ? { ...c, volume: 0, groupId } : x)), validateClip(next, audio)] };
 			return { data: next, summary: `Detached the audio of ${c.name ?? a.name}`, created: [audio.id] };
+		}
+		case "setKeyframe": {
+			const c = media(data, op.clipId);
+			unlocked(data, c.trackId);
+			const keyframe = { ...op.keyframe, atMs: Math.round(Math.min(Math.max(0, op.keyframe.atMs), c.durationMs)) };
+			const keyframes = { ...c.keyframes, [op.prop]: withKeyframe(c.keyframes?.[op.prop], keyframe) };
+			return { data: replaceClip(data, { ...c, keyframes }), summary: `Set a ${op.prop} keyframe at ${sec(keyframe.atMs)} on ${c.name ?? c.id}` };
+		}
+		case "removeKeyframe": {
+			const c = media(data, op.clipId);
+			const list = (c.keyframes?.[op.prop] ?? []).filter((k) => Math.abs(k.atMs - op.atMs) > 10);
+			const keyframes = { ...c.keyframes, [op.prop]: list };
+			if (list.length === 0) delete keyframes[op.prop];
+			return { data: replaceClip(data, { ...c, keyframes }), summary: `Removed a ${op.prop} keyframe` };
+		}
+		case "clearKeyframes": {
+			const c = media(data, op.clipId);
+			const keyframes = { ...c.keyframes };
+			if (op.prop) delete keyframes[op.prop];
+			return { data: replaceClip(data, { ...c, keyframes: op.prop ? keyframes : {} }), summary: `Cleared ${op.prop ?? "all"} keyframes` };
+		}
+		case "addZoom": {
+			const c = media(data, op.clipId);
+			unlocked(data, c.trackId);
+			if (op.endMs - op.startMs < 200) throw new Error("A zoom needs at least 0.2 s.");
+			const zoom = { id: newId("z"), startMs: Math.round(op.startMs), endMs: Math.round(Math.min(op.endMs, c.durationMs)), scale: op.scale, x: op.x, y: op.y, easeMs: op.easeMs };
+			const zooms = [...(c.zooms ?? []).filter((z) => z.endMs <= zoom.startMs || z.startMs >= zoom.endMs), zoom].sort((a, b) => a.startMs - b.startMs);
+			return { data: replaceClip(data, { ...c, zooms }), summary: `Added a ${op.scale.toFixed(1)}× zoom at ${sec(zoom.startMs)} in ${c.name ?? c.id}`, created: [zoom.id] };
+		}
+		case "updateZoom": {
+			const c = media(data, op.clipId);
+			if (!(c.zooms ?? []).some((z) => z.id === op.zoomId)) throw new Error(`No zoom ${op.zoomId}.`);
+			const zooms = (c.zooms ?? []).map((z) => (z.id === op.zoomId ? { ...z, ...op.patch } : z)).sort((a, b) => a.startMs - b.startMs);
+			return { data: replaceClip(data, { ...c, zooms }), summary: `Edited a zoom (${Object.keys(op.patch).join(", ")})` };
+		}
+		case "removeZoom": {
+			const c = media(data, op.clipId);
+			return { data: replaceClip(data, { ...c, zooms: (c.zooms ?? []).filter((z) => z.id !== op.zoomId) }), summary: "Removed a zoom" };
+		}
+		case "addTransition": {
+			const c = media(data, op.clipId);
+			unlocked(data, c.trackId);
+			const left = leftNeighbour(data, c);
+			if (!left) throw new Error("A transition needs a clip right before this one on the same track.");
+			const d = Math.round(Math.min(op.transition.durationMs, c.durationMs / 2, left.durationMs / 2));
+			let next = data;
+			if (op.transition.kind === "crossfade") {
+				// Overlap the clips by d: this clip and everything after it on the track move left.
+				const shift = d - Math.max(0, clipEnd(left) - c.startMs);
+				next = {
+					...next,
+					clips: next.clips.map((x) => (x.trackId === c.trackId && x.startMs >= c.startMs - 1 ? { ...x, startMs: Math.max(0, x.startMs - shift) } : x)),
+				};
+				const moved = clip(next, c.id) as MediaClip;
+				next = replaceClip(next, { ...moved, fadeInMs: d, transitionIn: { kind: "crossfade", durationMs: d } });
+			} else {
+				next = replaceClip(next, { ...(left as MediaClip), fadeOutMs: Math.round(d / 2) });
+				next = replaceClip(next, { ...(clip(next, c.id) as MediaClip), fadeInMs: Math.round(d / 2), transitionIn: { kind: "dip", durationMs: d } });
+			}
+			return { data: next, summary: `Added a ${sec(d)} ${op.transition.kind === "crossfade" ? "crossfade" : "dip to black"} into ${c.name ?? c.id}` };
+		}
+		case "removeTransition": {
+			const c = media(data, op.clipId);
+			if (!c.transitionIn) throw new Error("That clip has no transition.");
+			let next = data;
+			const left = leftNeighbour(data, c, c.transitionIn.durationMs + 60);
+			if (c.transitionIn.kind === "crossfade") {
+				const shift = left ? Math.max(0, clipEnd(left) - c.startMs) : 0;
+				next = { ...next, clips: next.clips.map((x) => (x.trackId === c.trackId && x.startMs >= c.startMs - 1 ? { ...x, startMs: x.startMs + shift } : x)) };
+			} else if (left && left.type === "media") next = replaceClip(next, { ...left, fadeOutMs: 0 });
+			const { transitionIn: _gone, ...rest } = clip(next, c.id) as MediaClip;
+			next = replaceClip(next, { ...rest, fadeInMs: 0 });
+			return { data: next, summary: "Removed a transition" };
+		}
+		case "groupClips": {
+			const groupId = newId("g");
+			for (const id of op.ids) clip(data, id);
+			return { data: { ...data, clips: data.clips.map((c) => (op.ids.includes(c.id) ? { ...c, groupId } : c)) }, summary: `Linked ${op.ids.length} clips` };
+		}
+		case "ungroupClips": {
+			const ids = withGroups(data, op.ids);
+			return {
+				data: { ...data, clips: data.clips.map((c) => (ids.includes(c.id) ? (({ groupId: _g, ...rest }) => rest as Clip)(c) : c)) },
+				summary: `Unlinked ${ids.length} clips`,
+			};
+		}
+		case "slipClip": {
+			const c = media(data, op.id);
+			unlocked(data, c.trackId);
+			const a = asset(data, c.assetId);
+			if (a.kind === "image") throw new Error("Images have nothing to slip.");
+			const maxIn = Math.max(0, a.durationMs - c.durationMs * c.speed);
+			const inMs = Math.round(Math.min(maxIn, Math.max(0, c.inMs + op.deltaMs * c.speed)));
+			return { data: replaceClip(data, { ...c, inMs }), summary: `Slipped ${c.name ?? c.id} to in-point ${sec(inMs)}` };
+		}
+		case "rollEdit": {
+			const left = clip(data, op.leftId);
+			const right = clip(data, op.rightId);
+			if (left.trackId !== right.trackId || Math.abs(clipEnd(left) - right.startMs) > 60) throw new Error("Roll works on two adjacent clips on the same track.");
+			unlocked(data, left.trackId);
+			let to = op.toMs;
+			const bound = (c: Clip, edge: "start" | "end") => {
+				if (c.type !== "media") return edge === "end" ? Number.POSITIVE_INFINITY : 0;
+				const a = asset(data, c.assetId);
+				if (a.kind === "image") return edge === "end" ? Number.POSITIVE_INFINITY : 0;
+				return edge === "end" ? c.startMs + (a.durationMs - c.inMs) / c.speed : c.startMs - c.inMs / c.speed;
+			};
+			to = Math.min(to, bound(left, "end"), clipEnd(right) - 20);
+			to = Math.max(to, bound(right, "start"), left.startMs + 20);
+			const delta = to - right.startMs;
+			const nextLeft = { ...left, durationMs: Math.round(to - left.startMs) } as Clip;
+			const nextRight = (right.type === "media"
+				? { ...right, startMs: Math.round(to), durationMs: Math.round(clipEnd(right) - to), inMs: Math.max(0, Math.round(right.inMs + delta * right.speed)) }
+				: { ...right, startMs: Math.round(to), durationMs: Math.round(clipEnd(right) - to) }) as Clip;
+			return { data: replaceClip(replaceClip(data, nextLeft), nextRight), summary: `Rolled the cut to ${sec(to)}` };
+		}
+		case "slideClip": {
+			const c = clip(data, op.id);
+			unlocked(data, c.trackId);
+			const left = leftNeighbour(data, c, 2);
+			const right = rightNeighbour(data, c, 2);
+			let delta = op.deltaMs;
+			if (left) delta = Math.max(delta, -(left.durationMs - 20));
+			if (right) delta = Math.min(delta, right.durationMs - 20);
+			if (!left) delta = Math.max(delta, -c.startMs);
+			let next = replaceClip(data, { ...c, startMs: Math.round(c.startMs + delta) } as Clip);
+			if (left) next = replaceClip(next, validateClip(next, { ...left, durationMs: Math.round(left.durationMs + delta) } as Clip));
+			if (right) {
+				const r = right.type === "media" ? { ...right, startMs: Math.round(right.startMs + delta), durationMs: Math.round(right.durationMs - delta), inMs: Math.max(0, Math.round(right.inMs + delta * right.speed)) } : { ...right, startMs: Math.round(right.startMs + delta), durationMs: Math.round(right.durationMs - delta) };
+				next = replaceClip(next, r as Clip);
+			}
+			return { data: next, summary: `Slid ${c.name ?? c.id} by ${sec(delta)}` };
 		}
 		case "setLines": {
 			const lines = sortLines(op.lines.map(normaliseLine));
