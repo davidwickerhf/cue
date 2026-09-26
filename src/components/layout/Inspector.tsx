@@ -1047,6 +1047,40 @@ function TextInspector({ clip }: { clip: TextClip }) {
 					</Field>
 				</div>
 			</Section>
+			<Section title="Words">
+				<Segmented
+					size="xs"
+					value={clip.wordStyle?.mode ?? "off"}
+					options={[
+						{ value: "off", label: "Off" },
+						{ value: "highlight", label: "Highlight", title: "Colour the word being said" },
+						{ value: "reveal", label: "Reveal", title: "Show words as they are said" },
+						{ value: "pop", label: "Pop", title: "The word being said pops" },
+						{ value: "bounce", label: "Bounce", title: "The word being said bounces" },
+					]}
+					onChange={(mode) =>
+						patch({
+							wordStyle:
+								mode === "off" ? null : { mode, color: clip.wordStyle?.color ?? "#ffd60a" },
+						})
+					}
+				/>
+				{clip.wordStyle && (
+					<Field label="Word colour">
+						<ColorInput
+							value={clip.wordStyle.color}
+							onCommit={(color) => color && patch({ wordStyle: { ...clip.wordStyle, color } })}
+						/>
+					</Field>
+				)}
+				<p className="text-[11px] text-muted">
+					{clip.words?.length
+						? clip.source?.kind === "caption"
+							? "Timed to the speech."
+							: `${clip.words.length} words, spread over the clip.`
+						: "Words are timed from speech in captions, or spread over the clip."}
+				</p>
+			</Section>
 		</>
 	);
 }

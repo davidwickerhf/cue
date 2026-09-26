@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { splitKeyframes, splitZooms, withKeyframe } from "./anim";
 import {
+	captionWordSchema,
+	wordStyleSchema,
 	aiSchema,
 	assertUnique,
 	CLIP_LABELS,
@@ -33,7 +35,16 @@ import {
 	voiceoverTrack,
 } from "./project";
 import { fadesIn, overlaps, transitionLabel } from "./transitions";
-import type { Asset, Clip, MediaClip, ProjectData, Track } from "./types";
+import type {
+	Asset,
+	CaptionWord,
+	Clip,
+	MediaClip,
+	ProjectData,
+	TextClip,
+	Track,
+	WordStyle,
+} from "./types";
 
 /**
  * Every edit is one of these operations. The editor window, the control
@@ -71,6 +82,9 @@ export const textClipInput = z.object({
 	animationIn: animation.optional(),
 	animationOut: animation.optional(),
 	name: z.string().max(120).optional(),
+	/** Word timings (clip-local), for word-by-word captions. */
+	words: z.array(captionWordSchema).max(400).optional(),
+	wordStyle: wordStyleSchema.optional(),
 });
 
 export const clipInput = z.discriminatedUnion("type", [mediaClipInput, textClipInput]);
@@ -98,6 +112,8 @@ export const clipPatch = z
 		mask: maskSchema.partial().nullable(),
 		key: keySchema.partial().nullable(),
 		effects: effectsSchema.partial().nullable(),
+		wordStyle: wordStyleSchema.nullable(),
+		words: z.array(captionWordSchema).max(400).nullable(),
 	})
 	.partial();
 
@@ -410,6 +426,46 @@ function shiftTrackFrom(data: ProjectData, from: Clip, deltaMs: number): Project
 	};
 }
 
+/**
+ * Word timings for text without any: words spread over the clip in proportion
+ * to their length (the clip's first 90%, so the last word gets a moment).
+ */
+export function estimateWords(text: string, durationMs: number): CaptionWord[] {
+	const tokens = text.split(/\s+/).filter(Boolean);
+	const total = tokens.reduce((n, t) => n + t.length + 1, 0);
+	let at = 0;
+	return tokens.map((t) => {
+		const length = ((t.length + 1) / Math.max(1, total)) * durationMs * 0.9;
+		const word = { text: t, startMs: Math.round(at), endMs: Math.round(at + length) };
+		at += length;
+		return word;
+	});
+}
+
+/**
+ * A text clip after an edit, with its word timing kept in step: new text gets
+ * new estimated timing, turning word animation on estimates timing if there is
+ * none, and null clears either.
+ */
+function withWords(
+	before: TextClip,
+	after: TextClip,
+	words: CaptionWord[] | null | undefined,
+	wordStyle: WordStyle | null | undefined,
+): TextClip {
+	const next: TextClip = { ...after };
+	if (wordStyle === null) delete next.wordStyle;
+	else if (wordStyle) next.wordStyle = wordStyle;
+	if (words === null) delete next.words;
+	else if (words) next.words = words;
+	else if (next.words && next.text !== before.text) {
+		// Rewritten text: the old timing no longer fits the words.
+		next.words = estimateWords(next.text, next.durationMs);
+	}
+	if (next.wordStyle && !next.words?.length) next.words = estimateWords(next.text, next.durationMs);
+	return next;
+}
+
 /** Removes every clip of a media item, in every sequence. */
 function withoutAssetClips(data: ProjectData, assetId: string): ProjectData {
 	const keep = (c: Clip) => !(c.type === "media" && c.assetId === assetId);
@@ -502,6 +558,14 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 			animationIn: input.animationIn ?? "fade",
 			animationOut: input.animationOut ?? "fade",
 			...(input.name ? { name: input.name } : {}),
+			...(input.wordStyle
+				? {
+						wordStyle: input.wordStyle,
+						words: input.words ?? estimateWords(input.text, Math.round(input.durationMs ?? 3000)),
+					}
+				: input.words
+					? { words: input.words }
+					: {}),
 		});
 	}
 	const a = asset(data, input.assetId);
@@ -626,6 +690,17 @@ function splitOne(
 			animationIn: "none",
 		};
 		left = { ...c, durationMs: leftLength, animationOut: "none" };
+		// Timed words go to the half they are said in, so a caption splits into two captions.
+		if (c.words?.length) {
+			const early = c.words.filter((w) => w.startMs < leftLength);
+			const late = c.words
+				.filter((w) => w.startMs >= leftLength)
+				.map((w) => ({ ...w, startMs: w.startMs - leftLength, endMs: Math.max(0, w.endMs - leftLength) }));
+			if (early.length && late.length) {
+				left = { ...left, words: early, text: early.map((w) => w.text).join(" ") };
+				right = { ...right, words: late, text: late.map((w) => w.text).join(" ") };
+			}
+		}
 	}
 	const index = data.clips.findIndex((candidate) => candidate.id === c.id);
 	const clips = [...data.clips];
@@ -885,7 +960,8 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "updateClip": {
 			const current = clip(data, op.id);
 			unlocked(data, current.trackId);
-			const { transform, style, color, label, mask, key, effects, ...patch } = op.patch;
+			const { transform, style, color, label, mask, key, effects, wordStyle, words, ...patch } =
+				op.patch;
 			// null clears a label, mask or key; a partial mask or key merges with what is there.
 			const rest = {
 				...patch,
@@ -931,9 +1007,9 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 							},
 							...(color ? { color: { ...NEUTRAL_COLOR, ...current.color, ...color } } : {}),
 						}
-					: { ...current, ...rest, style: { ...current.style, ...style } };
-			if (current.type === "media" && (op.patch.text !== undefined || style))
-				throw new Error("Only text clips have text and style.");
+					: withWords(current, { ...current, ...rest, style: { ...current.style, ...style } }, words, wordStyle);
+			if (current.type === "media" && (op.patch.text !== undefined || style || wordStyle || words))
+				throw new Error("Only text clips have text, style and word timing.");
 			const next = validateClip(data, merged as Clip);
 			return {
 				data: replaceClip(data, next),
@@ -984,10 +1060,17 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 							: Math.max(0, Math.round(c.inMs + (start - c.startMs) * c.speed));
 					next = validateClip(data, { ...c, startMs: start, durationMs: end - start, inMs });
 				} else {
+					const from = Math.max(0, start);
+					// Word times are clip-local: they move with the clip's new start.
+					const words = c.words
+						?.map((w) => ({ ...w, startMs: w.startMs - (from - c.startMs), endMs: w.endMs - (from - c.startMs) }))
+						.filter((w) => w.endMs > 0)
+						.map((w) => ({ ...w, startMs: Math.max(0, w.startMs) }));
 					next = validateClip(data, {
 						...c,
-						startMs: Math.max(0, start),
-						durationMs: end - Math.max(0, start),
+						startMs: from,
+						durationMs: end - from,
+						...(words ? { words } : {}),
 					});
 				}
 			}

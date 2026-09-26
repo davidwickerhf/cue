@@ -186,7 +186,7 @@ export const contract = {
 	},
 	update_clip: {
 		description:
-			"Change a clip: timing, in-point, speed, volume, fades, denoise, color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+			"Change a clip: timing, in-point, speed, volume, fades, denoise, color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: {
@@ -607,10 +607,12 @@ export const contract = {
 	},
 	auto_captions: {
 		description:
-			"Transcribe the voiceover track (or the full mix) and add timed caption clips on a new Captions track.",
+			"Transcribe the voiceover track (or the full mix) and add timed caption clips on a new Captions track, with word timings. style plain gives classic subtitles; highlight, reveal, pop or bounce give animated word-by-word captions in a bold social style (wordColor for the word being said).",
 		input: {
 			source: z.enum(["voiceover", "mix"]).default("voiceover"),
-			maxChars: z.number().int().min(12).max(90).default(42),
+			maxChars: z.number().int().min(12).max(90).optional(),
+			style: z.enum(["plain", "highlight", "reveal", "pop", "bounce"]).default("plain"),
+			wordColor: z.string().optional(),
 			language: z.string().optional(),
 		},
 	},

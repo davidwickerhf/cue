@@ -10,7 +10,13 @@ export interface TextFrame {
 	/** Characters revealed (typewriter), or Infinity. */
 	reveal: number;
 	offsetX?: number;
+	/** Word-by-word captions: the word being said (-1 before the first) and how far into it, 0–1. */
+	word?: number;
+	wordP?: number;
 }
+
+/** How long a word's pop or bounce lasts. */
+const WORD_MS = 180;
 
 /** Animation state for a text clip `localMs` after it starts. */
 export function textFrame(clip: TextClip, localMs: number, canvasHeight: number): TextFrame {
@@ -43,6 +49,13 @@ export function textFrame(clip: TextClip, localMs: number, canvasHeight: number)
 		frame.reveal = Math.floor((localMs / Math.max(1, total)) * clip.text.length);
 	} else apply(clip.animationIn, inP);
 	if (clip.animationOut !== "typewriter") apply(clip.animationOut, outP);
+	if (clip.wordStyle && clip.words?.length) {
+		let word = -1;
+		for (let i = 0; i < clip.words.length; i++) if (localMs >= clip.words[i].startMs) word = i;
+		frame.word = word;
+		frame.wordP =
+			word < 0 ? 0 : Math.min(1, Math.max(0, (localMs - clip.words[word].startMs) / WORD_MS));
+	}
 	return frame;
 }
 
@@ -145,6 +158,11 @@ export function drawTextClip(
 				? left + boxW - style.padding
 				: 0;
 	const outline = style.strokeColor && (style.strokeWidth ?? 0) > 0;
+	if (clip.wordStyle && clip.words?.length) {
+		drawWords(ctx, clip, f, { left, top, boxW, maxText, lineHeight, outline: !!outline });
+		ctx.restore();
+		return;
+	}
 	lines.forEach((line, i) => {
 		const y = top + style.padding + lineHeight * (i + 0.5);
 		if (outline) {
@@ -159,6 +177,78 @@ export function drawTextClip(
 		ctx.fillText(line, x, y);
 	});
 	ctx.restore();
+}
+
+/** Draws a clip's words one by one, styling the word being said. */
+function drawWords(
+	ctx: CanvasRenderingContext2D,
+	clip: TextClip,
+	f: TextFrame,
+	box: { left: number; top: number; boxW: number; maxText: number; lineHeight: number; outline: boolean },
+) {
+	const style = clip.style;
+	const ws = clip.wordStyle as NonNullable<TextClip["wordStyle"]>;
+	const words = (clip.words ?? []).map((w) => (style.uppercase ? w.text.toUpperCase() : w.text));
+	const space = ctx.measureText(" ").width;
+	// Lines of word indices, wrapped like the rest of the text.
+	const lines: number[][] = [[]];
+	let width = 0;
+	words.forEach((word, i) => {
+		const w = ctx.measureText(word).width;
+		const line = lines[lines.length - 1];
+		if (line.length && width + space + w > box.maxText) {
+			lines.push([i]);
+			width = w;
+		} else {
+			line.push(i);
+			width += (line.length > 1 ? space : 0) + w;
+		}
+	});
+	const fill = ctx.fillStyle;
+	const active = f.word ?? -1;
+	const p = f.wordP ?? 1;
+	ctx.textAlign = "left";
+	lines.forEach((line, row) => {
+		const lineW =
+			line.reduce((n, i) => n + ctx.measureText(words[i]).width, 0) + space * (line.length - 1);
+		let x =
+			style.align === "left"
+				? box.left + style.padding
+				: style.align === "right"
+					? box.left + box.boxW - style.padding - lineW
+					: -lineW / 2;
+		const y = box.top + style.padding + box.lineHeight * (row + 0.5);
+		for (const i of line) {
+			const w = ctx.measureText(words[i]).width;
+			const said = i <= active;
+			const now = i === active;
+			// Reveal: words appear as they are said.
+			if (ws.mode === "reveal" && !said) {
+				x += w + space;
+				continue;
+			}
+			ctx.save();
+			ctx.fillStyle = now ? ws.color : fill;
+			if (ws.mode === "reveal" && now) ctx.globalAlpha *= 0.35 + 0.65 * p;
+			let dy = 0;
+			let scale = 1;
+			if (now && ws.mode === "pop") scale = 1 + 0.22 * (1 - p) * (1 - p) + 0.06;
+			if (now && ws.mode === "bounce") dy = -Math.sin(Math.PI * p) * style.fontSize * 0.16;
+			ctx.translate(x + w / 2, y + dy);
+			ctx.scale(scale, scale);
+			if (box.outline) {
+				ctx.save();
+				ctx.strokeStyle = style.strokeColor as string;
+				ctx.lineWidth = (style.strokeWidth ?? 0) * 2;
+				ctx.lineJoin = "round";
+				ctx.strokeText(words[i], -w / 2, 0);
+				ctx.restore();
+			}
+			ctx.fillText(words[i], -w / 2, 0);
+			ctx.restore();
+			x += w + space;
+		}
+	});
 }
 
 async function png(canvas: HTMLCanvasElement): Promise<ArrayBuffer> {
@@ -185,7 +275,7 @@ export async function rasterise(
 	canvas.height = height;
 	const ctx = canvas.getContext("2d");
 	if (!ctx) throw new Error("Canvas is not available.");
-	if (clip.animationIn === "none" && clip.animationOut === "none") {
+	if (clip.animationIn === "none" && clip.animationOut === "none" && !clip.wordStyle) {
 		drawTextClip(ctx, clip, width, height);
 		return { still: await png(canvas) };
 	}
@@ -196,7 +286,7 @@ export async function rasterise(
 	for (let i = 0; i < count; i++) {
 		const frame = textFrame(clip, (i * 1000) / fps, height);
 		// Identical frames (the static middle of a clip) reuse the last encode.
-		const key = `${frame.alpha.toFixed(3)}|${frame.scale.toFixed(3)}|${frame.offsetY.toFixed(1)}|${frame.reveal}`;
+		const key = `${frame.alpha.toFixed(3)}|${frame.scale.toFixed(3)}|${frame.offsetY.toFixed(1)}|${frame.reveal}|${frame.word ?? ""}|${(frame.wordP ?? 1).toFixed(2)}`;
 		if (previous && key === previousKey) {
 			frames.push(previous);
 			continue;

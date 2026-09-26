@@ -191,3 +191,52 @@ describe("edits", () => {
 		expect(clip.inMs).toBe(2000);
 	});
 });
+
+import { chunkCaptions } from "../electron/core/ai";
+import type { TextClip } from "../electron/core/types";
+
+describe("word-by-word captions", () => {
+	it("keeps punctuation with its word and times words per caption", () => {
+		const [chunk] = chunkCaptions([
+			{
+				startMs: 1000,
+				endMs: 2000,
+				text: "Hello, world.",
+				words: [
+					{ word: "Hello", startMs: 1000, endMs: 1400 },
+					{ word: ",", startMs: 1400, endMs: 1450 },
+					{ word: " world", startMs: 1500, endMs: 1900 },
+					{ word: ".", startMs: 1900, endMs: 1950 },
+				],
+			},
+		]);
+		expect(chunk.text).toBe("Hello, world.");
+		expect(chunk.words.map((w) => w.text)).toEqual(["Hello,", "world."]);
+	});
+
+	it("estimates timing when turned on, and splits captions between words", () => {
+		let data = applyOp(emptyProject("T"), {
+			type: "addClips",
+			clips: [{ type: "text", trackId: "T1", startMs: 0, durationMs: 4000, text: "one two three four" }],
+		}).data;
+		const id = data.clips[0].id;
+		data = applyOp(data, {
+			type: "updateClip",
+			id,
+			patch: { wordStyle: { mode: "highlight", color: "#ffd60a" } },
+		}).data;
+		const clip = data.clips[0] as TextClip;
+		expect(clip.words?.map((w) => w.text)).toEqual(["one", "two", "three", "four"]);
+		expect(clip.words?.[3].startMs).toBeGreaterThan(clip.words?.[2].startMs ?? 0);
+		// Split between the second and third word: each half keeps its own words and text.
+		const at = (clip.words?.[2].startMs ?? 0) - 5;
+		data = applyOp(data, { type: "splitClip", id, atMs: at }).data;
+		const [left, right] = (data.clips as TextClip[]).sort((a, b) => a.startMs - b.startMs);
+		expect(left.text).toBe("one two");
+		expect(right.text).toBe("three four");
+		expect(right.words?.[0].startMs).toBeLessThan(200);
+		// New text gets new timing.
+		data = applyOp(data, { type: "updateClip", id: right.id, patch: { text: "five six seven" } }).data;
+		expect((data.clips.find((c) => c.id === right.id) as TextClip).words).toHaveLength(3);
+	});
+});

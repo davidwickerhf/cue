@@ -832,7 +832,7 @@ class PlaybackEngine {
 			const h = Math.max(1, Math.round(this.stageH * dpr));
 			const frames = active.map((c) => ({ c, f: textFrame(c, ms - c.startMs, H) }));
 			// Skip the redraw when nothing on this layer looks different from the last frame.
-			const key = `${w}x${h}|${frames.map(({ c, f }) => `${c.id}:${f.alpha.toFixed(3)}:${f.scale.toFixed(3)}:${f.offsetY.toFixed(1)}:${f.reveal}`).join(",")}`;
+			const key = `${w}x${h}|${frames.map(({ c, f }) => `${c.id}:${f.alpha.toFixed(3)}:${f.scale.toFixed(3)}:${f.offsetY.toFixed(1)}:${f.reveal}:${f.word ?? ""}:${(f.wordP ?? 1).toFixed(2)}`).join(",")}`;
 			if (key === layer.key) continue;
 			layer.key = key;
 			if (canvas.width !== w || canvas.height !== h) {

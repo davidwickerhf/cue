@@ -254,6 +254,23 @@ export interface TextStyle {
 	rotation?: number;
 }
 
+/** A word of a caption, with when it is said (clip-local). */
+export interface CaptionWord {
+	text: string;
+	startMs: number;
+	endMs: number;
+}
+
+/**
+ * Word-by-word animation for captions and titles: highlight colours the word
+ * being said, reveal shows words as they are said, pop and bounce move it.
+ */
+export interface WordStyle {
+	mode: "highlight" | "reveal" | "pop" | "bounce";
+	/** Colour of the word being said. */
+	color: string;
+}
+
 export interface TextClip {
 	id: string;
 	type: "text";
@@ -266,6 +283,9 @@ export interface TextClip {
 	animationOut: TextAnimation;
 	/** Captions generated from speech keep a pointer to their source. */
 	source?: { kind: "caption"; assetId?: string };
+	/** The words of `text` with their timing, for word-by-word animation. */
+	words?: CaptionWord[];
+	wordStyle?: WordStyle;
 	groupId?: string;
 	disabled?: boolean;
 	label?: ClipLabel;

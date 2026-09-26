@@ -1556,6 +1556,10 @@ export class ProjectStore extends EventEmitter {
 			trackId?: string;
 			maxChars?: number;
 			language?: string;
+			/** plain, or a word-by-word look (social-style captions). */
+			style?: "plain" | "highlight" | "reveal" | "pop" | "bounce";
+			/** Colour of the word being said. */
+			wordColor?: string;
 		},
 	): Promise<{ count: number; trackId: string }> {
 		const tmp = path.join(os.tmpdir(), `cue-captions-${Date.now()}.wav`);
@@ -1571,22 +1575,40 @@ export class ProjectStore extends EventEmitter {
 				language: options.language,
 				prompt: hint || undefined,
 			});
-			const chunks = chunkCaptions(segments, options.maxChars ?? 42);
+			const animated = options.style && options.style !== "plain";
+			// Word-by-word captions read best a few words at a time.
+			const chunks = chunkCaptions(segments, options.maxChars ?? (animated ? 24 : 42));
 			const trackId =
 				options.trackId ??
 				this.apply({ type: "addTrack", kind: "text", name: "Captions", index: 0 }, actor)
 					.created?.[0];
 			if (!trackId) throw new Error("Could not create a captions track.");
 			if (chunks.length === 0) return { count: 0, trackId };
-			const style = {
-				...DEFAULT_TEXT_STYLE,
-				fontSize: 46,
-				fontWeight: 600,
-				y: 0.9,
-				width: 0.86,
-				padding: 14,
-				radius: 10,
-			};
+			const style = animated
+				? {
+						...DEFAULT_TEXT_STYLE,
+						fontSize: 68,
+						fontWeight: 800,
+						color: "#ffffff",
+						background: null,
+						uppercase: true,
+						strokeColor: "#000000",
+						strokeWidth: 6,
+						shadow: true,
+						y: 0.74,
+						width: 0.82,
+						padding: 8,
+						lineHeight: 1.1,
+					}
+				: {
+						...DEFAULT_TEXT_STYLE,
+						fontSize: 46,
+						fontWeight: 600,
+						y: 0.9,
+						width: 0.86,
+						padding: 14,
+						radius: 10,
+					};
 			this.apply(
 				{
 					type: "addClips",
@@ -1603,6 +1625,20 @@ export class ProjectStore extends EventEmitter {
 							animationIn: "none" as const,
 							animationOut: "none" as const,
 							name: "Caption",
+							// Word times relative to the caption, for word-by-word styles.
+							words: chunk.words.map((w) => ({
+								text: w.text,
+								startMs: Math.max(0, w.startMs - chunk.startMs),
+								endMs: Math.max(0, w.endMs - chunk.startMs),
+							})),
+							...(animated
+								? {
+										wordStyle: {
+											mode: options.style as "highlight" | "reveal" | "pop" | "bounce",
+											color: options.wordColor ?? "#ffd60a",
+										},
+									}
+								: {}),
 						};
 					}),
 				},

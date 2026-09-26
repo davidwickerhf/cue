@@ -307,6 +307,16 @@ const mediaClipSchema = z.object({
 	name: z.string().max(120).optional(),
 });
 
+export const captionWordSchema = z.object({
+	text: z.string().max(200),
+	startMs: z.number().min(0),
+	endMs: z.number().min(0),
+});
+export const wordStyleSchema = z.object({
+	mode: z.enum(["highlight", "reveal", "pop", "bounce"]),
+	color: z.string().max(60),
+});
+
 const textClipSchema = z.object({
 	id,
 	type: z.literal("text"),
@@ -318,6 +328,8 @@ const textClipSchema = z.object({
 	animationIn: animation.default("fade"),
 	animationOut: animation.default("fade"),
 	source: z.object({ kind: z.literal("caption"), assetId: z.string().optional() }).optional(),
+	words: z.array(captionWordSchema).max(400).optional(),
+	wordStyle: wordStyleSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),
 	label: z.enum(CLIP_LABELS).optional(),

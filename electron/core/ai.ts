@@ -132,11 +132,19 @@ export async function generateImage(
  * Splits transcript words into caption-sized chunks: at most `maxChars`
  * characters, breaking early at sentence ends and long pauses.
  */
+/** A caption's worth of speech, with its words (absolute times). */
+export interface CaptionChunk {
+	startMs: number;
+	endMs: number;
+	text: string;
+	words: { text: string; startMs: number; endMs: number }[];
+}
+
 export function chunkCaptions(
 	segments: TranscriptSegment[],
 	maxChars = 42,
-): { startMs: number; endMs: number; text: string }[] {
-	const chunks: { startMs: number; endMs: number; text: string }[] = [];
+): CaptionChunk[] {
+	const chunks: CaptionChunk[] = [];
 	for (const segment of segments) {
 		const words = segment.words?.length
 			? segment.words
@@ -144,13 +152,21 @@ export function chunkCaptions(
 		let current: typeof words = [];
 		const flush = () => {
 			if (current.length === 0) return;
+			// Punctuation that came as its own word joins the word before it.
+			const said: CaptionChunk["words"] = [];
+			for (const w of current) {
+				const text = w.word.trim();
+				const last = said.at(-1);
+				if (last && /^[,.!?;:]+$/.test(text)) {
+					last.text += text;
+					last.endMs = w.endMs;
+				} else if (text) said.push({ text, startMs: w.startMs, endMs: w.endMs });
+			}
 			chunks.push({
 				startMs: current[0].startMs,
 				endMs: current.at(-1)?.endMs ?? current[0].endMs,
-				text: current
-					.map((w) => w.word.trim())
-					.join(" ")
-					.replace(/\s+([,.!?;:])/g, "$1"),
+				text: said.map((w) => w.text).join(" "),
+				words: said,
 			});
 			current = [];
 		};
