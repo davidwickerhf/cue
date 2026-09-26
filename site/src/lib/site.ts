@@ -1,5 +1,7 @@
 export const SITE_URL = "https://cue.wicker.life";
 export const REPO = "https://github.com/davidwickerhf/cue";
+/** Donations. */
+export const KOFI = "https://ko-fi.com/davidwickerhf";
 export const DOWNLOAD = `${REPO}/releases/latest/download/Cue-mac-arm64.zip`;
 export const MCP_COMMAND = 'claude mcp add --scope user cue -- node "/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs"';
 

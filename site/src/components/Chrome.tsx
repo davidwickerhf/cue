@@ -2,7 +2,7 @@ import { AppleLogo, GithubLogo } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
 import { Reveal } from "@/components/Reveal";
-import { AUTHOR, DOWNLOAD, REPO, USE_CASES } from "@/lib/site";
+import { KOFI, AUTHOR, DOWNLOAD, REPO, USE_CASES } from "@/lib/site";
 
 /** Star count for the GitHub button (refreshed hourly, hidden while it is zero). */
 async function stars(): Promise<number> {
@@ -72,6 +72,9 @@ export async function Header({ home = false }: { home?: boolean }) {
 				<Link href="/changelog" className="hover:text-white">
 					Changelog
 				</Link>
+				<a href={KOFI} className="hover:text-white">
+					Support
+				</a>
 			</nav>
 			<a
 				href={REPO}
@@ -139,6 +142,9 @@ export function Footer({ home = false }: { home?: boolean }) {
 						</a>
 						<a href={AUTHOR.github} className="text-muted hover:text-white">
 							GitHub
+						</a>
+						<a href={KOFI} className="text-muted hover:text-white">
+							Buy me a coffee
 						</a>
 					</div>
 				</div>

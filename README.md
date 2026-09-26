@@ -13,7 +13,7 @@ A fast, open-source video editor for macOS. Edit by hand with the shortcuts you 
 [![Platform](https://img.shields.io/badge/platform-macOS%20·%20Apple%20Silicon-lightgrey)](https://github.com/davidwickerhf/cue/releases/latest)
 [![MCP](https://img.shields.io/badge/MCP-110%2B%20tools-8a2be2)](#ai-agents)
 
-[**Website**](https://cue.wicker.life) · [**Download**](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) · [**Releases**](https://github.com/davidwickerhf/cue/releases) · [**Report a bug**](https://github.com/davidwickerhf/cue/issues/new)
+[**Website**](https://cue.wicker.life) · [**Download**](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) · [**Releases**](https://github.com/davidwickerhf/cue/releases) · [**Report a bug**](https://github.com/davidwickerhf/cue/issues/new) · [**Support Cue ☕**](https://ko-fi.com/davidwickerhf)
 
 <br />
 
@@ -189,7 +189,7 @@ Issues and pull requests are welcome. Please run `npm test` and `npm run typeche
 
 ## License and credits
 
-Cue is made by [David Henry Francis Wicker](https://wicker.life) and released under the [MIT License](LICENSE). © 2026 David Henry Francis Wicker.
+Cue is made by [David Henry Francis Wicker](https://wicker.life) and released under the [MIT License](LICENSE). © 2026 David Henry Francis Wicker. If Cue saves you time, you can [buy me a coffee on Ko-fi](https://ko-fi.com/davidwickerhf).
 
 - The stack and layout take inspiration from [Recordly](https://github.com/webadderallorg/Recordly); no Recordly code is used. The demos on the website and in this README were recorded in Cue and rendered with Recordly.
 - Video processing by [FFmpeg](https://ffmpeg.org) via [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static).

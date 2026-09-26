@@ -643,6 +643,10 @@ function buildMenu() {
 				label: app.name,
 				submenu: [
 					{ role: "about" },
+					{
+						label: "Support Cue…",
+						click: () => void shell.openExternal("https://ko-fi.com/davidwickerhf"),
+					},
 					{ type: "separator" },
 					{
 						label: "Settings…",
@@ -970,7 +974,7 @@ else {
 			applicationVersion: app.getVersion(),
 			copyright: "© 2026 David Henry Francis Wicker",
 			website: "https://wicker.life",
-			credits: "Open source under the MIT License. cue.wicker.life",
+			credits: "Open source under the MIT License. cue.wicker.life · Support: ko-fi.com/davidwickerhf",
 		});
 		await loadAppSettings();
 		protocol.handle(MEDIA_SCHEME, serveMedia);
