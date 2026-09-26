@@ -16,6 +16,9 @@ import type {
 } from "./types";
 
 /** Cue project files: JSON inside, so they diff and version well. */
+/** Colour labels for clips, as in every NLE's Label menu. */
+export const CLIP_LABELS = ["red", "orange", "yellow", "green", "blue", "purple", "pink"] as const;
+
 export const PROJECT_EXTENSION = ".cueproj";
 /** Projects saved by earlier versions. */
 export const LEGACY_EXTENSION = ".cue.json";
@@ -233,6 +236,8 @@ const trackSchema = z.object({
 	volume: z.number().min(0).max(2).default(1),
 	voiceover: z.boolean().optional(),
 	duck: z.boolean().optional(),
+	solo: z.boolean().optional(),
+	pan: z.number().min(-1).max(1).optional(),
 });
 
 const mediaClipSchema = z.object({
@@ -254,6 +259,8 @@ const mediaClipSchema = z.object({
 	color: colorSchema.optional(),
 	transitionIn: transitionSchema.optional(),
 	groupId: z.string().optional(),
+	disabled: z.boolean().optional(),
+	label: z.enum(CLIP_LABELS).optional(),
 	lineId: z.string().optional(),
 	name: z.string().max(120).optional(),
 });
@@ -270,6 +277,8 @@ const textClipSchema = z.object({
 	animationOut: animation.default("fade"),
 	source: z.object({ kind: z.literal("caption"), assetId: z.string().optional() }).optional(),
 	groupId: z.string().optional(),
+	disabled: z.boolean().optional(),
+	label: z.enum(CLIP_LABELS).optional(),
 	name: z.string().max(120).optional(),
 });
 
@@ -425,7 +434,7 @@ export function parseProject(raw: unknown): ProjectData {
 		name: parsed.name,
 		canvas: parsed.canvas,
 		assets: parsed.assets as Asset[],
-		tracks: parsed.tracks as Track[],
+		tracks: groupTracks(parsed.tracks as Track[]),
 		clips: parsed.clips as Clip[],
 		lines,
 		markers: parsed.markers,
@@ -525,4 +534,20 @@ export function takeClip(
 		lineId: asset.lineId,
 		name: asset.lineId ? `${asset.lineId} · ${asset.name}` : asset.name,
 	};
+}
+
+/** A track is heard unless muted, or unless another track is soloed. */
+export function trackAudible(data: ProjectData, track: Track): boolean {
+	if (track.muted) return false;
+	const soloing = data.tracks.some((t) => t.solo);
+	return !soloing || !!track.solo;
+}
+
+/**
+ * Picture tracks (video and text) sit above sound tracks, with a divider
+ * between them, as in Premiere, Resolve and Final Cut. Order within each
+ * group is kept.
+ */
+export function groupTracks(tracks: Track[]): Track[] {
+	return [...tracks.filter((t) => t.kind !== "audio"), ...tracks.filter((t) => t.kind === "audio")];
 }

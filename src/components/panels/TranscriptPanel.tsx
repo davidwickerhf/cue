@@ -1,11 +1,11 @@
-import { Button } from "@heroui/react";
-import { Scissors, Subtitles } from "@phosphor-icons/react";
+import { Button, Spinner } from "@heroui/react";
+import { MagnifyingGlass, Scissors, Subtitles } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import type { Asset, MediaClip, ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
-import { useProject } from "../../lib/state";
-import { cn } from "../../lib/utils";
+import { editor, useProject } from "../../lib/state";
+import { cn, formatTime } from "../../lib/utils";
 import { Section } from "../ui/controls";
 
 const FILLERS = new Set(["um", "uh", "uhm", "erm", "er", "ah", "hmm", "mm"]);
@@ -54,6 +54,7 @@ export function TranscriptPanel() {
 					</select>
 				</div>
 			)}
+			{asset.transcript?.words.length ? <MeaningSearch /> : null}
 			{asset.transcript?.words.length ? (
 				<Words key={asset.id} asset={asset} project={project} />
 			) : (
@@ -222,5 +223,67 @@ function Words({ asset, project }: { asset: Asset; project: ProjectSnapshot }) {
 				every track.
 			</p>
 		</>
+	);
+}
+
+/** Search the edit by what it is about, not exact words (uses the text model). */
+function MeaningSearch() {
+	const [query, setQuery] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [results, setResults] = useState<{ startMs: number; endMs: number; why: string }[] | null>(
+		null,
+	);
+	const search = async () => {
+		if (query.trim().length < 2) return;
+		setBusy(true);
+		setResults(
+			(await run<{ startMs: number; endMs: number; why: string }[]>("find_moments", { query })) ??
+				null,
+		);
+		setBusy(false);
+	};
+	return (
+		<div className="border-b border-separator px-4 py-2.5">
+			<form
+				onSubmit={(e) => {
+					e.preventDefault();
+					void search();
+				}}
+				className="flex items-center gap-1.5 rounded-md border border-border bg-field px-2 focus-within:border-accent"
+			>
+				<MagnifyingGlass className="size-3.5 shrink-0 text-muted" />
+				<input
+					value={query}
+					onChange={(e) => setQuery(e.target.value)}
+					onKeyDown={(e) => e.stopPropagation()}
+					placeholder="Find where they talk about…"
+					className="h-7 min-w-0 flex-1 bg-transparent text-[12px] outline-none"
+				/>
+				{busy && <Spinner size="sm" />}
+			</form>
+			{results && (
+				<ul className="mt-2 flex flex-col gap-1">
+					{results.length === 0 && <li className="text-[11px] text-muted">Nothing matched.</li>}
+					{results.map((r) => (
+						<li key={`${r.startMs}-${r.endMs}`}>
+							<button
+								type="button"
+								onClick={() => {
+									playback.seek(r.startMs);
+									editor.set({ inPoint: r.startMs, outPoint: r.endMs });
+								}}
+								title="Jump there and mark it in to out"
+								className="w-full rounded-md px-2 py-1 text-left hover:bg-default"
+							>
+								<span className="block text-[11px] text-muted tabular">
+									{formatTime(r.startMs)} – {formatTime(r.endMs)}
+								</span>
+								<span className="block text-[12px] leading-snug">{r.why}</span>
+							</button>
+						</li>
+					))}
+				</ul>
+			)}
+		</div>
 	);
 }

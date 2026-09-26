@@ -26,8 +26,13 @@ import {
 	TextT,
 	Trash,
 	Waveform as WaveIcon,
+	DotsSixVertical,
+	EyeSlash as EyeOff,
+	Pause,
+	Robot,
 } from "@phosphor-icons/react";
 import {
+	Fragment,
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
 	useEffect,
@@ -46,7 +51,8 @@ import type {
 import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
-import { app, editor, useApp, useProject } from "../../lib/state";
+import { agentDraft } from "../../lib/chat";
+import { app, createStore, editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime } from "../../lib/utils";
 import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
@@ -626,49 +632,54 @@ export function Timeline() {
 					</Row>
 
 					{/* Tracks */}
-					{tracks.map((track) => (
-						<Row
-							key={track.id}
-							trackId={track.id}
-							height={TRACK_H[track.kind]}
-							header={<TrackHeader track={track} project={project} />}
-							dim={track.hidden || track.muted}
-							onDragOver={(e) => {
-								e.preventDefault();
-								e.dataTransfer.dropEffect = "copy";
-							}}
-							onDrop={(e) => void onDrop(track, e)}
-						>
-							{(clipsByTrack.get(track.id) ?? []).map((clip) => {
-								const view = preview(clip);
-								return (
-									<ClipView
-										key={clip.id}
-										clip={clip}
-										project={project}
-										left={toX(view.left)}
-										width={Math.max(2, toX(view.width))}
-										inMs={view.inMs}
-										height={TRACK_H[track.kind]}
-										pxPerMs={pxPerMs}
-										selected={selected.includes(clip.id)}
-										dragging={
-											!!liveDrag && liveDrag.kind === "move" && liveDrag.ids.includes(clip.id)
-										}
-										transform={view.dy ? `translateY(${view.dy}px)` : undefined}
-										tool={tool}
-										locked={track.locked}
-										onDown={(e) => onClipDown(clip, e)}
-										onEdgeDown={(edge, e) => onEdgeDown(clip, edge, e)}
-										onContext={(e) => {
-											e.preventDefault();
-											if (!selected.includes(clip.id)) window.cue.selectClips([clip.id]);
-											setMenu({ x: e.clientX, y: e.clientY, clip, atMs: timeAt(e.clientX) });
-										}}
-									/>
-								);
-							})}
-						</Row>
+					{tracks.map((track, i) => (
+						<Fragment key={track.id}>
+							{track.kind === "audio" && i > 0 && tracks[i - 1].kind !== "audio" && (
+								<GroupDivider />
+							)}
+							<Row
+								key={track.id}
+								trackId={track.id}
+								height={TRACK_H[track.kind]}
+								header={<TrackHeader track={track} project={project} />}
+								dim={track.hidden || track.muted}
+								onDragOver={(e) => {
+									e.preventDefault();
+									e.dataTransfer.dropEffect = "copy";
+								}}
+								onDrop={(e) => void onDrop(track, e)}
+							>
+								{(clipsByTrack.get(track.id) ?? []).map((clip) => {
+									const view = preview(clip);
+									return (
+										<ClipView
+											key={clip.id}
+											clip={clip}
+											project={project}
+											left={toX(view.left)}
+											width={Math.max(2, toX(view.width))}
+											inMs={view.inMs}
+											height={TRACK_H[track.kind]}
+											pxPerMs={pxPerMs}
+											selected={selected.includes(clip.id)}
+											dragging={
+												!!liveDrag && liveDrag.kind === "move" && liveDrag.ids.includes(clip.id)
+											}
+											transform={view.dy ? `translateY(${view.dy}px)` : undefined}
+											tool={tool}
+											locked={track.locked}
+											onDown={(e) => onClipDown(clip, e)}
+											onEdgeDown={(edge, e) => onEdgeDown(clip, edge, e)}
+											onContext={(e) => {
+												e.preventDefault();
+												if (!selected.includes(clip.id)) window.cue.selectClips([clip.id]);
+												setMenu({ x: e.clientX, y: e.clientY, clip, atMs: timeAt(e.clientX) });
+											}}
+										/>
+									);
+								})}
+							</Row>
+						</Fragment>
 					))}
 					<AddTrackRow />
 
@@ -876,8 +887,19 @@ function Row({
 	onDragOver?: (e: React.DragEvent) => void;
 	onDrop?: (e: React.DragEvent) => void;
 }) {
+	const drop = trackDrag.use((d) =>
+		d.overId === trackId && d.id !== trackId ? (d.after ? "after" : "before") : null,
+	);
 	return (
-		<div className="flex border-b border-separator" style={{ height }} data-track-id={trackId}>
+		<div
+			className={cn(
+				"relative flex border-b border-separator",
+				drop === "before" && "shadow-[inset_0_2px_0_var(--accent)]",
+				drop === "after" && "shadow-[inset_0_-2px_0_var(--accent)]",
+			)}
+			style={{ height }}
+			data-track-id={trackId}
+		>
 			<div
 				data-track-header
 				className="sticky left-0 z-20 shrink-0 border-r border-separator bg-surface"
@@ -892,6 +914,66 @@ function Row({
 			>
 				{children}
 			</div>
+		</div>
+	);
+}
+
+/** Which track is being dragged by its header, and where it would land. */
+const trackDrag = createStore<{ id: string | null; overId: string | null; after: boolean }>({
+	id: null,
+	overId: null,
+	after: false,
+});
+
+/** Drag handle: reorder tracks within their group (picture above, sound below). */
+function TrackGrip({ track, project }: { track: Track; project: ProjectSnapshot }) {
+	const group = (t: Track) => (t.kind === "audio" ? "sound" : "picture");
+	const target = (e: React.PointerEvent) => {
+		const row = document
+			.elementFromPoint(e.clientX, e.clientY)
+			?.closest<HTMLElement>("[data-track-id]");
+		const over = project.data.tracks.find((t) => t.id === row?.dataset.trackId);
+		if (!row || !over || group(over) !== group(track)) return null;
+		const r = row.getBoundingClientRect();
+		return { overId: over.id, after: e.clientY > r.top + r.height / 2 };
+	};
+	return (
+		<button
+			type="button"
+			aria-label={`Drag to reorder ${track.name}`}
+			title="Drag to reorder"
+			className="flex h-6 w-3.5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted/0 group-hover:text-muted/70 hover:bg-default active:cursor-grabbing"
+			onPointerDown={(e) => {
+				e.currentTarget.setPointerCapture(e.pointerId);
+				trackDrag.set({ id: track.id, overId: null, after: false });
+			}}
+			onPointerMove={(e) => {
+				if (trackDrag.get().id !== track.id) return;
+				const t = target(e);
+				trackDrag.set(t ?? { overId: null, after: false });
+			}}
+			onPointerUp={() => {
+				const { overId, after } = trackDrag.get();
+				trackDrag.set({ id: null, overId: null, after: false });
+				if (!overId || overId === track.id) return;
+				const rest = project.data.tracks.filter((t) => t.id !== track.id);
+				const index = rest.findIndex((t) => t.id === overId) + (after ? 1 : 0);
+				void run("move_track", { id: track.id, index });
+			}}
+		>
+			<DotsSixVertical weight="bold" className="size-3.5" />
+		</button>
+	);
+}
+
+/** The line between picture tracks and sound tracks. */
+function GroupDivider() {
+	return (
+		<div className="flex h-1.5 border-b border-separator bg-background">
+			<div
+				className="sticky left-0 z-20 shrink-0 border-r border-separator bg-background"
+				style={{ width: HEADER_W }}
+			/>
 		</div>
 	);
 }
@@ -913,7 +995,8 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 	const patch = (p: Partial<Track>) => void run("update_track", { id: track.id, patch: p });
 	const index = project.data.tracks.findIndex((t) => t.id === track.id);
 	return (
-		<div className="group flex h-full items-center gap-1 pr-1.5 pl-3">
+		<div className="group flex h-full items-center gap-1 pr-1.5 pl-1">
+			<TrackGrip track={track} project={project} />
 			<Icon
 				className={cn(
 					"size-3.5 shrink-0",
@@ -952,7 +1035,7 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 					<IconButton
 						label={track.muted ? "Unmute" : "Mute"}
 						active={track.muted}
-						className={cn(!track.muted && "opacity-0 group-hover:opacity-100")}
+						className={cn(!track.muted && "hidden group-hover:flex")}
 						onPress={() => patch({ muted: !track.muted })}
 					>
 						{track.muted ? (
@@ -962,11 +1045,28 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 						)}
 					</IconButton>
 				)}
+				{track.kind !== "text" && (
+					<button
+						type="button"
+						title={track.solo ? "Unsolo" : "Solo: hear only this track"}
+						aria-label={track.solo ? "Unsolo" : "Solo"}
+						aria-pressed={!!track.solo}
+						onClick={() => patch({ solo: !track.solo })}
+						className={cn(
+							"flex size-7 items-center justify-center rounded-md text-[11px] font-bold",
+							track.solo
+								? "bg-warning/20 text-warning"
+								: "hidden text-muted group-hover:flex hover:bg-default hover:text-foreground",
+						)}
+					>
+						S
+					</button>
+				)}
 				{track.kind !== "audio" && (
 					<IconButton
 						label={track.hidden ? "Show" : "Hide"}
 						active={track.hidden}
-						className={cn(!track.hidden && "opacity-0 group-hover:opacity-100")}
+						className={cn(!track.hidden && "hidden group-hover:flex")}
 						onPress={() => patch({ hidden: !track.hidden })}
 					>
 						{track.hidden ? <EyeSlash className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -975,7 +1075,7 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 				<IconButton
 					label={track.locked ? "Unlock" : "Lock"}
 					active={track.locked}
-					className={cn(!track.locked && "opacity-0 group-hover:opacity-100")}
+					className={cn(!track.locked && "hidden group-hover:flex")}
 					onPress={() => patch({ locked: !track.locked })}
 				>
 					{track.locked ? (
@@ -987,7 +1087,7 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 				<Dropdown>
 					<Dropdown.Trigger
 						aria-label="Track options"
-						className="flex size-7 opacity-0 group-hover:opacity-100 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+						className="hidden size-7 group-hover:flex data-[pressed]:flex items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
 					>
 						<CaretDown className="size-3" />
 					</Dropdown.Trigger>
@@ -1226,6 +1326,17 @@ function Playhead({
 
 // -------------------------------------------------------------------------
 
+/** Label swatches, matching the usual NLE label colours. */
+export const LABEL_COLORS: Record<string, string> = {
+	red: "#ef4444",
+	orange: "#f97316",
+	yellow: "#eab308",
+	green: "#22c55e",
+	blue: "#3b82f6",
+	purple: "#a855f7",
+	pink: "#ec4899",
+};
+
 const CLIP_TONE: Record<string, string> = {
 	video: "bg-track-video",
 	image: "bg-track-image",
@@ -1321,11 +1432,18 @@ function ClipView({
 					? "outline outline-2 -outline-offset-1 outline-white/90"
 					: "outline outline-1 -outline-offset-1 outline-black/25",
 				dragging && "opacity-85 shadow-lg shadow-black/40",
+				clip.disabled && "opacity-35 grayscale",
 				cursor,
 			)}
 			style={{ left, width, height: inner, transform, zIndex: dragging ? 25 : selected ? 5 : 1 }}
-			title={label}
+			title={clip.disabled ? `${label} (disabled)` : label}
 		>
+			{clip.label && (
+				<div
+					className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[3px]"
+					style={{ background: LABEL_COLORS[clip.label] }}
+				/>
+			)}
 			{media && asset?.kind === "video" && track?.kind === "video" && (
 				<Filmstrip
 					assetId={asset.id}
@@ -1429,6 +1547,15 @@ function ClipView({
 	);
 }
 
+/** Opens the agent chat with the selected clips as the subject. */
+function askAgentAbout(ids: string[]) {
+	window.cue.selectClips(ids);
+	editor.set({ panel: "agent" });
+	agentDraft.set({
+		text: ids.length > 1 ? "About the selected clips: " : "About the selected clip: ",
+	});
+}
+
 function ClipMenu({
 	menu,
 	onClose,
@@ -1471,13 +1598,13 @@ function ClipMenu({
 		{
 			label: "Split",
 			icon: <Scissors className="size-3.5" />,
-			keys: "S",
+			keys: "⌘K",
 			action: () => void run("split_clip", { id: menu.clip.id, atMs: Math.round(menu.atMs) }),
 		},
 		{
 			label: "Duplicate",
 			icon: <Copy className="size-3.5" />,
-			keys: "⌘D",
+			keys: "⌥ drag",
 			action: () => void run("duplicate_clips", { ids }),
 		},
 		...(media
@@ -1559,11 +1686,39 @@ function ClipMenu({
 					},
 				]
 			: []),
+		...(media && project.data.assets.find((a) => a.id === media.assetId)?.kind === "video"
+			? [
+					{
+						label: "Hold this frame",
+						icon: <Pause className="size-3.5" />,
+						action: () =>
+							void run("freeze_frame", {
+								clipId: media.id,
+								atMs: Math.round(menu.atMs),
+								durationMs: 2000,
+							}),
+					},
+				]
+			: []),
+		{
+			label: menu.clip.disabled ? "Enable" : "Disable",
+			icon: <EyeOff className="size-3.5" />,
+			keys: "⇧E",
+			action: () => {
+				const on = !menu.clip.disabled;
+				for (const id of ids) void run("update_clip", { id, patch: { disabled: on } });
+			},
+		},
 		{
 			label: menu.clip.groupId ? "Unlink" : "Link selected",
 			icon: <LinkSimple className="size-3.5" />,
 			keys: "⌘L",
 			action: () => void run(menu.clip.groupId ? "ungroup_clips" : "group_clips", { ids }),
+		},
+		{
+			label: "Ask the agent about this…",
+			icon: <Robot className="size-3.5" />,
+			action: () => askAgentAbout(ids),
 		},
 		"sep",
 		{
@@ -1589,6 +1744,27 @@ function ClipMenu({
 			style={{ left: pos.left, top: pos.top, visibility: pos.ready ? "visible" : "hidden" }}
 			onPointerDown={(e) => e.stopPropagation()}
 		>
+			<div className="flex items-center gap-1 px-2 pt-1 pb-1.5" role="group" aria-label="Label">
+				{Object.entries(LABEL_COLORS).map(([name, color]) => (
+					<button
+						key={name}
+						type="button"
+						title={`Label ${name}`}
+						aria-label={`Label ${name}`}
+						onClick={() => {
+							const clear = menu.clip.label === name;
+							for (const id of ids)
+								void run("update_clip", { id, patch: { label: clear ? null : name } });
+							onClose();
+						}}
+						className={cn(
+							"size-3.5 rounded-full ring-offset-1 ring-offset-overlay hover:ring-2 hover:ring-foreground/40",
+							menu.clip.label === name && "ring-2 ring-foreground",
+						)}
+						style={{ background: color }}
+					/>
+				))}
+			</div>
 			{items.map((item, i) =>
 				item === "sep" ? (
 					<div key={`sep-${i}`} className="my-1 h-px bg-separator" />

@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import type { TextClip } from "../../electron/core/types";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
-import { app, findLine } from "../lib/state";
+import { openSource } from "../lib/source";
+import { app, editor, findLine, type SidebarPanel } from "../lib/state";
 import { rasterise } from "../lib/textDraw";
 
 /** Carries out commands from the main process (and therefore from agents). */
@@ -22,6 +23,18 @@ export function useEditorCommands() {
 					break;
 				case "stop":
 					await recorder.stop();
+					break;
+				case "setInOut":
+					editor.set({
+						...(command.inMs !== undefined ? { inPoint: command.inMs } : {}),
+						...(command.outMs !== undefined ? { outPoint: command.outMs } : {}),
+					});
+					break;
+				case "setView":
+					if (command.panel) editor.set({ panel: command.panel as SidebarPanel });
+					if (command.zoom) editor.set({ zoom: command.zoom });
+					if (command.fitTimeline) window.dispatchEvent(new CustomEvent("cue:fit"));
+					if (command.openSource) openSource(command.openSource);
 					break;
 				case "previewAsset": {
 					const url = project?.assetUrls[command.assetId];
@@ -89,9 +102,19 @@ export function useEditorCommands() {
 			lastPlaying = playing;
 			window.cue.reportRecorder({ playing, currentMs: Math.round(currentMs) });
 		});
+		// And the in/out marks and open panel, so agents know what the user is looking at.
+		let lastView = "";
+		const offView = editor.subscribe(() => {
+			const { inPoint, outPoint, panel } = editor.get();
+			const key = `${inPoint}|${outPoint}|${panel}`;
+			if (key === lastView) return;
+			lastView = key;
+			window.cue.reportRecorder({ inMs: inPoint, outMs: outPoint, panel });
+		});
 		return () => {
 			offCommand();
 			offClock();
+			offView();
 		};
 	}, []);
 }

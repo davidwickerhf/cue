@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
+import { AGENT_GUIDE } from "./control/guide";
 import type { TextRender } from "./core/exporter";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
 import type { AiRuntime } from "./core/runtime";
@@ -39,6 +40,8 @@ export interface ControllerHooks {
 	captureFrame: (atMs: number) => Promise<string>;
 	/** The generative runtime built from app settings, keys and local models. */
 	runtime: () => Promise<AiRuntime>;
+	/** Read and change app-wide settings (never secrets or agent access). */
+	appSettings?: { get: () => unknown; set: (patch: Record<string, unknown>) => Promise<unknown> };
 	/** The folder new projects go in (app setting). */
 	projectsDir?: () => string;
 }
@@ -144,7 +147,13 @@ export class Controller extends EventEmitter {
 		this.recorder = { ...before, ...patch };
 		// The playhead position is only for agents asking for it; don't rebroadcast state for it.
 		const meaningful = (Object.keys(patch) as (keyof RecorderStatus)[]).some(
-			(k) => k !== "currentMs" && k !== "playing" && before[k] !== patch[k],
+			(k) =>
+				k !== "currentMs" &&
+				k !== "playing" &&
+				k !== "inMs" &&
+				k !== "outMs" &&
+				k !== "panel" &&
+				before[k] !== patch[k],
 		);
 		if (meaningful) this.changed();
 	}
@@ -339,6 +348,17 @@ export class Controller extends EventEmitter {
 					{ type: "detachAudio", ...parseInput("detach_audio", params) },
 					actor,
 				);
+			case "lift_range":
+				return this.store.apply({ type: "liftRange", ...parseInput("lift_range", params) }, actor);
+			case "insert_edit":
+				return this.store.apply(
+					{ type: "insertEdit", ...parseInput("insert_edit", params) },
+					actor,
+				);
+			case "freeze_frame": {
+				const { clipId, atMs, durationMs } = parseInput("freeze_frame", params);
+				return this.store.freezeFrame(clipId, atMs, durationMs, actor);
+			}
 			case "remove_ranges":
 				return this.store.apply(
 					{ type: "removeRanges", ...parseInput("remove_ranges", params) },
@@ -556,6 +576,73 @@ export class Controller extends EventEmitter {
 					this.store.rewriteLine(id, runtime, actor, goal, instructions),
 				);
 			}
+			case "update_marker":
+				return this.store.apply(
+					{ type: "updateMarker", ...parseInput("update_marker", params) },
+					actor,
+				);
+			case "clear_markers":
+				return this.store.apply(
+					{ type: "clearMarkers", ...parseInput("clear_markers", params) },
+					actor,
+				);
+			case "set_in_out": {
+				const input = parseInput("set_in_out", params);
+				this.hooks.sendCommand({ type: "setInOut", ...input });
+				return {
+					inMs: input.inMs ?? this.recorder.inMs ?? null,
+					outMs: input.outMs ?? this.recorder.outMs ?? null,
+				};
+			}
+			case "set_view": {
+				const input = parseInput("set_view", params);
+				if (!this.hooks.sendCommand({ type: "setView", ...input }))
+					throw new Error("The Cue window is not open.");
+				return { ok: true };
+			}
+			case "get_app_settings":
+				return this.hooks.appSettings?.get() ?? null;
+			case "update_app_settings": {
+				if (!this.hooks.appSettings) throw new Error("App settings are not available.");
+				return this.hooks.appSettings.set(parseInput("update_app_settings", params).patch);
+			}
+			case "get_guide":
+				return AGENT_GUIDE;
+			case "detect_beats": {
+				const { assetId, addMarkers, every } = parseInput("detect_beats", params);
+				return this.store.detectBeats(assetId, actor, { addMarkers, every });
+			}
+			case "snap_cuts_to_beats": {
+				const { trackId, musicAssetId, toleranceMs } = parseInput("snap_cuts_to_beats", params);
+				return this.store.snapCutsToBeats(trackId, musicAssetId, actor, toleranceMs);
+			}
+			case "find_moments": {
+				const { query } = parseInput("find_moments", params);
+				const runtime = await this.requireCredentials();
+				return this.job("Searching the edit", () => this.store.findMoments(query, runtime));
+			}
+			case "generate_chapters": {
+				const { addMarkers } = parseInput("generate_chapters", params);
+				const runtime = await this.requireCredentials();
+				return this.job("Writing chapters", () => this.store.chapters(runtime, actor, addMarkers));
+			}
+			case "suggest_broll": {
+				const { count } = parseInput("suggest_broll", params);
+				const runtime = await this.requireCredentials();
+				return this.job("Planning B-roll", () => this.store.suggestBroll(runtime, count));
+			}
+			case "add_broll": {
+				const { items } = parseInput("add_broll", params);
+				const runtime = await this.requireCredentials();
+				return this.job(
+					`Generating ${items.length} B-roll image${items.length === 1 ? "" : "s"}`,
+					() => this.store.addBroll(items, runtime, actor),
+				);
+			}
+			case "reframe": {
+				const { width, height } = parseInput("reframe", params);
+				return this.store.reframe(width, height, actor);
+			}
 			case "get_ai_status":
 				return (await this.hooks.runtime()).status();
 			case "generate_voiceover": {
@@ -645,10 +732,25 @@ export class Controller extends EventEmitter {
 			case "redo":
 				return { redone: this.store.redo(actor) };
 			case "export": {
-				const { kind, out } = parseInput("export", params);
+				const { kind, out, range } = parseInput("export", params);
 				return this.job(`Exporting ${kind}`, () =>
-					this.store.export(kind, out, actor, this.hooks.renderText),
+					this.store.export(kind, out, actor, this.hooks.renderText, range),
 				);
+			}
+			case "export_frame": {
+				const { atMs, out } = parseInput("export_frame", params);
+				const frame = await this.hooks.captureFrame(atMs);
+				const name = `${this.store.current.name.replace(/[^\w\- ]+/g, "")} ${(atMs / 1000).toFixed(2)}s.png`;
+				const file = out
+					? path.resolve(this.store.projectDir, out)
+					: path.join(this.store.projectDir, "export", name);
+				await fs.mkdir(path.dirname(file), { recursive: true });
+				await fs.copyFile(frame, file);
+				this.store.log(
+					actor,
+					`Saved the frame at ${(atMs / 1000).toFixed(2)} s → ${path.basename(file)}`,
+				);
+				return { path: file };
 			}
 			case "focus_window":
 				this.hooks.focusWindow();
@@ -813,13 +915,11 @@ export class Controller extends EventEmitter {
 					clips: data.clips.filter((c) => c.trackId === t.id).length,
 				})),
 				media: data.assets.length,
-				offlineMedia: this.store
-					.offline()
-					.map((id) => ({
-						id,
-						name: data.assets.find((a) => a.id === id)?.name,
-						path: data.assets.find((a) => a.id === id)?.path,
-					})),
+				offlineMedia: this.store.offline().map((id) => ({
+					id,
+					name: data.assets.find((a) => a.id === id)?.name,
+					path: data.assets.find((a) => a.id === id)?.path,
+				})),
 				clips: data.clips.length,
 				markers: data.markers,
 				lines: snapshot.lines.map((l) => ({
@@ -839,6 +939,13 @@ export class Controller extends EventEmitter {
 				ai: data.ai,
 			},
 			selection: { lineId: this.selectedLineId, clipIds: this.selectedClipIds },
+			view: {
+				playheadMs: this.recorder.currentMs,
+				playing: this.recorder.playing,
+				inMs: this.recorder.inMs ?? null,
+				outMs: this.recorder.outMs ?? null,
+				panel: this.recorder.panel ?? null,
+			},
 			recorder: this.recorder,
 			aiConfigured: this.aiConfigured,
 		};

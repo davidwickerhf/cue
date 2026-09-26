@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useEditorCommands } from "../../hooks/useEditorCommands";
 import { useShortcuts } from "../../hooks/useShortcuts";
 import { editor } from "../../lib/state";
+import { ExportDialog } from "../ExportDialog";
 import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
 import { EditorHeader } from "./EditorHeader";
@@ -48,6 +49,7 @@ export function EditorShell() {
 				<Timeline />
 			</div>
 			<RelinkDialog />
+			<ExportDialog />
 		</div>
 	);
 }

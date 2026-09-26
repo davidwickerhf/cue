@@ -21,6 +21,7 @@ import {
 	setHarness,
 	stop,
 	switchProjectChat,
+	agentDraft,
 } from "../../lib/chat";
 import { useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
@@ -63,6 +64,15 @@ function ChatView() {
 	const [harnesses, setHarnesses] = useState<HarnessInfo[] | null>(null);
 	const [draft, setDraft] = useState("");
 	const list = useRef<HTMLDivElement>(null);
+	const input = useRef<HTMLTextAreaElement>(null);
+	// "Ask the agent about this…" from the clip menu starts a message here.
+	const pending = agentDraft.use((s) => s.text);
+	useEffect(() => {
+		if (pending === null) return;
+		setDraft(pending);
+		agentDraft.set({ text: null });
+		requestAnimationFrame(() => input.current?.focus());
+	}, [pending]);
 
 	const refresh = (force = false) => void window.cue.harnesses(force).then(setHarnesses);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: load once
@@ -167,6 +177,7 @@ function ChatView() {
 			<div className="border-t border-separator p-2.5">
 				<div className="flex items-end gap-1.5 rounded-lg border border-border bg-field p-1.5 focus-within:border-accent">
 					<textarea
+						ref={input}
 						value={draft}
 						onChange={(e) => setDraft(e.target.value)}
 						onKeyDown={(e) => {

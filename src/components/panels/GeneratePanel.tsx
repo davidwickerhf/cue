@@ -12,6 +12,7 @@ import { playback } from "../../lib/playback";
 import { appSettings, openSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { Field, Section, Segmented, TextInput } from "../ui/controls";
+import { BeatTools, BrollTools, ChapterTools, ReframeTools } from "./AiTools";
 
 const VOICES = [
 	"cedar",
@@ -188,6 +189,10 @@ export function GeneratePanel() {
 				</div>
 			</Section>
 
+			<BeatTools project={project} />
+			<ChapterTools />
+			<BrollTools />
+			<ReframeTools project={project} />
 			{videoAsset && (
 				<Section title="Script from footage">
 					<p className="text-[12px] leading-relaxed text-muted">

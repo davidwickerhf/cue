@@ -1,11 +1,21 @@
 import { Tooltip } from "@heroui/react";
-import { Gear, Images, Microphone, Robot, Sparkle, Subtitles, TextT } from "@phosphor-icons/react";
+import {
+	Faders,
+	Gear,
+	Images,
+	Microphone,
+	Robot,
+	Sparkle,
+	Subtitles,
+	TextT,
+} from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { editor, type SidebarPanel, useApp } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { AgentPanel } from "../panels/AgentPanel";
 import { GeneratePanel } from "../panels/GeneratePanel";
 import { MediaPanel } from "../panels/MediaPanel";
+import { MixerPanel } from "../panels/MixerPanel";
 import { ScriptPanel } from "../panels/ScriptPanel";
 import { SettingsPanel } from "../panels/SettingsPanel";
 import { TextPanel } from "../panels/TextPanel";
@@ -16,6 +26,7 @@ const ITEMS: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
 	{ id: "script", label: "Voiceover", icon: <Microphone className="size-[18px]" /> },
 	{ id: "transcript", label: "Transcript", icon: <Subtitles className="size-[18px]" /> },
 	{ id: "text", label: "Text", icon: <TextT className="size-[18px]" /> },
+	{ id: "mixer", label: "Mixer", icon: <Faders className="size-[18px]" /> },
 	{ id: "generate", label: "Generate", icon: <Sparkle className="size-[18px]" /> },
 	{ id: "agent", label: "Agent", icon: <Robot className="size-[18px]" /> },
 ];
@@ -25,6 +36,7 @@ const TITLES: Record<SidebarPanel, string> = {
 	script: "Voiceover",
 	transcript: "Transcript",
 	text: "Text",
+	mixer: "Mixer",
 	generate: "Generate",
 	agent: "Agent",
 	settings: "Project",
@@ -69,6 +81,7 @@ export function EditorSidebar() {
 					{panel === "script" && <ScriptPanel />}
 					{panel === "transcript" && <TranscriptPanel />}
 					{panel === "text" && <TextPanel />}
+					{panel === "mixer" && <MixerPanel />}
 					{panel === "generate" && <GeneratePanel />}
 					{panel === "agent" && <AgentPanel />}
 					{panel === "settings" && <SettingsPanel />}

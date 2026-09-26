@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import type { Asset, ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
+import { openSource } from "../../lib/source";
 import { locate } from "../RelinkMedia";
 import { playback } from "../../lib/playback";
 import { useProject } from "../../lib/state";
@@ -114,7 +115,7 @@ function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot 
 				e.dataTransfer.setData(ASSET_MIME, asset.id);
 				e.dataTransfer.effectAllowed = "copy";
 			}}
-			onDoubleClick={() => (asset.kind === "image" ? addAtPlayhead() : playback.previewAsset(url))}
+			onDoubleClick={() => openSource(asset.id)}
 			className="group relative flex cursor-grab flex-col overflow-hidden rounded-xl border border-border bg-surface transition hover:border-accent/50 hover:shadow-sm active:cursor-grabbing"
 			title={asset.name}
 		>

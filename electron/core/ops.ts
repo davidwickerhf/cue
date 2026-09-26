@@ -14,6 +14,8 @@ import {
 	NEUTRAL_COLOR,
 	NO_CROP,
 	newId,
+	CLIP_LABELS,
+	groupTracks,
 	normaliseLine,
 	settingsSchema,
 	sortLines,
@@ -83,6 +85,8 @@ export const clipPatch = z
 		animationIn: animation,
 		animationOut: animation,
 		name: z.string().max(120),
+		disabled: z.boolean(),
+		label: z.enum(CLIP_LABELS).nullable(),
 	})
 	.partial();
 
@@ -95,6 +99,8 @@ const trackPatch = z
 		volume: z.number().min(0).max(2),
 		voiceover: z.boolean(),
 		duck: z.boolean(),
+		solo: z.boolean(),
+		pan: z.number().min(-1).max(1),
 	})
 	.partial();
 
@@ -157,6 +163,22 @@ export const opSchema = z.discriminatedUnion("type", [
 		trackIds: z.array(z.string()).optional(),
 	}),
 	z.object({ type: z.literal("detachAudio"), id: z.string(), trackId: z.string().optional() }),
+	// Three-point editing (Premiere: , insert and . overwrite; ; lift)
+	z.object({
+		type: z.literal("liftRange"),
+		startMs: ms.min(0),
+		endMs: ms.min(0),
+		trackIds: z.array(z.string()).optional(),
+	}),
+	z.object({
+		type: z.literal("insertEdit"),
+		mode: z.enum(["insert", "overwrite"]),
+		assetId: z.string(),
+		trackId: z.string(),
+		atMs: ms.min(0),
+		inMs: ms.min(0).optional(),
+		outMs: ms.min(0).optional(),
+	}),
 	// Keyframes, zooms, transitions and groups
 	z.object({
 		type: z.literal("setKeyframe"),
@@ -234,6 +256,18 @@ export const opSchema = z.discriminatedUnion("type", [
 		color: z.enum(["accent", "success", "warning", "danger"]).default("accent"),
 	}),
 	z.object({ type: z.literal("removeMarker"), id: z.string() }),
+	z.object({
+		type: z.literal("updateMarker"),
+		id: z.string(),
+		patch: z
+			.object({
+				atMs: ms.min(0),
+				label: z.string().max(200),
+				color: z.enum(["accent", "success", "warning", "danger"]),
+			})
+			.partial(),
+	}),
+	z.object({ type: z.literal("clearMarkers"), label: z.string().optional() }),
 	z.object({ type: z.literal("updateSettings"), settings: settingsSchema.partial() }),
 	z.object({ type: z.literal("updateExport"), export: exportSchema.partial() }),
 	z.object({ type: z.literal("updateAi"), ai: aiSchema.partial() }),
@@ -437,6 +471,26 @@ function splitOne(
 }
 
 /** Puts a take on the voiceover track as the line's clip, replacing the previous one. */
+/** Removes whatever lies between two times on some tracks, leaving a gap (no ripple). */
+function clearRange(
+	data: ProjectData,
+	startMs: number,
+	endMs: number,
+	affected: Set<string>,
+): ProjectData {
+	let next = data;
+	for (const edge of [endMs, startMs])
+		for (const c of next.clips)
+			if (affected.has(c.trackId) && edge > c.startMs + 1 && edge < clipEnd(c) - 1)
+				next = splitOne(next, c, edge).data;
+	return {
+		...next,
+		clips: next.clips.filter(
+			(c) => !(affected.has(c.trackId) && c.startMs >= startMs - 1 && clipEnd(c) <= endMs + 1),
+		),
+	};
+}
+
 function placeTake(data: ProjectData, a: Asset): ProjectData {
 	if (!a.lineId) throw new Error(`"${a.name}" is not a take.`);
 	const line = data.lines.find((candidate) => candidate.id === a.lineId);
@@ -558,9 +612,10 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				volume: 1,
 			};
 			const tracks = [...data.tracks];
-			tracks.splice(op.index ?? tracks.length, 0, t);
+			// New picture tracks go on top of the stack, new sound tracks at the bottom.
+			tracks.splice(op.index ?? (op.kind === "audio" ? tracks.length : 0), 0, t);
 			return {
-				data: { ...data, tracks },
+				data: { ...data, tracks: groupTracks(tracks) },
 				summary: `Added ${op.kind} track "${t.name}"`,
 				created: [t.id],
 			};
@@ -587,7 +642,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			const t = track(data, op.id);
 			const tracks = data.tracks.filter((x) => x.id !== op.id);
 			tracks.splice(Math.min(op.index, tracks.length), 0, t);
-			return { data: { ...data, tracks }, summary: `Moved track "${t.name}"` };
+			return { data: { ...data, tracks: groupTracks(tracks) }, summary: `Moved track "${t.name}"` };
 		}
 
 		case "addClips": {
@@ -607,7 +662,9 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "updateClip": {
 			const current = clip(data, op.id);
 			unlocked(data, current.trackId);
-			const { transform, style, color, ...rest } = op.patch;
+			const { transform, style, color, label, ...patch } = op.patch;
+			// A null label clears it.
+			const rest = { ...patch, ...(label === undefined ? {} : { label: label ?? undefined }) };
 			const merged =
 				current.type === "media"
 					? {
@@ -791,6 +848,61 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				removed += width;
 			}
 			return { data: next, summary: `Removed ${merged.length} range(s), ${sec(removed)} in total` };
+		}
+		case "liftRange": {
+			if (op.endMs - op.startMs < 2) throw new Error("Mark an in and an out point first.");
+			const affected = new Set(
+				op.trackIds ?? data.tracks.filter((t) => !t.locked).map((t) => t.id),
+			);
+			return {
+				data: clearRange(data, op.startMs, op.endMs, affected),
+				summary: `Lifted ${sec(op.endMs - op.startMs)}, leaving a gap`,
+			};
+		}
+		case "insertEdit": {
+			const a = asset(data, op.assetId);
+			unlocked(data, op.trackId);
+			const inMs = op.inMs ?? 0;
+			const outMs = op.outMs ?? (a.kind === "image" ? inMs + 5000 : a.durationMs);
+			const width = Math.round(outMs - inMs);
+			if (width < 1) throw new Error("The out point must come after the in point.");
+			let next = data;
+			if (op.mode === "overwrite") {
+				next = clearRange(next, op.atMs, op.atMs + width, new Set([op.trackId]));
+			} else {
+				// Insert pushes everything after the playhead along, on every unlocked track.
+				const affected = new Set(next.tracks.filter((t) => !t.locked).map((t) => t.id));
+				for (const c of next.clips)
+					if (affected.has(c.trackId) && op.atMs > c.startMs + 1 && op.atMs < clipEnd(c) - 1)
+						next = splitOne(next, c, op.atMs).data;
+				next = {
+					...next,
+					clips: next.clips.map((c) =>
+						affected.has(c.trackId) && c.startMs >= op.atMs - 1
+							? { ...c, startMs: c.startMs + width }
+							: c,
+					),
+					lines: next.lines.map((l) =>
+						l.startMs >= op.atMs ? { ...l, startMs: l.startMs + width } : l,
+					),
+					markers: next.markers.map((m) =>
+						m.atMs >= op.atMs ? { ...m, atMs: m.atMs + width } : m,
+					),
+				};
+			}
+			const c = buildClip(next, {
+				type: "media",
+				assetId: a.id,
+				trackId: op.trackId,
+				startMs: op.atMs,
+				inMs: a.kind === "image" ? 0 : inMs,
+				durationMs: width,
+			});
+			return {
+				data: { ...next, clips: [...next.clips, c] },
+				summary: `${op.mode === "insert" ? "Inserted" : "Overwrote with"} ${a.name} (${sec(width)})`,
+				created: [c.id],
+			};
 		}
 		case "detachAudio": {
 			const c = clip(data, op.id);
@@ -1207,6 +1319,23 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				},
 				summary: `Added marker "${op.label}" at ${sec(op.atMs)}`,
 			};
+		case "updateMarker": {
+			if (!data.markers.some((m) => m.id === op.id)) throw new Error(`No marker "${op.id}".`);
+			return {
+				data: {
+					...data,
+					markers: data.markers.map((m) => (m.id === op.id ? { ...m, ...op.patch } : m)),
+				},
+				summary: "Edited a marker",
+			};
+		}
+		case "clearMarkers": {
+			const keep = data.markers.filter((m) => op.label !== undefined && m.label !== op.label);
+			return {
+				data: { ...data, markers: keep },
+				summary: `Removed ${data.markers.length - keep.length} marker(s)`,
+			};
+		}
 		case "removeMarker":
 			return {
 				data: { ...data, markers: data.markers.filter((m) => m.id !== op.id) },

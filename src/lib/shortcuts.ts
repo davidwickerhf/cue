@@ -58,6 +58,19 @@ export const SHORTCUTS: {
 		],
 	},
 	{
+		title: "Source monitor",
+		items: [
+			{ label: "Open a clip", keys: ["Double-click in Media"] },
+			{
+				label: "Mark in / out, play",
+				keys: ["I", "O", "Space"],
+				note: "While the source is showing",
+			},
+			{ label: "Insert / overwrite at the playhead", keys: [",", "."] },
+			{ label: "Back to the timeline", keys: ["Esc"] },
+		],
+	},
+	{
 		title: "Timeline",
 		items: [
 			{ label: "Zoom in / out", keys: ["=", "-"] },

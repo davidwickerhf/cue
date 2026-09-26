@@ -257,6 +257,13 @@ const controller = new Controller(store, {
 	captureFrame,
 	runtime,
 	projectsDir: () => appSettings.projectsDir,
+	appSettings: {
+		get: () => appSettings,
+		set: async (patch) => {
+			await saveAppSettings(patch as Partial<AppSettings>);
+			return appSettings;
+		},
+	},
 });
 
 let stateTimer: NodeJS.Timeout | null = null;
@@ -659,6 +666,20 @@ function registerIpc() {
 		importDialog(place),
 	);
 	ipcMain.handle("cue:listProjects", () => controller.projects());
+	ipcMain.handle(
+		"cue:chooseSave",
+		async (_event, options: { title: string; defaultPath?: string; extensions?: string[] }) => {
+			if (!win) return null;
+			const result = await dialog.showSaveDialog(win, {
+				title: options.title,
+				defaultPath: options.defaultPath,
+				filters: options.extensions?.length
+					? [{ name: "File", extensions: options.extensions }]
+					: undefined,
+			});
+			return result.canceled ? null : (result.filePath ?? null);
+		},
+	);
 	ipcMain.handle("cue:harnesses", (_event, force?: boolean) => listHarnesses(force));
 	ipcMain.handle("cue:chatSend", (_event, chatId: string, input) => sendChat(chatId, input));
 	ipcMain.handle("cue:chatStop", (_event, chatId: string) => chats.get(chatId)?.stop());

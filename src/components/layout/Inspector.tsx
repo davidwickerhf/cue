@@ -140,6 +140,7 @@ function Nothing({ count }: { count: number }) {
 					))}
 				</dl>
 			</Section>
+			<MarkerList markers={project.data.markers} />
 			<Section title="Shortcuts">
 				<dl className="grid grid-cols-[1fr_auto] gap-y-1.5 text-[12px]">
 					{(
@@ -919,5 +920,84 @@ function TextInspector({ clip }: { clip: TextClip }) {
 				</Field>
 			</Section>
 		</>
+	);
+}
+
+const MARKER_TONE = {
+	accent: "bg-accent",
+	success: "bg-success",
+	warning: "bg-warning",
+	danger: "bg-danger",
+} as const;
+
+/** Every marker in time order: click to jump, rename in place, delete. ⇧M / ⇧⌘M step through them. */
+function MarkerList({ markers }: { markers: ProjectSnapshot["data"]["markers"] }) {
+	const sorted = [...markers].sort((a, b) => a.atMs - b.atMs);
+	const labels = [...new Set(markers.map((m) => m.label))];
+	return (
+		<Section
+			title={`Markers · ${markers.length}`}
+			action={
+				markers.length > 0 ? (
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-6 text-[11px]"
+						onPress={() =>
+							void run(
+								"clear_markers",
+								labels.includes("Beat") && labels.length > 1 ? { label: "Beat" } : {},
+							)
+						}
+					>
+						{labels.includes("Beat") && labels.length > 1 ? "Clear beats" : "Clear"}
+					</Button>
+				) : null
+			}
+		>
+			{sorted.length === 0 ? (
+				<p className="text-[11px] text-muted">Press M to drop a marker at the playhead.</p>
+			) : (
+				<ul className="-mx-1 flex max-h-56 flex-col overflow-y-auto">
+					{sorted.slice(0, 300).map((m) => (
+						<li
+							key={m.id}
+							className="group flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-default/60"
+						>
+							<span className={cn("size-2 shrink-0 rotate-45", MARKER_TONE[m.color])} />
+							<button
+								type="button"
+								onClick={() => playback.seek(m.atMs)}
+								className="w-12 shrink-0 text-left text-[11px] text-muted tabular"
+							>
+								{formatTime(m.atMs, false)}
+							</button>
+							<input
+								key={m.label}
+								defaultValue={m.label}
+								onBlur={(e) =>
+									e.target.value.trim() &&
+									e.target.value !== m.label &&
+									void run("update_marker", { id: m.id, patch: { label: e.target.value.trim() } })
+								}
+								onKeyDown={(e) => {
+									e.stopPropagation();
+									if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+								}}
+								className="min-w-0 flex-1 truncate rounded bg-transparent px-1 text-[12px] outline-none focus:bg-default"
+							/>
+							<button
+								type="button"
+								aria-label="Delete marker"
+								onClick={() => void run("remove_marker", { id: m.id })}
+								className="text-[11px] text-muted opacity-0 group-hover:opacity-100 hover:text-danger"
+							>
+								✕
+							</button>
+						</li>
+					))}
+				</ul>
+			)}
+		</Section>
 	);
 }

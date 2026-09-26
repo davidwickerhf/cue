@@ -114,6 +114,7 @@ export type SidebarPanel =
 	| "script"
 	| "transcript"
 	| "text"
+	| "mixer"
 	| "generate"
 	| "agent"
 	| "settings";

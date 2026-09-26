@@ -82,6 +82,12 @@ function audioFadeOut(clips: Clip[], clip: MediaClip): number {
 class PlaybackEngine {
 	readonly clock = createStore({ currentMs: 0, playing: false, rate: 1 });
 	readonly meter = createStore({ left: 0, right: 0 });
+	/** Peak level per track (0–1), for the mixer. */
+	readonly trackMeters = createStore<{ levels: Record<string, number> }>({ levels: {} });
+	private buses = new Map<
+		string,
+		{ gain: GainNode; pan: StereoPannerNode; analyser: AnalyserNode }
+	>();
 	private project: ProjectSnapshot | null = null;
 	private index: Index | null = null;
 	private stage: HTMLDivElement | null = null;
@@ -152,6 +158,7 @@ class PlaybackEngine {
 		this.project = project;
 		if (!project) return;
 		this.index = this.buildIndex(project);
+		this.updateBuses(project);
 		const layout = (p: ProjectSnapshot | null) =>
 			p?.data.tracks.map((t) => `${t.id}:${t.kind}`).join() ?? "";
 		if (
@@ -231,6 +238,7 @@ class PlaybackEngine {
 		this.rate = 1;
 		this.clock.set({ playing: false, currentMs: at, rate: 1 });
 		this.meter.set({ left: 0, right: 0 });
+		this.trackMeters.set({ levels: {} });
 		this.render(at);
 	}
 
@@ -299,12 +307,16 @@ class PlaybackEngine {
 	private buildIndex(project: ProjectSnapshot): Index {
 		const tracks = new Map(project.data.tracks.map((t) => [t.id, t]));
 		const byTrack = new Map<string, Clip[]>(project.data.tracks.map((t) => [t.id, []]));
-		for (const c of project.data.clips) byTrack.get(c.trackId)?.push(c);
+		// Disabled clips stay on the timeline but are neither drawn nor heard.
+		for (const c of project.data.clips) if (!c.disabled) byTrack.get(c.trackId)?.push(c);
 		for (const list of byTrack.values()) list.sort((a, b) => a.startMs - b.startMs);
 		const voiceRanges = project.data.clips
 			.filter(
 				(c) =>
-					c.type === "media" && tracks.get(c.trackId)?.voiceover && !tracks.get(c.trackId)?.muted,
+					c.type === "media" &&
+					!c.disabled &&
+					tracks.get(c.trackId)?.voiceover &&
+					!tracks.get(c.trackId)?.muted,
 			)
 			.map((c) => ({ start: c.startMs, end: clipEnd(c) }));
 		return {
@@ -535,7 +547,60 @@ class PlaybackEngine {
 		return this.ctx;
 	}
 
+	/** Per-track mixer strip: level, pan and a meter, feeding the master. */
+	private bus(trackId: string, master: GainNode) {
+		let bus = this.buses.get(trackId);
+		if (!bus) {
+			const ctx = this.audio();
+			const gain = ctx.createGain();
+			const pan = ctx.createStereoPanner();
+			const analyser = ctx.createAnalyser();
+			analyser.fftSize = 512;
+			gain.connect(pan).connect(master);
+			pan.connect(analyser);
+			bus = { gain, pan, analyser };
+			this.buses.set(trackId, bus);
+			const track = this.index?.tracks.get(trackId);
+			if (track) this.levelBus(bus, track);
+		}
+		return bus;
+	}
+
+	private levelBus(bus: { gain: GainNode; pan: StereoPannerNode }, track: Track) {
+		const ctx = this.audio();
+		bus.gain.gain.setTargetAtTime(track.volume, ctx.currentTime, 0.015);
+		bus.pan.pan.setTargetAtTime(track.pan ?? 0, ctx.currentTime, 0.015);
+	}
+
+	/** Moves a fader or pan knob live while it is dragged (the edit is saved on release). */
+	previewTrackMix(trackId: string, mix: { volume?: number; pan?: number }) {
+		const bus = this.buses.get(trackId);
+		if (!bus || !this.ctx) return;
+		if (mix.volume !== undefined)
+			bus.gain.gain.setTargetAtTime(mix.volume, this.ctx.currentTime, 0.01);
+		if (mix.pan !== undefined) bus.pan.pan.setTargetAtTime(mix.pan, this.ctx.currentTime, 0.01);
+	}
+
+	private updateBuses(project: ProjectSnapshot) {
+		for (const track of project.data.tracks) {
+			const bus = this.buses.get(track.id);
+			if (bus) this.levelBus(bus, track);
+		}
+	}
+
 	private readMeter() {
+		if (this.buses.size) {
+			const levels: Record<string, number> = {};
+			const prev = this.trackMeters.get().levels;
+			const data = new Float32Array(512);
+			for (const [id, bus] of this.buses) {
+				bus.analyser.getFloatTimeDomainData(data);
+				let peak = 0;
+				for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+				levels[id] = Math.max(peak, (prev[id] ?? 0) * 0.85);
+			}
+			this.trackMeters.set({ levels });
+		}
 		if (!this.analysers) return;
 		const [l, r] = this.analysers.map((a) => {
 			a.getFloatTimeDomainData(this.meterData);
@@ -597,7 +662,8 @@ class PlaybackEngine {
 	}
 
 	private audible(clip: MediaClip, track: Track): boolean {
-		if (track.muted || track.hidden || clip.volume <= 0) return false;
+		if (clip.disabled || track.muted || track.hidden || clip.volume <= 0) return false;
+		if (this.project?.data.tracks.some((t) => t.solo) && !track.solo) return false;
 		if (this.filter === "muted") return false;
 		if (this.filter === "voiceover") return Boolean(track.voiceover);
 		if (this.filter === "exceptVoiceover") return !track.voiceover;
@@ -648,7 +714,8 @@ class PlaybackEngine {
 				source.buffer = buffer;
 				// Gain stages: track level + fades, keyframed/clip volume, ducking.
 				const fades = ctx.createGain();
-				const level = track.volume;
+				// The track's own level and pan live on its bus, so the mixer reacts instantly.
+				const level = 1;
 				const fadeIn = clip.fadeInMs;
 				const fadeOut = audioFadeOut(index.byTrack.get(clip.trackId) ?? [], clip);
 				const localFrom = from - clip.startMs;
@@ -687,7 +754,7 @@ class PlaybackEngine {
 					tail = duck;
 				}
 				source.connect(fades).connect(volume);
-				tail.connect(master);
+				tail.connect(this.bus(track.id, master).gain);
 				source.start(toCtx(from), offset, duration);
 				this.scheduled.push(source);
 			});

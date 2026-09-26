@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { AGENT_GUIDE } from "../control/guide";
 
 const run = promisify(execFile);
 
@@ -74,12 +75,10 @@ const HARNESSES: Omit<HarnessInfo, "installed" | "path" | "version">[] = [
 	},
 ];
 
-export const SYSTEM_PROMPT = [
-	"You are the editing assistant built into Cue, a video editor. The user is looking at the editor while you work.",
-	"Use the cue tools to inspect and change the open project: get_state and get_timeline first, render_frame to look at a moment, select_clips to point things out.",
-	"Prefer precise edits over broad ones. Every change is undoable with ⌘Z, so act rather than asking for permission for ordinary edits, but confirm before deleting large parts of the edit or exporting over existing files.",
-	"Reply briefly in plain sentences. Refer to times as m:ss.",
-].join("\n");
+/** Guidance for the in-app chat: the full agent guide plus how to behave inside the editor. */
+export const SYSTEM_PROMPT = `You are the editing assistant built into Cue. The user is looking at the editor while you work, and each message starts with what they see (playhead, selection, in/out). Act on ordinary edit requests without asking permission, since everything can be undone; confirm before deleting large parts of the edit or overwriting exported files.
+
+${AGENT_GUIDE}`;
 
 /** GUI apps on macOS start with a minimal PATH; use the login shell's instead. */
 let shellPath: Promise<string> | null = null;

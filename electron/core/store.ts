@@ -18,9 +18,11 @@ import {
 	computePeaks,
 	detectSilences,
 	extractThumbnails,
+	ffmpeg,
 	kindOf,
 	makeAudioProxy,
 	makeVideoProxy,
+	PEAKS_PER_SECOND,
 	probe,
 	toWav,
 } from "./media";
@@ -33,6 +35,13 @@ import {
 	toMlt,
 	toOtio,
 } from "./interchange";
+import {
+	detectBeats as detectBeatsIn,
+	editTranscript,
+	extractJson,
+	sourceToTimeline,
+	transcriptForPrompt,
+} from "./intelligence";
 import { makePoster } from "./library";
 import { findMoved, isOffline } from "./relink";
 import { applyOp, type InternalOp, type Op } from "./ops";
@@ -196,6 +205,283 @@ export class ProjectStore extends EventEmitter {
 			"system",
 			`Found ${ids.length} moved media file${ids.length === 1 ? "" : "s"} and relinked ${ids.length === 1 ? "it" : "them"}`,
 		);
+	}
+
+	/**
+	 * Holds the frame at the playhead for a while (Premiere's "Insert Frame
+	 * Hold Segment"): the clip is split there and later clips on the track move
+	 * along to make room for a still of that frame.
+	 */
+	async freezeFrame(clipId: string, atMs: number, durationMs: number, actor: Actor) {
+		const clip = this.current.clips.find((c) => c.id === clipId);
+		if (!clip || clip.type !== "media") throw new Error("Pick a video clip.");
+		const source = this.current.assets.find((a) => a.id === clip.assetId);
+		if (!source || source.kind !== "video") throw new Error("Frame holds need a video clip.");
+		if (atMs <= clip.startMs || atMs >= clip.startMs + clip.durationMs)
+			throw new Error("Put the playhead inside the clip.");
+		const sourceMs = clip.inMs + (atMs - clip.startMs) * clip.speed;
+		const still = path.join(
+			this.projectDir,
+			"stills",
+			`${path.parse(source.name).name}-${Math.round(sourceMs)}.png`,
+		);
+		await fs.mkdir(path.dirname(still), { recursive: true });
+		await ffmpeg([
+			"-ss",
+			(sourceMs / 1000).toFixed(3),
+			"-i",
+			this.assetPath(source.id),
+			"-frames:v",
+			"1",
+			still,
+		]);
+		return this.transaction(actor, `Held the frame at ${(atMs / 1000).toFixed(2)} s`, async () => {
+			const [asset] = await this.importMedia([still], actor);
+			const later = this.current.clips
+				.filter((c) => c.trackId === clip.trackId && c.startMs >= atMs - 1 && c.id !== clip.id)
+				.map((c) => c.id);
+			this.apply({ type: "splitClip", id: clip.id, atMs }, actor);
+			const tail = this.current.clips.find(
+				(c) => c.trackId === clip.trackId && Math.abs(c.startMs - atMs) <= 1 && c.id !== clip.id,
+			);
+			const move = [...later, ...(tail ? [tail.id] : [])];
+			if (move.length)
+				this.apply(
+					{ type: "moveClips", ids: move, deltaMs: durationMs, trackId: clip.trackId },
+					actor,
+				);
+			const created = this.apply(
+				{
+					type: "addClips",
+					clips: [
+						{
+							type: "media",
+							trackId: clip.trackId,
+							assetId: asset.id,
+							startMs: atMs,
+							durationMs,
+							transform: clip.transform,
+						},
+					],
+				},
+				actor,
+			).created;
+			return { created };
+		});
+	}
+
+	// -------------------------------------------------------------------------
+	// Analysis and AI helpers
+	// -------------------------------------------------------------------------
+
+	/** Tempo and beats of a media item; optionally drops a marker on every beat where it is used. */
+	async detectBeats(
+		assetId: string,
+		actor: Actor,
+		options: { addMarkers?: boolean; every?: number } = {},
+	) {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset || !asset.hasAudio) throw new Error("Pick a media item with sound.");
+		const found = detectBeatsIn(await this.peaks(assetId), PEAKS_PER_SECOND);
+		if (!found.beats.length) throw new Error(`No steady beat found in ${asset.name}.`);
+		let markers = 0;
+		if (options.addMarkers) {
+			const every = Math.max(1, options.every ?? 1);
+			const times = found.beats
+				.filter((_, i) => i % every === 0)
+				.flatMap((b) => sourceToTimeline(this.current, assetId, b))
+				.slice(0, 400);
+			if (times.length === 0) throw new Error(`${asset.name} is not on the timeline yet.`);
+			await this.transaction(actor, `Marked ${times.length} beats (${found.bpm} BPM)`, () => {
+				for (const atMs of times)
+					this.apply({ type: "addMarker", atMs, label: "Beat", color: "success" }, actor);
+			});
+			markers = times.length;
+		}
+		return {
+			bpm: found.bpm,
+			confidence: Math.round(found.confidence * 100) / 100,
+			beats: found.beats.length,
+			markers,
+		};
+	}
+
+	/** Moves each cut on a track to the nearest beat of a music clip (rolling edits, so nothing shifts). */
+	async snapCutsToBeats(trackId: string, musicAssetId: string, actor: Actor, toleranceMs = 350) {
+		const { beats } = detectBeatsIn(await this.peaks(musicAssetId), PEAKS_PER_SECOND);
+		const grid = beats
+			.flatMap((b) => sourceToTimeline(this.current, musicAssetId, b))
+			.sort((a, b) => a - b);
+		if (!grid.length) throw new Error("Put the music on the timeline first.");
+		const clips = this.current.clips
+			.filter((c) => c.trackId === trackId && !c.disabled)
+			.sort((a, b) => a.startMs - b.startMs);
+		let moved = 0;
+		await this.transaction(actor, "Snapped cuts to the beat", () => {
+			for (let i = 0; i < clips.length - 1; i++) {
+				const left = this.current.clips.find((c) => c.id === clips[i].id);
+				const right = this.current.clips.find((c) => c.id === clips[i + 1].id);
+				if (!left || !right) continue;
+				const cut = left.startMs + left.durationMs;
+				if (Math.abs(cut - right.startMs) > 2) continue;
+				const beat = grid.reduce(
+					(best, b) => (Math.abs(b - cut) < Math.abs(best - cut) ? b : best),
+					grid[0],
+				);
+				if (Math.abs(beat - cut) < 5 || Math.abs(beat - cut) > toleranceMs) continue;
+				try {
+					this.apply({ type: "rollEdit", leftId: left.id, rightId: right.id, toMs: beat }, actor);
+					moved++;
+				} catch {}
+			}
+		});
+		return { cuts: clips.length - 1, moved };
+	}
+
+	private requireTranscript() {
+		const segments = editTranscript(this.current);
+		if (!segments.length)
+			throw new Error(
+				"Nothing on the timeline is transcribed yet. Transcribe the footage first (Transcript panel).",
+			);
+		return segments;
+	}
+
+	/** Finds parts of the edit that match a description, using the transcript and the text model. */
+	async findMoments(query: string, runtime: AiRuntime) {
+		const segments = this.requireTranscript();
+		const reply = await runtime.chat(
+			'You find moments in a video edit from its transcript. Times are seconds on the timeline. Reply with JSON only: an array of {"start": seconds, "end": seconds, "why": short reason}, best match first, at most 8. Return [] if nothing fits.',
+			`Find: ${query}\n\nTranscript:\n${transcriptForPrompt(segments)}`,
+		);
+		const found = extractJson<{ start: number; end: number; why?: string }[]>(reply);
+		return found
+			.filter((m) => Number.isFinite(m.start) && Number.isFinite(m.end) && m.end > m.start)
+			.map((m) => ({
+				startMs: Math.round(m.start * 1000),
+				endMs: Math.round(m.end * 1000),
+				why: m.why ?? "",
+			}));
+	}
+
+	/** Chapters from the transcript, as markers and as a YouTube-ready list. */
+	async chapters(runtime: AiRuntime, actor: Actor, addMarkers = true) {
+		const segments = this.requireTranscript();
+		const reply = await runtime.chat(
+			'You split a video into chapters from its transcript. Times are seconds. Reply with JSON only: an array of {"start": seconds, "title": 2-6 words}. The first chapter starts at 0. Aim for one chapter per distinct topic, at least 20 seconds apart.',
+			transcriptForPrompt(segments),
+		);
+		const list = extractJson<{ start: number; title: string }[]>(reply)
+			.filter((c) => Number.isFinite(c.start) && c.title)
+			.sort((a, b) => a.start - b.start);
+		if (list.length && list[0].start > 0) list[0].start = 0;
+		if (addMarkers && list.length)
+			await this.transaction(actor, `Added ${list.length} chapter markers`, () => {
+				for (const c of list)
+					this.apply(
+						{
+							type: "addMarker",
+							atMs: Math.round(c.start * 1000),
+							label: c.title.slice(0, 200),
+							color: "accent",
+						},
+						actor,
+					);
+			});
+		const stamp = (sec: number) =>
+			`${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+		return {
+			chapters: list,
+			description: list.map((c) => `${stamp(c.start)} ${c.title}`).join("\n"),
+		};
+	}
+
+	/** Suggests cutaway images (B-roll) for moments in the transcript. */
+	async suggestBroll(runtime: AiRuntime, count = 4) {
+		const segments = this.requireTranscript();
+		const reply = await runtime.chat(
+			'You plan B-roll (cutaway visuals) for a video from its transcript. Times are seconds on the timeline. Reply with JSON only: an array of {"start": seconds, "duration": 2-5 seconds, "prompt": a vivid, concrete image description without any text or logos}. Pick moments where a visual would help the viewer understand.',
+			`Suggest ${count} cutaways.\n\n${transcriptForPrompt(segments)}`,
+		);
+		return extractJson<{ start: number; duration: number; prompt: string }[]>(reply)
+			.filter((b) => Number.isFinite(b.start) && b.prompt)
+			.slice(0, count)
+			.map((b) => ({
+				atMs: Math.round(b.start * 1000),
+				durationMs: Math.round(Math.min(6, Math.max(1.5, b.duration || 3)) * 1000),
+				prompt: b.prompt,
+			}));
+	}
+
+	/** Generates B-roll images and lays them on a B-roll track above the picture. */
+	async addBroll(
+		items: { atMs: number; durationMs: number; prompt: string }[],
+		runtime: AiRuntime,
+		actor: Actor,
+	) {
+		const landscape = this.current.canvas.width >= this.current.canvas.height;
+		let track = this.current.tracks.find((t) => t.kind === "video" && t.name === "B-roll");
+		if (!track) {
+			const id = this.apply({ type: "addTrack", kind: "video", name: "B-roll", index: 0 }, actor)
+				.created?.[0];
+			track = this.current.tracks.find((t) => t.id === id);
+		}
+		if (!track) throw new Error("Could not add a B-roll track.");
+		const placed: string[] = [];
+		for (const item of items) {
+			const asset = await this.generateImage(item.prompt, runtime, actor, {
+				orientation: landscape ? "landscape" : "portrait",
+			});
+			const created = this.apply(
+				{
+					type: "addClips",
+					clips: [
+						{
+							type: "media",
+							trackId: track.id,
+							assetId: asset.id,
+							startMs: item.atMs,
+							durationMs: item.durationMs,
+							fadeInMs: 250,
+							fadeOutMs: 250,
+						},
+					],
+				},
+				actor,
+			).created;
+			placed.push(...(created ?? []));
+		}
+		return { trackId: track.id, clips: placed };
+	}
+
+	/**
+	 * Changes the frame size and makes every full-frame picture fill the new
+	 * frame (centre crop), e.g. to turn a 16:9 edit into a 9:16 one.
+	 */
+	reframe(width: number, height: number, actor: Actor) {
+		const canvas = width / height;
+		return this.transaction(actor, `Reframed to ${width}×${height}`, () => {
+			this.apply({ type: "setCanvas", canvas: { width, height } }, actor);
+			let changed = 0;
+			for (const clip of this.current.clips) {
+				if (clip.type !== "media" || Math.abs(clip.transform.scale - 1) > 0.001) continue;
+				const asset = this.current.assets.find((a) => a.id === clip.assetId);
+				const track = this.current.tracks.find((t) => t.id === clip.trackId);
+				if (!asset || track?.kind !== "video" || !asset.width || !asset.height) continue;
+				const source = asset.width / asset.height;
+				const cover = Math.max(source / canvas, canvas / source);
+				this.apply(
+					{
+						type: "updateClip",
+						id: clip.id,
+						patch: { transform: { scale: Math.round(cover * 1000) / 1000, x: 0.5, y: 0.5 } },
+					},
+					actor,
+				);
+				changed++;
+			}
+			return { width, height, reframedClips: changed };
+		});
 	}
 
 	/** Searches for offline media (near the project and in `folders`) and relinks what it finds. */
@@ -1152,10 +1438,11 @@ export class ProjectStore extends EventEmitter {
 		out: string | undefined,
 		actor: Actor,
 		renderText?: TextRenderer,
+		range?: { startMs: number; endMs: number },
 	): Promise<ExportReport> {
 		if (kind === "otio" || kind === "fcpxml" || kind === "mlt" || kind === "edl")
 			return this.exportTimeline(kind, out, actor);
-		const ctx = this.exportContext(renderText);
+		const ctx = { ...this.exportContext(renderText), range };
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
 			kind === "stems"

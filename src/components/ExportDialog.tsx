@@ -1,0 +1,184 @@
+import { Button } from "@heroui/react";
+import { X } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { notify, run } from "../lib/api";
+import { createStore, editor, useProject } from "../lib/state";
+import { cn, formatTime } from "../lib/utils";
+
+export const exportDialog = createStore({ open: false });
+
+type Patch = {
+	codec: "h264" | "hevc" | "prores";
+	videoQuality: "draft" | "standard" | "high";
+	scale: number;
+	hardware: boolean;
+};
+
+const PRESETS: { id: string; label: string; sub: string; ext: string; patch: Patch }[] = [
+	{
+		id: "web",
+		label: "Web & YouTube",
+		sub: "H.264 · high quality · full size",
+		ext: "mp4",
+		patch: { codec: "h264", videoQuality: "high", scale: 1, hardware: true },
+	},
+	{
+		id: "small",
+		label: "Smaller file",
+		sub: "HEVC · standard · full size",
+		ext: "mp4",
+		patch: { codec: "hevc", videoQuality: "standard", scale: 1, hardware: true },
+	},
+	{
+		id: "review",
+		label: "Quick review",
+		sub: "H.264 · draft · half size",
+		ext: "mp4",
+		patch: { codec: "h264", videoQuality: "draft", scale: 0.5, hardware: true },
+	},
+	{
+		id: "master",
+		label: "Master",
+		sub: "ProRes · for further editing",
+		ext: "mov",
+		patch: { codec: "prores", videoQuality: "high", scale: 1, hardware: false },
+	},
+];
+
+/** Export window: a preset, the whole timeline or just in to out, and where to save. */
+export function ExportDialog() {
+	const open = exportDialog.use((s) => s.open);
+	const project = useProject();
+	const inPoint = editor.use((s) => s.inPoint);
+	const outPoint = editor.use((s) => s.outPoint);
+	const hasRange = inPoint !== null && outPoint !== null && outPoint > inPoint;
+	const [preset, setPreset] = useState("web");
+	const [range, setRange] = useState<"all" | "inout">("all");
+	const [busy, setBusy] = useState(false);
+	useEffect(() => {
+		if (!open) return;
+		setRange(hasRange ? "inout" : "all");
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.stopPropagation();
+				exportDialog.set({ open: false });
+			}
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [open, hasRange]);
+	if (!open || !project) return null;
+	const chosen = PRESETS.find((p) => p.id === preset) ?? PRESETS[0];
+	const close = () => exportDialog.set({ open: false });
+	const w = Math.round((project.data.canvas.width * chosen.patch.scale) / 2) * 2;
+	const h = Math.round((project.data.canvas.height * chosen.patch.scale) / 2) * 2;
+	const length =
+		range === "inout" && hasRange ? (outPoint as number) - (inPoint as number) : project.durationMs;
+
+	const start = async () => {
+		const out = await window.cue.chooseSave({
+			title: "Export video",
+			defaultPath: `${project.dir}/export/${project.data.name}${range === "inout" ? " (range)" : ""}.${chosen.ext}`,
+			extensions: [chosen.ext],
+		});
+		if (!out) return;
+		setBusy(true);
+		await run("update_export", { export: chosen.patch });
+		close();
+		setBusy(false);
+		notify("Exporting…");
+		const report = await run<{ outputs: string[] }>("export", {
+			kind: "video",
+			out,
+			range: range === "inout" && hasRange ? { startMs: inPoint, endMs: outPoint } : undefined,
+		});
+		if (report?.outputs[0]) {
+			notify("Export finished", "success");
+			void window.cue.reveal(report.outputs[0]);
+		}
+	};
+
+	return (
+		<div
+			className="fixed inset-0 z-[150] flex bg-black/40 backdrop-blur-[2px]"
+			onPointerDown={close}
+		>
+			<div
+				role="dialog"
+				aria-label="Export video"
+				onPointerDown={(e) => e.stopPropagation()}
+				className="m-auto flex w-[min(520px,92vw)] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl shadow-black/50"
+			>
+				<header className="flex h-12 items-center justify-between border-b border-separator px-5">
+					<h2 className="text-[14px] font-semibold">Export video</h2>
+					<button
+						type="button"
+						onClick={close}
+						aria-label="Close"
+						className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+					>
+						<X className="size-4" />
+					</button>
+				</header>
+				<div className="flex flex-col gap-4 p-5">
+					<div className="grid grid-cols-2 gap-2">
+						{PRESETS.map((p) => (
+							<button
+								key={p.id}
+								type="button"
+								onClick={() => setPreset(p.id)}
+								className={cn(
+									"rounded-lg border px-3 py-2.5 text-left",
+									preset === p.id
+										? "border-accent bg-accent/10"
+										: "border-border hover:border-foreground/30",
+								)}
+							>
+								<span className="block text-[13px] font-medium">{p.label}</span>
+								<span className="block text-[11px] text-muted">{p.sub}</span>
+							</button>
+						))}
+					</div>
+					<div className="flex gap-2">
+						{(["all", "inout"] as const).map((r) => (
+							<button
+								key={r}
+								type="button"
+								disabled={r === "inout" && !hasRange}
+								onClick={() => setRange(r)}
+								className={cn(
+									"flex-1 rounded-lg border px-3 py-2 text-left text-[12px] disabled:opacity-40",
+									range === r
+										? "border-accent bg-accent/10"
+										: "border-border hover:border-foreground/30",
+								)}
+							>
+								{r === "all"
+									? "Whole timeline"
+									: hasRange
+										? `In to out (${formatTime(inPoint as number)} – ${formatTime(outPoint as number)})`
+										: "In to out (mark I and O first)"}
+							</button>
+						))}
+					</div>
+					<p className="text-[12px] text-muted">
+						{w}×{h} · {project.data.canvas.fps} fps · {formatTime(length)} long
+					</p>
+				</div>
+				<footer className="flex justify-end gap-2 border-t border-separator px-5 py-3">
+					<Button size="sm" variant="ghost" className="h-8 text-[12px]" onPress={close}>
+						Cancel
+					</Button>
+					<Button
+						size="sm"
+						className="h-8 px-4 text-[12px] font-semibold"
+						isDisabled={busy}
+						onPress={() => void start()}
+					>
+						Export…
+					</Button>
+				</footer>
+			</div>
+		</div>
+	);
+}

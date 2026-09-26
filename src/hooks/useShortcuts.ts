@@ -3,6 +3,14 @@ import type { Clip } from "../../electron/core/types";
 import { run } from "../lib/api";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
+import {
+	markSource,
+	seekSource,
+	showTimeline,
+	source,
+	sourceEdit,
+	toggleSource,
+} from "../lib/source";
 import { app, appSettings, editor, findLine } from "../lib/state";
 
 function typing(target: EventTarget | null) {
@@ -70,6 +78,25 @@ export function useShortcuts() {
 				return;
 			}
 			if (key !== "j" && key !== "l") shuttleRate = 0;
+
+			// Source monitor: the transport keys drive the open source clip.
+			const src = source.get();
+			if (src.active && !mod) {
+				if (key === " ") return handled(), toggleSource();
+				if (key === "i") return markSource("in");
+				if (key === "o") return markSource("out");
+				if (key === "arrowleft" || key === "arrowright") {
+					handled();
+					return seekSource(
+						src.currentMs + (key === "arrowleft" ? -1 : 1) * frame * (e.shiftKey ? 5 : 1),
+					);
+				}
+				if (key === "escape") return showTimeline();
+			}
+			if ((key === "," || key === ".") && !mod) {
+				handled();
+				return void sourceEdit(key === "," ? "insert" : "overwrite");
+			}
 
 			// Playback
 			if (key === " ") {
@@ -146,8 +173,50 @@ export function useShortcuts() {
 				handled();
 				window.cue.selectClips(project.data.clips.map((c) => c.id));
 			} else if (key === "escape") window.cue.selectClips([]);
-			else if (key === "m" && !mod)
+			else if (key === "m" && !mod && !e.shiftKey)
 				void run("add_marker", { atMs: Math.round(playback.currentMs), label: "Marker" });
+			else if (key === "m" && e.shiftKey) {
+				// ⇧M next marker, ⇧⌘M previous marker (Premiere).
+				handled();
+				const now = playback.currentMs;
+				const times = project.data.markers.map((m) => m.atMs).sort((a, b) => a - b);
+				const next = mod
+					? [...times].reverse().find((t) => t < now - 1)
+					: times.find((t) => t > now + 1);
+				if (next !== undefined) playback.seek(next);
+			} else if ((key === ";" || key === "'") && !mod) {
+				// Lift leaves a gap, extract closes it: both use the in and out points.
+				const { inPoint, outPoint } = editor.get();
+				if (inPoint === null || outPoint === null || outPoint <= inPoint) return;
+				handled();
+				const range = { startMs: inPoint, endMs: outPoint };
+				void run(
+					key === ";" ? "lift_range" : "remove_ranges",
+					key === ";" ? range : { ranges: [range] },
+				);
+				editor.set({ inPoint: null, outPoint: null });
+				playback.seek(inPoint);
+			} else if ((key === "q" || key === "w") && !mod) {
+				// Ripple trim the previous (Q) or next (W) edit to the playhead.
+				handled();
+				const now = Math.round(playback.currentMs);
+				const points = editPoints();
+				if (key === "q") {
+					const prev = [...points].reverse().find((p) => p < now - 1);
+					if (prev === undefined) return;
+					void run("remove_ranges", { ranges: [{ startMs: prev, endMs: now }] });
+					playback.seek(prev);
+				} else {
+					const next = points.find((p) => p > now + 1);
+					if (next === undefined) return;
+					void run("remove_ranges", { ranges: [{ startMs: now, endMs: next }] });
+				}
+			} else if (key === "e" && e.shiftKey && !mod && selected.length) {
+				handled();
+				const on = !selectedClips.every((c) => c.disabled);
+				for (const c of selectedClips)
+					void run("update_clip", { id: c.id, patch: { disabled: on } });
+			}
 			// Timeline
 			else if (key === "=" || key === "+")
 				editor.set({ zoom: Math.min(600, editor.get().zoom * 1.25) });

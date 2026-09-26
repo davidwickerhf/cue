@@ -70,7 +70,13 @@ export interface Track {
 	voiceover?: boolean;
 	/** Lower this track while the voiceover speaks. */
 	duck?: boolean;
+	/** Only soloed tracks are heard while any track is soloed. */
+	solo?: boolean;
+	/** Stereo balance, -1 left to 1 right. */
+	pan?: number;
 }
+
+export type ClipLabel = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
 
 export interface Crop {
 	/** Share of the source removed from each edge, 0–0.45. */
@@ -160,6 +166,9 @@ export interface MediaClip {
 	transitionIn?: Transition;
 	/** Clips with the same group move and delete together (e.g. linked picture and sound). */
 	groupId?: string;
+	/** Disabled clips stay on the timeline but are not seen or heard. */
+	disabled?: boolean;
+	label?: ClipLabel;
 	/** Voiceover clips remember the script line they belong to. */
 	lineId?: string;
 	name?: string;
@@ -202,6 +211,8 @@ export interface TextClip {
 	/** Captions generated from speech keep a pointer to their source. */
 	source?: { kind: "caption"; assetId?: string };
 	groupId?: string;
+	disabled?: boolean;
+	label?: ClipLabel;
 	name?: string;
 }
 
@@ -351,6 +362,10 @@ export interface RecorderStatus {
 	recordingLineId: string | null;
 	playing: boolean;
 	currentMs: number;
+	/** The editor's in and out marks and open panel, so agents see what the user sees. */
+	inMs?: number | null;
+	outMs?: number | null;
+	panel?: string;
 }
 
 export interface JobStatus {
@@ -417,4 +432,6 @@ export type EditorCommand =
 	| { type: "seek"; ms: number }
 	| { type: "previewAsset"; assetId: string }
 	| { type: "renderText"; requestId: string; clipIds: string[]; fps: number }
-	| { type: "captureFrame"; requestId: string; atMs: number };
+	| { type: "captureFrame"; requestId: string; atMs: number }
+	| { type: "setInOut"; inMs?: number | null; outMs?: number | null }
+	| { type: "setView"; panel?: string; fitTimeline?: boolean; openSource?: string; zoom?: number };

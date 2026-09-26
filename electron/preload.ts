@@ -96,6 +96,8 @@ const api = {
 	openProject: () => ipcRenderer.invoke("cue:openProject"),
 	chooseFile: (options: { title: string; extensions?: string[] }) =>
 		ipcRenderer.invoke("cue:chooseFile", options) as Promise<string | null>,
+	chooseSave: (options: { title: string; defaultPath?: string; extensions?: string[] }) =>
+		ipcRenderer.invoke("cue:chooseSave", options) as Promise<string | null>,
 	chooseFolder: (options: { title: string; defaultPath?: string }) =>
 		ipcRenderer.invoke("cue:chooseFolder", options) as Promise<string | null>,
 	reveal: (file: string) => ipcRenderer.invoke("cue:reveal", file),

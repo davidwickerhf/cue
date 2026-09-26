@@ -39,6 +39,9 @@ export const chat = createStore<{ chat: Chat; projectPath: string | null }>({
 	projectPath: null,
 });
 
+/** Text waiting to be put in the composer (e.g. from "Ask the agent about this…"). */
+export const agentDraft = createStore<{ text: string | null }>({ text: null });
+
 const storageKey = (projectPath: string) => `cue.chat.${projectPath}`;
 
 function save() {

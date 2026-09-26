@@ -2,6 +2,7 @@ import { CaretLeft, CaretRight, Pause, Play, SkipBack } from "@phosphor-icons/re
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Clip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
+import { SourceMonitor, ViewerTabs } from "./SourceMonitor";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { useApp, useProject } from "../../lib/state";
@@ -40,7 +41,9 @@ export function PreviewPanel() {
 	}, [size.w]);
 
 	return (
-		<section className="flex min-w-0 flex-1 flex-col bg-viewer">
+		<section className="relative flex min-w-0 flex-1 flex-col bg-viewer">
+			{project && <ViewerTabs project={project} />}
+			{project && <SourceMonitor project={project} />}
 			<div ref={area} className="relative flex min-h-0 flex-1 items-center justify-center">
 				<div
 					data-stage-frame

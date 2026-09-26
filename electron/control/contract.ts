@@ -20,6 +20,11 @@ const ids = z.array(z.string()).min(1);
 
 export const contract = {
 	// --- Overview --------------------------------------------------------------
+	get_guide: {
+		description:
+			"How Cue works and how to edit with these tools: concepts, units, track order, workflows and which tool does what. Read it once before editing.",
+		input: {},
+	},
 	get_state: {
 		description:
 			"Overview of the open project: canvas, tracks, media, script lines with take status (empty/ok/tight/over), selection and recorder. Call this first. Clips are summarised; use get_timeline for details.",
@@ -134,7 +139,7 @@ export const contract = {
 	},
 	update_track: {
 		description:
-			"Rename, mute, lock, hide, set volume (0–2), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks).",
+			"Rename, mute, solo, lock, hide, set volume (0–2) or pan (-1 left to 1 right), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks).",
 		input: {
 			id: z.string(),
 			patch: z
@@ -146,13 +151,16 @@ export const contract = {
 					volume: z.number().min(0).max(2),
 					voiceover: z.boolean(),
 					duck: z.boolean(),
+					solo: z.boolean(),
+					pan: z.number().min(-1).max(1),
 				})
 				.partial(),
 		},
 	},
 	remove_track: { description: "Delete a track and its clips.", input: { id: z.string() } },
 	move_track: {
-		description: "Reorder a track (0 = top; upper video tracks draw over lower ones).",
+		description:
+			"Reorder a track (0 = top; upper video tracks draw over lower ones). Video and text tracks always stay above audio tracks.",
 		input: { id: z.string(), index: z.number().int().min(0) },
 	},
 
@@ -176,7 +184,7 @@ export const contract = {
 	},
 	update_clip: {
 		description:
-			"Change a clip: timing, in-point, speed, volume, fades, denoise, color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations.",
+			"Change a clip: timing, in-point, speed, volume, fades, denoise, color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: {
@@ -210,6 +218,36 @@ export const contract = {
 		input: {
 			ranges: z.array(z.object({ startMs: z.number().min(0), endMs: z.number().min(0) })).min(1),
 			trackIds: z.array(z.string()).optional(),
+		},
+	},
+	lift_range: {
+		description:
+			"Remove everything between two times (the in and out points) but leave the gap, like Premiere's Lift. Use remove_ranges to close the gap (Extract).",
+		input: {
+			startMs: z.number().min(0),
+			endMs: z.number().min(0),
+			trackIds: z.array(z.string()).optional(),
+		},
+	},
+	insert_edit: {
+		description:
+			"Three-point edit: put a media item's range (inMs–outMs, default whole) on a track at atMs. insert pushes later material along on every unlocked track; overwrite replaces what is there.",
+		input: {
+			mode: z.enum(["insert", "overwrite"]),
+			assetId: z.string(),
+			trackId: z.string(),
+			atMs: z.number().min(0),
+			inMs: z.number().min(0).optional(),
+			outMs: z.number().min(0).optional(),
+		},
+	},
+	freeze_frame: {
+		description:
+			"Hold the frame at atMs (inside a video clip) for durationMs; later clips on that track move along.",
+		input: {
+			clipId: z.string(),
+			atMs: z.number().min(0),
+			durationMs: z.number().min(100).max(60000).default(2000),
 		},
 	},
 	remove_silence: {
@@ -418,6 +456,63 @@ export const contract = {
 			instructions: z.string().max(1000).optional(),
 		},
 	},
+	detect_beats: {
+		description:
+			"Tempo (BPM) and beats of a media item with sound. addMarkers puts a green 'Beat' marker on every beat (or every Nth with every) where the item is used on the timeline.",
+		input: {
+			assetId: z.string(),
+			addMarkers: z.boolean().default(false),
+			every: z.number().int().min(1).max(16).optional(),
+		},
+	},
+	snap_cuts_to_beats: {
+		description:
+			"Move each cut on a track to the nearest beat of a music item on the timeline (rolling edits, within toleranceMs).",
+		input: {
+			trackId: z.string(),
+			musicAssetId: z.string(),
+			toleranceMs: z.number().min(20).max(1000).default(350),
+		},
+	},
+	find_moments: {
+		description:
+			"Search the edit by meaning using the transcript and the text model, e.g. 'where they talk about pricing'. Returns timeline ranges with reasons. Transcribe first.",
+		input: { query: z.string().min(2).max(500) },
+	},
+	generate_chapters: {
+		description:
+			"Chapters from the transcript: adds chapter markers and returns a YouTube-ready chapter list.",
+		input: { addMarkers: z.boolean().default(true) },
+	},
+	suggest_broll: {
+		description:
+			"Suggest cutaway images (B-roll) for moments in the transcript: times, durations and image prompts. Nothing is generated yet.",
+		input: { count: z.number().int().min(1).max(12).default(4) },
+	},
+	add_broll: {
+		description:
+			"Generate B-roll images and place them on a B-roll track above the picture, with short fades.",
+		input: {
+			items: z
+				.array(
+					z.object({
+						atMs: z.number().min(0),
+						durationMs: z.number().min(500).max(20000),
+						prompt: z.string().min(3),
+					}),
+				)
+				.min(1)
+				.max(12),
+		},
+	},
+	reframe: {
+		description:
+			"Change the frame size (e.g. 1080×1920 for vertical) and make full-frame pictures fill it with a centre crop. Adjust transform.x per clip afterwards to follow the subject.",
+		input: {
+			width: z.number().int().min(16).max(7680),
+			height: z.number().int().min(16).max(4320),
+		},
+	},
 	get_ai_status: {
 		description:
 			"Which providers handle voice, transcription, text and images (cloud or on this Mac), and whether each is ready.",
@@ -498,6 +593,23 @@ export const contract = {
 		},
 	},
 	remove_marker: { description: "Remove a marker.", input: { id: z.string() } },
+	update_marker: {
+		description: "Rename, move or recolour a marker.",
+		input: {
+			id: z.string(),
+			patch: z
+				.object({
+					atMs: z.number().min(0),
+					label: z.string().max(200),
+					color: z.enum(["accent", "success", "warning", "danger"]),
+				})
+				.partial(),
+		},
+	},
+	clear_markers: {
+		description: "Remove all markers, or only those with a given label (e.g. 'Beat').",
+		input: { label: z.string().optional() },
+	},
 	undo: { description: "Undo the last edit.", input: {} },
 	redo: { description: "Redo.", input: {} },
 	export: {
@@ -516,6 +628,54 @@ export const contract = {
 				"edl",
 			]),
 			out: z.string().optional(),
+			range: z
+				.object({ startMs: z.number().min(0), endMs: z.number().min(0) })
+				.optional()
+				.describe("video/audio only: export just this part, e.g. between the in and out points"),
+		},
+	},
+	export_frame: {
+		description: "Save the frame at atMs as a PNG (as the viewer shows it) and return its path.",
+		input: { atMs: z.number().min(0), out: z.string().optional() },
+	},
+	set_in_out: {
+		description:
+			"Set the editor's in and/or out marks (the range for lift, extract, play-in-to-out and range export). null clears one.",
+		input: {
+			inMs: z.number().min(0).nullable().optional(),
+			outMs: z.number().min(0).nullable().optional(),
+		},
+	},
+	set_view: {
+		description:
+			"Show the user something: open a sidebar panel, fit the whole timeline in view, zoom the timeline (px per second), or open a media item in the source monitor.",
+		input: {
+			panel: z
+				.enum(["media", "script", "transcript", "text", "mixer", "generate", "agent", "settings"])
+				.optional(),
+			fitTimeline: z.boolean().optional(),
+			zoom: z.number().min(4).max(600).optional(),
+			openSource: z.string().optional().describe("asset id"),
+		},
+	},
+	get_app_settings: {
+		description:
+			"App-wide settings: theme, projects folder, which AI providers and models are used (voice, transcription, text, images), and editing defaults.",
+		input: {},
+	},
+	update_app_settings: {
+		description:
+			"Change app-wide settings, e.g. {ai: {tts: 'macos', macVoice: 'Samantha'}} or {editor: {snapping: false}} or {theme: 'light'}. API keys and agent access can only be changed by the user.",
+		input: {
+			patch: z
+				.object({
+					theme: z.enum(["dark", "light", "system"]),
+					projectsDir: z.string(),
+					reopenLast: z.boolean(),
+					ai: z.record(z.string(), z.unknown()),
+					editor: z.record(z.string(), z.unknown()),
+				})
+				.partial(),
 		},
 	},
 	focus_window: { description: "Bring the Cue window to the front.", input: {} },

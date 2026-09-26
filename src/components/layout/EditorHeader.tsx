@@ -6,6 +6,8 @@ import {
 	SidebarSimple,
 } from "@phosphor-icons/react";
 import { notify, run } from "../../lib/api";
+import { playback } from "../../lib/playback";
+import { exportDialog } from "../ExportDialog";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { IconButton } from "../ui/controls";
@@ -21,7 +23,15 @@ export function EditorHeader() {
 	const agentActive =
 		!!agent?.lastSeenAt && Date.now() - Date.parse(agent.lastSeenAt) < 5 * 60 * 1000;
 
-	const exportAs = async (kind: ExportKind) => {
+	const exportAs = async (kind: ExportKind | "dialog" | "frame") => {
+		if (kind === "dialog") return exportDialog.set({ open: true });
+		if (kind === "frame") {
+			const r = await run<{ path: string }>("export_frame", {
+				atMs: Math.round(playback.currentMs),
+			});
+			if (r) void window.cue.reveal(r.path);
+			return;
+		}
 		notify(`Exporting ${kind}…`);
 		const report = await run<{ outputs: string[]; missing: string[] }>("export", { kind });
 		if (!report) return;
@@ -118,12 +128,20 @@ export function EditorHeader() {
 						Export
 					</Button>
 					<Dropdown.Popover placement="bottom end" className="min-w-[240px]">
-						<Dropdown.Menu aria-label="Export" onAction={(key) => void exportAs(key as ExportKind)}>
+						<Dropdown.Menu
+							aria-label="Export"
+							onAction={(key) =>
+								void exportAs(key === "video" ? "dialog" : (key as ExportKind | "frame"))
+							}
+						>
 							<Dropdown.Item id="video" textValue="Video">
 								<ExportItem
 									title="Video"
 									body={`${project.data.export.codec === "prores" ? "MOV · ProRes" : `MP4 · ${project.data.export.codec.toUpperCase()}`} · ${Math.round(project.data.canvas.width * project.data.export.scale)}×${Math.round(project.data.canvas.height * project.data.export.scale)} · ${project.data.export.videoQuality}`}
 								/>
+							</Dropdown.Item>
+							<Dropdown.Item id="frame" textValue="Frame">
+								<ExportItem title="Frame at the playhead" body="PNG, as the viewer shows it" />
 							</Dropdown.Item>
 							<Dropdown.Item id="voiceover" textValue="Voiceover">
 								<ExportItem title="Voiceover track" body="WAV, full length" />

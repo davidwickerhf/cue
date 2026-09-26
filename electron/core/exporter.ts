@@ -11,6 +11,7 @@ import {
 	projectDuration,
 	sourceSpan,
 	stemName,
+	trackAudible,
 	voiceoverTrack,
 } from "./project";
 import type { Asset, Clip, MediaClip, ProjectData, TextClip, Track } from "./types";
@@ -26,6 +27,8 @@ export interface ExportContext {
 	/** Rasterises text clips (done by the editor window so text looks identical to the preview). */
 	renderText?: (clips: TextClip[]) => Promise<Record<string, TextRender>>;
 	onProgress?: (fraction: number) => void;
+	/** Export only this part of the timeline (e.g. between the in and out points). */
+	range?: { startMs: number; endMs: number };
 }
 
 export interface ExportReport {
@@ -76,6 +79,8 @@ interface AudioSource {
 	duck: boolean;
 	/** Fade-out including any crossfade into the next clip on the track. */
 	fadeOutMs: number;
+	/** Stereo balance, -1 to 1. */
+	pan: number;
 }
 
 /** How long a clip's sound should fade out: its own fade, or the crossfade overlap with the next clip. */
@@ -102,7 +107,9 @@ function audibleClips(ctx: ExportContext, onlyTracks?: Set<string>): AudioSource
 			const t = trackOf(data, c.trackId);
 			const a = assetOf(data, c.assetId);
 			if (
-				t.muted ||
+				c.disabled ||
+				// Solo is for the full mix; a voiceover-only export ignores it.
+				(onlyTracks ? t.muted : !trackAudible(data, t)) ||
 				t.hidden ||
 				!a.hasAudio ||
 				a.kind === "image" ||
@@ -118,9 +125,17 @@ function audibleClips(ctx: ExportContext, onlyTracks?: Set<string>): AudioSource
 					voiceover: !!t.voiceover,
 					duck: !!t.duck && !t.voiceover,
 					fadeOutMs: effectiveFadeOut(data, c),
+					pan: t.pan ?? 0,
 				},
 			];
 		});
+}
+
+/** Constant-power-ish balance: the far side is turned down, the near side kept. */
+function panFilter(pan: number): string {
+	const left = Math.min(1, 1 - pan).toFixed(3);
+	const right = Math.min(1, 1 + pan).toFixed(3);
+	return `pan=stereo|c0=${left}*c0|c1=${right}*c1`;
 }
 
 /** Filter chain for one audio clip, delayed to its timeline position. */
@@ -140,6 +155,7 @@ function audioChain(input: string, src: AudioSource, label: string): string {
 		`${input}atrim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},asetpts=PTS-STARTPTS${tempo(clip.speed)}` +
 		`,aresample=48000,aformat=channel_layouts=stereo${clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : ""},${volume}` +
 		(fades.length ? `,${fades.join(",")}` : "") +
+		(src.pan ? `,${panFilter(src.pan)}` : "") +
 		`,adelay=${Math.round(clip.startMs)}:all=1[${label}]`
 	);
 }
@@ -184,7 +200,22 @@ function mixGraph(
 	return chains;
 }
 
-async function mixAudio(sources: AudioSource[], out: string, lengthMs: number, normalize: boolean) {
+/** Output options that keep only the chosen range (frames before it are decoded and dropped). */
+function rangeArgs(range: ExportContext["range"], lengthMs: number): string[] {
+	if (!range) return ["-t", s(lengthMs)];
+	const start = Math.max(0, range.startMs);
+	const end = Math.min(lengthMs, range.endMs);
+	if (end - start < 40) throw new Error("The in and out points are too close together.");
+	return ["-ss", s(start), "-t", s(end - start)];
+}
+
+async function mixAudio(
+	sources: AudioSource[],
+	out: string,
+	lengthMs: number,
+	normalize: boolean,
+	range?: ExportContext["range"],
+) {
 	if (sources.length === 0) throw new Error("Nothing is audible: no unmuted audio clips.");
 	await fs.mkdir(path.dirname(out), { recursive: true });
 	const inputs = sources.flatMap((src) => ["-i", src.file]);
@@ -199,6 +230,7 @@ async function mixAudio(sources: AudioSource[], out: string, lengthMs: number, n
 		"2",
 		"-ar",
 		"48000",
+		...rangeArgs(range, lengthMs),
 		out,
 	]);
 }
@@ -265,7 +297,7 @@ export async function exportVoiceover(ctx: ExportContext, outFile?: string): Pro
 /** Every audible track mixed down (with ducking). */
 export async function exportAudioMix(ctx: ExportContext, outFile: string): Promise<ExportReport> {
 	const lengthMs = projectDuration(ctx.data);
-	await mixAudio(audibleClips(ctx), outFile, lengthMs, ctx.data.export.normalize);
+	await mixAudio(audibleClips(ctx), outFile, lengthMs, ctx.data.export.normalize, ctx.range);
 	return { kind: "audio", outputs: [outFile], missing: [], durationMs: lengthMs };
 }
 
@@ -277,7 +309,9 @@ export async function exportCaptions(ctx: ExportContext, outFile?: string): Prom
 	);
 	const clips = data.clips.filter(
 		(c): c is TextClip =>
-			c.type === "text" && (c.source?.kind === "caption" || c.trackId === captionTrack?.id),
+			c.type === "text" &&
+			!c.disabled &&
+			(c.source?.kind === "caption" || c.trackId === captionTrack?.id),
 	);
 	if (clips.length === 0)
 		throw new Error(
@@ -349,7 +383,9 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		.reverse()
 		.filter((t) => (t.kind === "video" || t.kind === "text") && !t.hidden);
 	const layers: Clip[] = visualTracks.flatMap((t) =>
-		data.clips.filter((c) => c.trackId === t.id).sort((a, b) => a.startMs - b.startMs),
+		data.clips
+			.filter((c) => c.trackId === t.id && !c.disabled)
+			.sort((a, b) => a.startMs - b.startMs),
 	);
 	const textClips = layers.filter(
 		(c): c is TextClip => c.type === "text" && c.text.trim().length > 0,
@@ -510,13 +546,13 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			...encoder(data),
 			"-r",
 			String(fps),
-			"-t",
-			s(lengthMs),
+			...rangeArgs(ctx.range, lengthMs),
 			...(out.endsWith(".mp4") ? ["-movflags", "+faststart"] : []),
 			out,
 		]);
 	} finally {
 		await fs.rm(graph, { force: true });
 	}
-	return { kind: "video", outputs: [out], missing: [], durationMs: lengthMs };
+	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
+	return { kind: "video", outputs: [out], missing: [], durationMs: exported };
 }

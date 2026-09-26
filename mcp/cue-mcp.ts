@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { contract, type MethodName } from "../electron/control/contract";
+import { AGENT_GUIDE } from "../electron/control/guide";
 
 const VERSION = "0.1.0";
 const dataDir =
@@ -60,17 +61,34 @@ function launchApp(): void {
 		return;
 	}
 	if (existsSync("/Applications/Cue.app") && !process.env.CUE_DEV) {
-		spawn("open", ["-a", "/Applications/Cue.app"], { detached: true, stdio: "ignore", env }).unref();
+		spawn("open", ["-a", "/Applications/Cue.app"], {
+			detached: true,
+			stdio: "ignore",
+			env,
+		}).unref();
 		return;
 	}
 	const repo = path.resolve(here, "..");
-	const electron = path.join(repo, "node_modules", "electron", "dist", "Electron.app", "Contents", "MacOS", "Electron");
-	spawn(existsSync(electron) ? electron : "npx", existsSync(electron) ? [repo] : ["electron", repo], {
-		cwd: repo,
-		detached: true,
-		stdio: "ignore",
-		env,
-	}).unref();
+	const electron = path.join(
+		repo,
+		"node_modules",
+		"electron",
+		"dist",
+		"Electron.app",
+		"Contents",
+		"MacOS",
+		"Electron",
+	);
+	spawn(
+		existsSync(electron) ? electron : "npx",
+		existsSync(electron) ? [repo] : ["electron", repo],
+		{
+			cwd: repo,
+			detached: true,
+			stdio: "ignore",
+			env,
+		},
+	).unref();
 }
 
 async function connect(): Promise<Control> {
@@ -101,23 +119,29 @@ async function rpc(method: MethodName, params: unknown): Promise<unknown> {
 const server = new McpServer(
 	{ name: "cue", version: VERSION },
 	{
-		instructions:
-			"Cue is a desktop video editor for recording voiceover over a script. Call get_state first. " +
-			"Script lines have startMs/targetMs/maxMs on the video timeline; a take fits when its speech is shorter than maxMs. " +
-			"record_line uses the user's microphone, so tell the user which line is about to roll before calling it. " +
-			"Use export kind 'stems' to hand clips to another pipeline (one WAV per line plus durations.json).",
+		instructions: AGENT_GUIDE,
 	},
 );
 
-for (const [name, spec] of Object.entries(contract) as [MethodName, (typeof contract)[MethodName]][]) {
-	server.registerTool(name, { description: spec.description, inputSchema: spec.input }, async (args: unknown) => {
-		try {
-			const result = await rpc(name, args);
-			return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
-		} catch (error) {
-			return { isError: true, content: [{ type: "text" as const, text: (error as Error).message }] };
-		}
-	});
+for (const [name, spec] of Object.entries(contract) as [
+	MethodName,
+	(typeof contract)[MethodName],
+][]) {
+	server.registerTool(
+		name,
+		{ description: spec.description, inputSchema: spec.input },
+		async (args: unknown) => {
+			try {
+				const result = await rpc(name, args);
+				return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+			} catch (error) {
+				return {
+					isError: true,
+					content: [{ type: "text" as const, text: (error as Error).message }],
+				};
+			}
+		},
+	);
 }
 
 await server.connect(new StdioServerTransport());
