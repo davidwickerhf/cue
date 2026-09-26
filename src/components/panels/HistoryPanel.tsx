@@ -6,7 +6,7 @@ import {
 	Robot,
 	User,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HistoryEntry } from "../../../electron/core/history";
 import { notify, run } from "../../lib/api";
 import { useProject } from "../../lib/state";
@@ -31,14 +31,28 @@ export function HistoryPanel() {
 	const [filter, setFilter] = useState<"all" | "user" | "agent">("all");
 	const [more, setMore] = useState(true);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: refetch whenever the project changes
+	const latest = useRef<number | undefined>(undefined);
+	latest.current = entries[0]?.n;
+
+	// Another project: load its latest steps.
 	useEffect(() => {
+		if (!project?.path) return;
 		void run<HistoryEntry[]>("get_history", { limit: 300 }).then((list) => {
 			if (!list) return;
 			setEntries(list);
 			setMore(list.length === 300);
 		});
-	}, [revision, project?.path]);
+	}, [project?.path]);
+
+	// After an edit: fetch only the new steps and put them on top (pages already loaded stay).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs when the project changes
+	useEffect(() => {
+		const after = latest.current;
+		if (after === undefined) return;
+		void run<HistoryEntry[]>("get_history", { limit: 2000, after }).then((list) => {
+			if (list?.length) setEntries((current) => [...list, ...current.filter((e) => e.n <= after)]);
+		});
+	}, [revision]);
 
 	const loadMore = async () => {
 		const before = entries.at(-1)?.n;

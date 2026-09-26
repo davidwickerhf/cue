@@ -69,7 +69,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [ ] Viewer overlay follows keyframes, zoom and crop
 - [x] Source monitor keeps its position
 - [ ] Audible scrubbing while shuttling
-- [ ] History panel appends instead of reloading
+- [x] History panel appends instead of reloading
 - [ ] Consistent shortcut labels in the inspector
 
 ## 5b. Real workspaces

@@ -204,9 +204,11 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/** The project's history, newest first. */
-	historyEntries(limit = 200, before?: number): HistoryEntry[] {
+	historyEntries(limit = 200, before?: number, after?: number): HistoryEntry[] {
 		const all = this.history?.entries ?? [];
-		const upto = before === undefined ? all : all.filter((e) => e.n < before);
+		const upto = all.filter(
+			(e) => (before === undefined || e.n < before) && (after === undefined || e.n > after),
+		);
 		return upto.slice(-limit).reverse();
 	}
 

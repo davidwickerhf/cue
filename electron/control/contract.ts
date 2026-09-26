@@ -227,6 +227,7 @@ export const contract = {
 		input: {
 			limit: z.number().int().min(1).max(2000).default(100),
 			before: z.number().int().optional().describe("only steps before this number (paging)"),
+			after: z.number().int().optional().describe("only steps after this number (what's new)"),
 		},
 	},
 	restore_history: {

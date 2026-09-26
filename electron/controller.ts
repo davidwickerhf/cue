@@ -386,8 +386,8 @@ export class Controller extends EventEmitter {
 					actor,
 				);
 			case "get_history": {
-				const { limit, before } = parseInput("get_history", params);
-				return this.store.historyEntries(limit, before);
+				const { limit, before, after } = parseInput("get_history", params);
+				return this.store.historyEntries(limit, before, after);
 			}
 			case "restore_history":
 				return this.afterSequence(
