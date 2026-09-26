@@ -52,7 +52,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [x] More transitions: wipes, slides, zoom, blur
 - [x] Shapes and overlays: arrows, callouts, blur and redact boxes
 - [x] Picture-in-picture and split-screen layouts
-- [ ] Per-track EQ and compressor
+- [x] Per-track EQ and compressor (with Voice and Music bed presets, in the mixer and update_track)
 - [x] Volume line on audio clips
 - [ ] Screen and camera recording
 - [ ] Media bins, tags and media info
@@ -100,7 +100,7 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [x] Animated word-by-word captions
 - [ ] Recipes: reusable edit templates for people and agents
 - [ ] Music-driven montage
-- [ ] Auto-mix: levelled dialogue and ML noise removal
+- [ ] Auto-mix: levelled dialogue and ML noise removal (levelling done: auto_mix and the mixer's Auto-mix and LUFS readout; ML noise removal still to do)
 
 ## 7. Website, SEO and getting the word out
 

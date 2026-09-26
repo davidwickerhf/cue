@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { chunkCaptions } from "./ai";
+import { AUTO_MIX_TARGETS, audioPreset, type MixRole, mixRole } from "./audio";
 import {
 	type ExportReport,
 	exportAudioMix,
@@ -12,6 +13,8 @@ import {
 	exportStems,
 	exportVideo,
 	exportVoiceover,
+	type Loudness,
+	measureLoudness,
 	type TextRender,
 } from "./exporter";
 import { type HistoryEntry, ProjectHistory } from "./history";
@@ -648,6 +651,117 @@ export class ProjectStore extends EventEmitter {
 			}
 		});
 		return { cuts: clips.length - 1, moved };
+	}
+
+	/** Loudness of the whole mix as it would be exported (EBU R128). */
+	async measureLoudness(renderText?: TextRenderer): Promise<Loudness> {
+		await this.renderNested(renderText);
+		return measureLoudness(this.exportContext(renderText));
+	}
+
+	/**
+	 * Levels the mix: dialogue and voiceover tracks to about -16 LUFS, music and
+	 * other beds 8 dB under them (and ducked under the voiceover). The voiceover
+	 * gets the Voice preset when it has no EQ yet. One undo step.
+	 */
+	async autoMix(actor: Actor, renderText?: TextRenderer) {
+		await this.renderNested(renderText);
+		const data = this.current;
+		const heard = data.tracks.filter(
+			(t) =>
+				t.kind !== "text" &&
+				!t.muted &&
+				!t.hidden &&
+				data.clips.some(
+					(c) =>
+						c.type === "media" &&
+						c.trackId === t.id &&
+						!c.disabled &&
+						data.assets.find((a) => a.id === c.assetId)?.hasAudio,
+				),
+		);
+		if (heard.length === 0) throw new Error("Nothing is audible: add clips with sound first.");
+		const voice = audioPreset("Voice");
+		const plans = heard.map((track) => ({
+			track,
+			role: mixRole(data, track),
+			preset: track.voiceover && !track.eq && voice ? voice : undefined,
+		}));
+		// Measure with the preset in place, since the compressor changes the level.
+		const planned = {
+			...data,
+			tracks: data.tracks.map((t) => {
+				const plan = plans.find((p) => p.track.id === t.id);
+				return plan?.preset ? { ...t, eq: plan.preset.eq, compressor: plan.preset.compressor } : t;
+			}),
+		};
+		const measured: (number | null)[] = [];
+		for (const plan of plans)
+			measured.push(
+				(
+					await measureLoudness(
+						{ ...this.exportContext(renderText), data: planned },
+						{ onlyTracks: new Set([plan.track.id]), preFader: true, normalize: false },
+					)
+				).integratedLufs,
+			);
+		const hasDialogue = plans.some((p, i) => p.role === "dialogue" && measured[i] !== null);
+		const changes: {
+			trackId: string;
+			name: string;
+			role: MixRole;
+			measuredLufs: number | null;
+			targetLufs: number;
+			volume: { from: number; to: number };
+			preset?: string;
+			duck?: boolean;
+		}[] = [];
+		const patches: { id: string; patch: Record<string, unknown> }[] = [];
+		plans.forEach((plan, i) => {
+			const lufs = measured[i];
+			const target =
+				plan.role === "music" && hasDialogue ? AUTO_MIX_TARGETS.music : AUTO_MIX_TARGETS.dialogue;
+			// The fader sits after the EQ and compressor, so loudness follows it in dB.
+			const volume =
+				lufs === null
+					? plan.track.volume
+					: Math.round(Math.min(2, Math.max(0.01, 10 ** ((target - lufs) / 20))) * 100) / 100;
+			const duck = plan.role === "music" && hasDialogue && !plan.track.voiceover;
+			const patch: Record<string, unknown> = { volume };
+			if (plan.preset) {
+				patch.eq = plan.preset.eq;
+				patch.compressor = plan.preset.compressor;
+			}
+			if (duck && !plan.track.duck) patch.duck = true;
+			patches.push({ id: plan.track.id, patch });
+			changes.push({
+				trackId: plan.track.id,
+				name: plan.track.name,
+				role: plan.role,
+				measuredLufs: lufs === null ? null : Math.round(lufs * 10) / 10,
+				targetLufs: target,
+				volume: { from: plan.track.volume, to: volume },
+				...(plan.preset ? { preset: plan.preset.name } : {}),
+				...(duck ? { duck: true } : {}),
+			});
+		});
+		const summary = `Auto-mixed ${changes.length} track(s)`;
+		await this.transaction(actor, summary, () => {
+			for (const { id, patch } of patches) this.apply({ type: "updateTrack", id, patch }, actor);
+		});
+		// Loudness above what the faders can reach (+6 dB) is left to export normalisation.
+		const limited = changes.filter(
+			(c) => c.measuredLufs !== null && c.volume.to >= 2 && c.measuredLufs + 6 < c.targetLufs - 0.5,
+		);
+		return {
+			summary,
+			tracks: changes,
+			...(limited.length
+				? {
+						note: `${limited.map((c) => c.name).join(", ")} could only be raised 6 dB; turn on loudness normalisation or raise the clip volume.`,
+					}
+				: {}),
+		};
 	}
 
 	private requireTranscript() {

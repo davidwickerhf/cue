@@ -77,6 +77,20 @@ export interface Track {
 	solo?: boolean;
 	/** Stereo balance, -1 left to 1 right. */
 	pan?: number;
+	/** Three-band EQ in dB (-12 to 12): low shelf, peaking mid, high shelf. */
+	eq?: TrackEq;
+	/** One-knob compressor, 0 (off) to 1. */
+	compressor?: TrackCompressor;
+}
+
+export interface TrackEq {
+	low: number;
+	mid: number;
+	high: number;
+}
+
+export interface TrackCompressor {
+	amount: number;
 }
 
 export type ClipLabel = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";

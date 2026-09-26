@@ -322,6 +322,12 @@ export class Controller extends EventEmitter {
 					{ type: "updateTrack", ...parseInput("update_track", params) },
 					actor,
 				);
+			case "auto_mix":
+				return this.job("Auto-mixing", () => this.store.autoMix(actor, this.hooks.renderText));
+			case "measure_loudness":
+				return this.job("Measuring loudness", () =>
+					this.store.measureLoudness(this.hooks.renderText),
+				);
 			case "remove_track":
 				return this.store.apply(
 					{ type: "removeTrack", id: parseInput("remove_track", params).id },

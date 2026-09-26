@@ -141,7 +141,7 @@ export const contract = {
 	},
 	update_track: {
 		description:
-			"Rename, mute, solo, lock, hide, set volume (0–2) or pan (-1 left to 1 right), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks).",
+			"Rename, mute, solo, lock, hide, set volume (0–2) or pan (-1 left to 1 right), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks). eq: three bands in dB (-12 to 12): low (shelf at 120 Hz: rumble, boom), mid (1.2 kHz: presence, honk), high (shelf at 8 kHz: air, hiss); bands you leave out keep their value, null makes it flat. compressor: {amount 0–1} evens out loud and quiet parts (0.3 gentle, 0.5 voice, 0.8 heavy), null turns it off. Presets: Voice is eq {low:-3, mid:2, high:3} with compressor 0.5; Music bed is eq {mid:-2} with compressor 0.3.",
 		input: {
 			id: z.string(),
 			patch: z
@@ -155,9 +155,28 @@ export const contract = {
 					duck: z.boolean(),
 					solo: z.boolean(),
 					pan: z.number().min(-1).max(1),
+					eq: z
+						.object({
+							low: z.number().min(-12).max(12),
+							mid: z.number().min(-12).max(12),
+							high: z.number().min(-12).max(12),
+						})
+						.partial()
+						.nullable(),
+					compressor: z.object({ amount: z.number().min(0).max(1) }).nullable(),
 				})
 				.partial(),
 		},
+	},
+	auto_mix: {
+		description:
+			"Level the mix in one undoable step: measures each audible track's loudness and sets track volumes so dialogue and voiceover sit at about -16 LUFS and music or background tracks about 8 dB under them, turns on ducking for music tracks, and gives the voiceover track the Voice preset (EQ and compressor) if it has no EQ yet. Tracks are told apart by the voiceover flag, their names (Music, Voice, …) and transcripts. Returns each track's measured loudness and what changed.",
+		input: {},
+	},
+	measure_loudness: {
+		description:
+			"Measure the loudness of the whole mix as it would be exported (EBU R128): integrated LUFS and true peak in dBTP. Nothing is changed.",
+		input: {},
 	},
 	remove_track: { description: "Delete a track and its clips.", input: { id: z.string() } },
 	move_track: {
