@@ -67,6 +67,7 @@ export function PreviewPanel() {
 					{project && <SelectionOverlay project={project} width={size.w} height={size.h} />}
 					{safeAreas && <SafeAreas />}
 				</div>
+				{project && project.data.clips.length === 0 && <EmptyProject project={project} />}
 				<Teleprompter />
 				{prompter && project && <ScriptPrompter />}
 				{compare && project && <CompareButton />}
@@ -364,6 +365,94 @@ function boxOf(clip: Clip, project: ProjectSnapshot, width: number, height: numb
 		cx: t.x,
 		cy: t.y,
 	};
+}
+
+/**
+ * An empty project: a place to drop footage, and the few steps that get an
+ * edit going. Dropped files are imported and laid out on the timeline.
+ */
+function EmptyProject({ project }: { project: ProjectSnapshot }) {
+	const [over, setOver] = useState(false);
+	const place = async (files: string[]) => {
+		const assets = await run<{ id: string; kind: string; durationMs: number }[]>("import_media", {
+			files,
+		});
+		if (!assets?.length) return;
+		const video = project.data.tracks.find((t) => t.kind === "video" && !t.locked);
+		const audio = project.data.tracks.find((t) => t.kind === "audio" && !t.voiceover && !t.locked);
+		// Pictures back to back on the first video track, sound on the first audio track.
+		let at = 0;
+		const clips = [];
+		for (const a of assets) {
+			if ((a.kind === "video" || a.kind === "image") && video) {
+				clips.push({ type: "media", trackId: video.id, assetId: a.id, startMs: at });
+				// Stills get the default five seconds.
+				at += a.kind === "image" ? 5000 : a.durationMs;
+			} else if (a.kind === "audio" && audio)
+				clips.push({ type: "media", trackId: audio.id, assetId: a.id, startMs: 0 });
+		}
+		if (clips.length) await run("add_clips", { clips });
+		window.dispatchEvent(new CustomEvent("cue:fit"));
+	};
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: a drop zone; the button inside imports by click
+		<div
+			className={cn(
+				"absolute inset-6 z-20 flex flex-col items-center justify-center gap-6 rounded-2xl border-2 border-dashed transition-colors",
+				over ? "border-accent bg-accent/10" : "border-white/10 bg-black/30",
+			)}
+			onDragOver={(e) => {
+				e.preventDefault();
+				setOver(true);
+			}}
+			onDragLeave={() => setOver(false)}
+			onDrop={(e) => {
+				e.preventDefault();
+				setOver(false);
+				const files = [...e.dataTransfer.files]
+					.map((f) => window.cue.pathForFile(f))
+					.filter(Boolean);
+				if (files.length) void place(files);
+			}}
+		>
+			<div className="text-center">
+				<p className="text-[17px] font-semibold text-white">Drop footage here</p>
+				<p className="mt-1 text-[13px] text-white/60">
+					Video, sound or pictures. They go straight onto the timeline.
+				</p>
+			</div>
+			<button
+				type="button"
+				onClick={() => void window.cue.importDialog()}
+				className="h-9 rounded-lg bg-accent px-4 text-[13px] font-semibold text-accent-foreground"
+			>
+				Import media… <span className="ml-1 opacity-70">⌘I</span>
+			</button>
+			<ol className="grid max-w-xl grid-cols-2 gap-x-8 gap-y-2 text-[12px] text-white/65">
+				<li>
+					<b className="text-white/90">1. Arrange.</b> Drag clips from Media onto the timeline.
+				</li>
+				<li>
+					<b className="text-white/90">2. Cut.</b> Space plays, ⌘K splits, drag an edge to trim.
+				</li>
+				<li>
+					<b className="text-white/90">3. Polish.</b> Titles in Text, colour and effects in the
+					inspector.
+				</li>
+				<li>
+					<b className="text-white/90">4. Share.</b> Export, or ask the Agent to do any of it.
+				</li>
+			</ol>
+			<a
+				href="https://cue.wicker.life/docs"
+				target="_blank"
+				rel="noreferrer"
+				className="text-[12px] text-white/50 underline underline-offset-4 hover:text-white/80"
+			>
+				Read the guide
+			</a>
+		</div>
+	);
 }
 
 /** Title-safe (80%) and action-safe (90%) frames, and a centre mark. */

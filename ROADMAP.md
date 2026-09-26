@@ -63,7 +63,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 ## 5. UX and UI
 
 - [x] Inspector in tabs or collapsible sections
-- [ ] First-run guide and a "drop footage here" empty state
+- [x] First-run guide and a "drop footage here" empty state
 - [ ] Keyboard focus for clips, the clip menu and pane dividers
 - [x] Esc cancels drags and trims and restores name fields
 - [ ] Viewer overlay follows keyframes, zoom and crop
