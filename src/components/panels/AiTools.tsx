@@ -19,8 +19,19 @@ export function BeatTools({ project }: { project: ProjectSnapshot }) {
 	const [assetId, setAssetId] = useState<string>("");
 	const [trackId, setTrackId] = useState<string>("");
 	const [info, setInfo] = useState<string | null>(null);
+	// Default to sound on a music track (not the voiceover), since that is what has a beat.
+	const onMusicTrack = (id: string) =>
+		project.data.clips.some(
+			(c) =>
+				c.type === "media" &&
+				c.assetId === id &&
+				project.data.tracks.find((t) => t.id === c.trackId && t.kind === "audio" && !t.voiceover),
+		);
 	const chosen =
-		music.find((a) => a.id === assetId) ?? music.find((a) => a.kind === "audio") ?? music[0];
+		music.find((a) => a.id === assetId) ??
+		music.find((a) => a.kind === "audio" && onMusicTrack(a.id)) ??
+		music.find((a) => a.kind === "audio") ??
+		music[0];
 	const track = videoTracks.find((t) => t.id === trackId) ?? videoTracks.at(-1);
 	if (!chosen) return null;
 	return (

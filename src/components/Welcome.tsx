@@ -15,6 +15,7 @@ import { notify, run } from "../lib/api";
 import { appSettings, dialogs, openSettings, useApp } from "../lib/state";
 import { cn } from "../lib/utils";
 import { Segmented } from "./ui/controls";
+import { WindowDots } from "./WindowDots";
 
 function ago(iso: string | undefined): string {
 	if (!iso) return "";
@@ -93,7 +94,8 @@ export function Welcome() {
 
 	return (
 		<div className="flex h-full flex-col bg-background">
-			<header className="app-drag flex h-11 shrink-0 items-center gap-2 border-b border-separator bg-surface pr-3 pl-[84px]">
+			<header className="app-drag relative flex h-11 shrink-0 items-center gap-2 border-b border-separator bg-surface pr-3 pl-[84px]">
+				<WindowDots />
 				<Logo />
 				<div className="flex-1" />
 				<button

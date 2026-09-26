@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+	--font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+	--color-page: #0a0a0a;
+	--color-card: #161616;
+	--color-line: #242424;
+	--color-muted: #8a8a8a;
+	--color-accent: #0a6cff;
+}
+
+html {
+	background: var(--color-page);
+	color: #fafafa;
+	scroll-behavior: smooth;
+}
+
+::selection {
+	background: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+details > summary {
+	list-style: none;
+}
+details > summary::-webkit-details-marker {
+	display: none;
+}

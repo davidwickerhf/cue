@@ -76,6 +76,8 @@ export function TextPanel() {
 								if (result?.created) {
 									window.cue.selectClips(result.created);
 									editor.set({ inspectorOpen: true });
+									// Step past the intro animation so the new title is visible straight away.
+									playback.seek(playback.currentMs + 450);
 								}
 							}}
 							className="group flex flex-col gap-1 text-left"

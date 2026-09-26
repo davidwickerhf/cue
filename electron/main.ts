@@ -55,7 +55,13 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let win: BrowserWindow | null = null;
+// Development: a separate data folder lets a second copy run next to the installed app.
+if (process.env.CUE_USER_DATA) app.setPath("userData", process.env.CUE_USER_DATA);
 const dataDir = app.getPath("userData");
+/** Development: render offscreen and save frames here (for recording demos). */
+const recordFrames = process.env.CUE_RECORD_FRAMES;
+/** Frames are rendered this many times sharper than the 1440×900 layout. */
+const recordScale = Number(process.env.CUE_RECORD_SCALE ?? "1.5");
 const secretsFile = path.join(dataDir, "secrets.bin");
 const mediaUrl = (file: string) => `${MEDIA_SCHEME}://local/${encodeURIComponent(file)}`;
 
@@ -308,7 +314,7 @@ async function sendChat(
 			bridge: {
 				command: process.execPath,
 				args: [mcpScriptPath()],
-				env: { ELECTRON_RUN_AS_NODE: "1" },
+				env: { ELECTRON_RUN_AS_NODE: "1", CUE_DATA_DIR: dataDir },
 			},
 			workDir: path.join(dataDir, "agent", input.harness),
 		},
@@ -318,6 +324,9 @@ async function sendChat(
 }
 
 function mcpScriptPath(): string {
+	// Demo recordings show the installed app's bridge (same code) rather than a development path.
+	const installed = "/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs";
+	if (recordFrames && existsSync(installed)) return installed;
 	return app.isPackaged
 		? path.join(process.resourcesPath, "mcp", "cue-mcp.mjs")
 		: path.join(app.getAppPath(), "dist-mcp", "cue-mcp.mjs");
@@ -399,15 +408,41 @@ function createWindow() {
 		title: "Cue",
 		titleBarStyle: "hiddenInset",
 		trafficLightPosition: { x: 18, y: 15 },
+		...(recordFrames
+			? {
+					width: Math.round(1440 * recordScale),
+					height: Math.round(900 * recordScale),
+					show: false,
+					useContentSize: true,
+				}
+			: {}),
 		backgroundColor: "#0f0f11",
 		show: false,
 		webPreferences: {
 			preload: path.join(__dirname, "preload.cjs"),
 			contextIsolation: true,
 			sandbox: true,
+			...(recordFrames ? { offscreen: true, backgroundThrottling: false } : {}),
 		},
 	});
-	win.once("ready-to-show", () => win?.show());
+	if (recordFrames) {
+		// Frames are written while <dir>/on exists, named by the time they were painted.
+		const flag = path.join(recordFrames, "on");
+		win.webContents.setFrameRate(30);
+		// Offscreen windows ignore the display scale; zoom keeps the 1440×900 layout at a sharper size.
+		win.webContents.on("did-finish-load", () => win?.webContents.setZoomFactor(recordScale));
+		let lastFrame = 0;
+		win.webContents.on("paint", (_event, _dirty, image) => {
+			if (!existsSync(flag)) return;
+			lastFrame = Date.now();
+			void fs.writeFile(path.join(recordFrames, `${lastFrame}.jpg`), image.toJPEG(90));
+		});
+		// Nothing repaints while the screen is still; ask for a frame so there always is a current one.
+		setInterval(() => {
+			if (win && !win.isDestroyed() && existsSync(flag) && Date.now() - lastFrame > 400)
+				win.webContents.invalidate();
+		}, 250);
+	} else win.once("ready-to-show", () => win?.show());
 	win.on("closed", () => {
 		win = null;
 		controller.updateRecorder({
@@ -422,7 +457,11 @@ function createWindow() {
 		return { action: "deny" };
 	});
 	if (process.env.VITE_DEV_SERVER_URL) void win.loadURL(process.env.VITE_DEV_SERVER_URL);
-	else void win.loadFile(path.join(__dirname, "../dist/index.html"));
+	else
+		void win.loadFile(
+			path.join(__dirname, "../dist/index.html"),
+			recordFrames ? { query: { record: "1" } } : undefined,
+		);
 }
 
 const PROJECT_FILTER = { name: "Cue project", extensions: ["cueproj", "json"] };
@@ -843,7 +882,7 @@ if (process.env.CUE_LAG) {
 /** Files opened from Finder before the app was ready. */
 let pendingOpen: string | null = null;
 
-if (!app.requestSingleInstanceLock()) app.quit();
+if (!process.env.CUE_USER_DATA && !app.requestSingleInstanceLock()) app.quit();
 else {
 	// Double-clicking a .cueproj (or dropping one on the Dock icon).
 	app.on("open-file", (event, file) => {

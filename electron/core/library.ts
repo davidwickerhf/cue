@@ -84,9 +84,10 @@ export async function makePoster(projectFile: string, data: ProjectData): Promis
 	if (!existsSync(source)) return;
 	const out = posterPath(projectFile);
 	await fs.mkdir(path.dirname(out), { recursive: true });
+	// A quarter of the way in: past fade-ins and dark openings, still early in the shot.
 	const at =
 		asset.kind === "image"
 			? []
-			: ["-ss", String((clip.inMs + Math.min(1000, clip.durationMs / 3)) / 1000)];
+			: ["-ss", String((clip.inMs + Math.min(10000, clip.durationMs / 4)) / 1000)];
 	await ffmpeg([...at, "-i", source, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", out]);
 }

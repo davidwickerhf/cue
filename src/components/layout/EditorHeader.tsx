@@ -8,6 +8,7 @@ import {
 import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { exportDialog } from "../ExportDialog";
+import { WindowDots } from "../WindowDots";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
@@ -45,6 +46,7 @@ export function EditorHeader() {
 
 	return (
 		<header className="app-drag relative z-50 flex h-11 shrink-0 items-center border-b border-separator bg-surface pr-3 pl-[84px]">
+			<WindowDots />
 			<div className="flex min-w-0 flex-1 items-center gap-1">
 				<button
 					type="button"
