@@ -372,6 +372,8 @@ export interface TextClip {
 	source?: { kind: "caption"; assetId?: string };
 	/** A graphic under the text (boxes, arrows, callouts). */
 	shape?: Shape;
+	/** Editable, data-driven graphic rendered identically in preview and export. */
+	infographic?: Infographic;
 	/** The words of `text` with their timing, for word-by-word animation. */
 	words?: CaptionWord[];
 	wordStyle?: WordStyle;
@@ -379,6 +381,15 @@ export interface TextClip {
 	disabled?: boolean;
 	label?: ClipLabel;
 	name?: string;
+}
+
+export interface Infographic {
+	kind: "bars" | "donut" | "cards" | "line" | "timeline";
+	title: string;
+	items: { label: string; value: number }[];
+	unit?: string;
+	source?: string;
+	palette: "editorial" | "electric" | "mono";
 }
 
 export type Clip = MediaClip | TextClip;

@@ -543,7 +543,8 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			.sort((a, b) => a.startMs - b.startMs),
 	);
 	const textClips = layers.filter(
-		(c): c is TextClip => c.type === "text" && (c.text.trim().length > 0 || !!c.shape),
+		(c): c is TextClip =>
+			c.type === "text" && (c.text.trim().length > 0 || !!c.shape || !!c.infographic),
 	);
 	const rendered = textClips.length
 		? await (ctx.renderText?.(textClips, { width: W, height: H }) ??
@@ -683,6 +684,20 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			// Wipes: the alpha is cut off beyond a moving edge while the transition runs.
 			(tr?.kind === "wipe-left" || tr?.kind === "wipe-right"
 				? `,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*${tr.kind === "wipe-left" ? `gte(X,W*(1-${enteredAt("T")}))` : `lte(X,W*${enteredAt("T")})`}':enable='lt(t,${s(tr.durationMs)})'`
+				: "") +
+			(tr?.kind === "paper-tear"
+				? (() => {
+						const edge = `W*(${enteredAt("T")}+0.015*sin(Y/H*37.7)+0.009*sin(Y/H*100.5+1.2))`;
+						const fringe = `between(X,${edge}-8,${edge})`;
+						return `,geq=r='if(${fringe},235,r(X,Y))':g='if(${fringe},226,g(X,Y))':b='if(${fringe},206,b(X,Y))':a='alpha(X,Y)*lte(X,${edge})':enable='lt(t,${s(tr.durationMs)})'`;
+					})()
+				: "") +
+			(tr?.kind === "signal-glitch"
+				? (() => {
+						const edge = `W*(${enteredAt("T")}+0.13*sin(floor(Y/H*16)*13.2+floor(T*24)*2.3))`;
+						const scan = `if(lt(mod(Y,4),1),0.7,1)`;
+						return `,geq=r='r(min(W-1,X+7),Y)*${scan}':g='g(X,Y)*${scan}':b='b(max(0,X-7),Y)*${scan}':a='alpha(X,Y)*lte(X,${edge})':enable='lt(t,${s(tr.durationMs)})'`;
+					})()
 				: "");
 		const fades = [
 			clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",

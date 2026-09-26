@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 152,
+	"count": 153,
 	"groups": [
 		{
 			"title": "Overview",
@@ -1241,7 +1241,7 @@
 				},
 				{
 					"name": "add_transition",
-					"description": "Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the two clips (later clips move left by the overlap) and crossfades their sound: crossfade, wipe-left / wipe-right (a hard edge sweeps across), slide-left (enters from the right) / slide-right (from the left), zoom (settles in from larger while fading in), blur (sharpens while fading in). dip fades through black. Adding one to a clip that has one replaces it.",
+					"description": "Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the clips and crossfades their sound: crossfade, wipe-left/right, slide-left/right, zoom, blur, paper-tear (ragged paper edge), signal-glitch (staggered horizontal signal breakup). Dip fades through black. Adding one to a clip that has one replaces it.",
 					"inputs": [
 						{
 							"name": "clipId",
@@ -1250,7 +1250,7 @@
 						},
 						{
 							"name": "kind",
-							"type": "\"crossfade\" | \"dip\" | \"wipe-left\" | \"wipe-right\" | \"slide-left\" | \"slide-right\" | \"zoom\" | \"blur\"",
+							"type": "\"crossfade\" | \"dip\" | \"wipe-left\" | \"wipe-right\" | \"slide-left\" | \"slide-right\" | \"zoom\" | \"blur\" | \"paper-tear\" | \"signal-glitch\"",
 							"required": false,
 							"default": "\"crossfade\""
 						},
@@ -1848,6 +1848,54 @@
 							"name": "text",
 							"type": "string",
 							"required": false
+						}
+					]
+				},
+				{
+					"name": "add_infographic",
+					"description": "Create an editable animated data graphic over the video. bars compares values, donut shows parts of a whole, cards highlights key metrics, line shows a numerical trend, and timeline shows ordered milestones with values. Give real numbers and a source when available. The graphic is one text clip, so it can be moved, trimmed, undone, and edited with update_clip {infographic:{...}}. Palette: editorial (paper and coral), electric (dark and mint), mono (paper and red).",
+					"inputs": [
+						{
+							"name": "kind",
+							"type": "\"bars\" | \"donut\" | \"cards\" | \"line\" | \"timeline\"",
+							"required": true
+						},
+						{
+							"name": "title",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "items",
+							"type": "object[]",
+							"required": true
+						},
+						{
+							"name": "unit",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "source",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "palette",
+							"type": "\"editorial\" | \"electric\" | \"mono\"",
+							"required": false,
+							"default": "\"editorial\""
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false,
+							"default": "4000"
 						}
 					]
 				},

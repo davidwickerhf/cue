@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { ffmpeg, ffmpegPath } from "../electron/core/media";
 import { ProjectStore } from "../electron/core/store";
-import type { MediaClip } from "../electron/core/types";
+import type { MediaClip, TextClip } from "../electron/core/types";
 
 const run = promisify(execFile);
 
@@ -36,6 +36,53 @@ async function pixel(file: string, sec: number, x: number, y: number, w: number)
 }
 
 describe("compositing", () => {
+	it("adds editable infographic data as one undoable clip", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-chart-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Chart" });
+		const { clipId } = await store.addInfographic(
+			{
+				kind: "bars",
+				title: "Sample survey",
+				items: [
+					{ label: "Yes", value: 72 },
+					{ label: "No", value: 28 },
+				],
+				palette: "editorial",
+				source: "Example data",
+				startMs: 0,
+				durationMs: 4000,
+			},
+			"user",
+		);
+		const clip = store.current.clips.find((c) => c.id === clipId);
+		expect(clip?.type === "text" && clip.infographic?.items[0].value).toBe(72);
+		store.apply(
+			{
+				type: "updateClip",
+				id: clipId,
+				patch: {
+					infographic: {
+						kind: "cards",
+						title: "Sample survey",
+						items: [{ label: "Yes", value: 73 }],
+						palette: "mono",
+					},
+				},
+			},
+			"user",
+		);
+		expect((store.current.clips.find((c) => c.id === clipId) as TextClip).infographic?.kind).toBe(
+			"cards",
+		);
+		store.undo("user");
+		store.undo("user");
+		expect(store.current.clips.some((c) => c.id === clipId)).toBe(false);
+	}, 30000);
 	it("keys a green screen, masks it and grades it with an adjustment layer", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-comp-"));
 		const green = path.join(dir, "green.mp4");
@@ -346,7 +393,7 @@ describe("compositing", () => {
 		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(1);
 	}, 90000);
 
-	it("exports wipes, slides, zoom and blur transitions", async () => {
+	it("exports wipes, slides, zoom, blur, paper and signal transitions", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-transitions-"));
 		const red = path.join(dir, "red.mp4");
 		const blue = path.join(dir, "blue.mp4");
@@ -372,6 +419,8 @@ describe("compositing", () => {
 			"slide-right",
 			"zoom",
 			"blur",
+			"paper-tear",
+			"signal-glitch",
 		] as const) {
 			const store = new ProjectStore({
 				mediaUrl: (f) => f,
@@ -411,7 +460,12 @@ describe("compositing", () => {
 			if (kind === "wipe-left" || kind === "slide-left") {
 				expect(isRed(leftPx)).toBe(true);
 				expect(isBlue(rightPx)).toBe(true);
-			} else if (kind === "wipe-right" || kind === "slide-right") {
+			} else if (
+				kind === "wipe-right" ||
+				kind === "slide-right" ||
+				kind === "paper-tear" ||
+				kind === "signal-glitch"
+			) {
 				expect(isBlue(leftPx)).toBe(true);
 				expect(isRed(rightPx)).toBe(true);
 			} else {

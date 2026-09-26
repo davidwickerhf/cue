@@ -15,6 +15,8 @@ export const TRANSITIONS = [
 	{ kind: "slide-right", label: "Slide in from left" },
 	{ kind: "zoom", label: "Zoom in" },
 	{ kind: "blur", label: "Blur" },
+	{ kind: "paper-tear", label: "Paper tear" },
+	{ kind: "signal-glitch", label: "No signal" },
 ] as const;
 
 export type TransitionKind = (typeof TRANSITIONS)[number]["kind"];
@@ -44,3 +46,38 @@ export function entered(t: Transition | undefined, ms: number): number {
 export const ZOOM_FROM = 0.18;
 /** Blur transition: the strongest blur, in pixels of a 1080-line picture. */
 export const BLUR_FROM = 28;
+
+/** The procedural edge is shared by the preview and FFmpeg export. */
+export function transitionEdge(
+	kind: "paper-tear" | "signal-glitch",
+	progress: number,
+	row: number,
+	tick = 0,
+): number {
+	const p = Math.max(0, Math.min(1, progress));
+	if (kind === "paper-tear")
+		return p + 0.015 * Math.sin(row * 37.7) + 0.009 * Math.sin(row * 100.5 + 1.2);
+	const band = Math.floor(row * 16);
+	return p + 0.13 * Math.sin(band * 13.2 + tick * 2.3);
+}
+
+/** A ragged reveal edge, bounded by the clip's own crop. */
+export function transitionClipPath(
+	kind: "paper-tear" | "signal-glitch",
+	progress: number,
+	crop: { left: number; top: number; right: number; bottom: number },
+	tick = 0,
+): string {
+	const top = crop.top;
+	const bottom = 1 - crop.bottom;
+	const edge = (row: number) =>
+		Math.max(crop.left, Math.min(1 - crop.right, transitionEdge(kind, progress, row, tick)));
+	const rows = kind === "paper-tear" ? 48 : 32;
+	const points = [`${crop.left * 100}% ${top * 100}%`];
+	for (let i = 0; i <= rows; i++) {
+		const row = top + ((bottom - top) * i) / rows;
+		points.push(`${(edge(row) * 100).toFixed(2)}% ${(row * 100).toFixed(2)}%`);
+	}
+	points.push(`${crop.left * 100}% ${bottom * 100}%`);
+	return `polygon(${points.join(",")})`;
+}

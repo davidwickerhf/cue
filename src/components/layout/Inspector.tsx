@@ -851,6 +851,96 @@ function TextInspector({ clip }: { clip: TextClip }) {
 	const patch = (p: Record<string, unknown>) => void run("update_clip", { id: clip.id, patch: p });
 	const style = (p: Partial<typeof s>) => patch({ style: p });
 	const fonts = useFonts();
+	if (clip.infographic) {
+		const chart = clip.infographic;
+		const update = (changes: Partial<typeof chart>) =>
+			patch({ infographic: { ...chart, ...changes } });
+		return (
+			<>
+				<Section title="Infographic">
+					<Field label="Title">
+						<TextInput value={chart.title} onCommit={(title) => update({ title })} />
+					</Field>
+					<div className="grid grid-cols-2 gap-2">
+						<Field label="Layout">
+							<select
+								className="h-8 rounded-lg border border-border bg-field px-2 text-[12px]"
+								value={chart.kind}
+								onChange={(e) => update({ kind: e.target.value as typeof chart.kind })}
+							>
+								<option value="bars">Bars</option>
+								<option value="donut">Donut</option>
+								<option value="cards">Metric cards</option>
+								<option value="line">Trend line</option>
+								<option value="timeline">Timeline</option>
+							</select>
+						</Field>
+						<Field label="Palette">
+							<select
+								className="h-8 rounded-lg border border-border bg-field px-2 text-[12px]"
+								value={chart.palette}
+								onChange={(e) => update({ palette: e.target.value as typeof chart.palette })}
+							>
+								<option value="editorial">Editorial</option>
+								<option value="electric">Electric</option>
+								<option value="mono">Mono</option>
+							</select>
+						</Field>
+					</div>
+					<Field label="Unit">
+						<TextInput value={chart.unit ?? ""} onCommit={(unit) => update({ unit })} />
+					</Field>
+					<Field label="Source">
+						<TextInput value={chart.source ?? ""} onCommit={(source) => update({ source })} />
+					</Field>
+				</Section>
+				<Section title="Data">
+					{chart.items.map((item, i) => (
+						<div className="grid grid-cols-[1fr_82px_20px] gap-2" key={i}>
+							<TextInput
+								value={item.label}
+								onCommit={(label) =>
+									update({
+										items: chart.items.map((row, j) => (j === i ? { ...row, label } : row)),
+									})
+								}
+							/>
+							<NumberInput
+								value={item.value}
+								min={0}
+								max={1e9}
+								step={1}
+								onCommit={(value) =>
+									update({
+										items: chart.items.map((row, j) => (j === i ? { ...row, value } : row)),
+									})
+								}
+							/>
+							<button
+								type="button"
+								aria-label={`Remove ${item.label}`}
+								disabled={chart.items.length <= 1}
+								onClick={() => update({ items: chart.items.filter((_, j) => j !== i) })}
+								className="text-muted hover:text-foreground disabled:opacity-30"
+							>
+								×
+							</button>
+						</div>
+					))}
+					{chart.items.length < 6 && (
+						<button
+							type="button"
+							className="text-[12px] text-accent"
+							onClick={() => update({ items: [...chart.items, { label: "New item", value: 0 }] })}
+						>
+							+ Add item
+						</button>
+					)}
+				</Section>
+				<Timing clip={clip} />
+			</>
+		);
+	}
 	return (
 		<>
 			{clip.shape && <ShapeSection clip={clip} />}

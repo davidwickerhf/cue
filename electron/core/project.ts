@@ -397,6 +397,18 @@ export const wordStyleSchema = z.object({
 	color: z.string().max(60),
 });
 
+export const infographicSchema = z.object({
+	kind: z.enum(["bars", "donut", "cards", "line", "timeline"]),
+	title: z.string().min(1).max(120),
+	items: z
+		.array(z.object({ label: z.string().min(1).max(60), value: z.number().finite().min(0) }))
+		.min(1)
+		.max(6),
+	unit: z.string().max(24).optional(),
+	source: z.string().max(160).optional(),
+	palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
+});
+
 const textClipSchema = z.object({
 	id,
 	type: z.literal("text"),
@@ -411,6 +423,7 @@ const textClipSchema = z.object({
 	words: z.array(captionWordSchema).max(400).optional(),
 	wordStyle: wordStyleSchema.optional(),
 	shape: shapeSchema.optional(),
+	infographic: infographicSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),
 	label: z.enum(CLIP_LABELS).optional(),

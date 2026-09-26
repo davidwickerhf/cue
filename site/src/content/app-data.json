@@ -369,6 +369,14 @@
 		{
 			"kind": "blur",
 			"label": "Blur"
+		},
+		{
+			"kind": "paper-tear",
+			"label": "Paper tear"
+		},
+		{
+			"kind": "signal-glitch",
+			"label": "No signal"
 		}
 	],
 	"titles": [

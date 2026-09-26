@@ -23,6 +23,7 @@ import {
 	exportSchema,
 	frameSchema,
 	groupTracks,
+	infographicSchema,
 	keyframeSchema,
 	keySchema,
 	lineInputSchema,
@@ -113,6 +114,7 @@ export const textClipInput = z.object({
 	words: z.array(captionWordSchema).max(400).optional(),
 	/** A graphic under the text: box, ellipse, line or arrow (text may be empty). */
 	shape: shapeSchema.partial().optional(),
+	infographic: infographicSchema.optional(),
 	wordStyle: wordStyleSchema.optional(),
 });
 
@@ -144,6 +146,7 @@ export const clipPatch = z
 		frame: frameSchema.partial().nullable(),
 		wordStyle: wordStyleSchema.nullable(),
 		shape: shapeSchema.partial().nullable(),
+		infographic: infographicSchema.nullable(),
 		words: z.array(captionWordSchema).max(400).nullable(),
 	})
 	.partial();
@@ -716,6 +719,7 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 			animationOut: input.animationOut ?? "fade",
 			...(input.name ? { name: input.name } : {}),
 			...(input.shape ? { shape: shapeSchema.parse({ ...DEFAULT_SHAPE, ...input.shape }) } : {}),
+			...(input.infographic ? { infographic: input.infographic } : {}),
 			...(input.wordStyle
 				? {
 						wordStyle: input.wordStyle,
@@ -1307,6 +1311,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				wordStyle,
 				words,
 				shape,
+				infographic,
 				...patch
 			} = op.patch;
 			// null clears a label, mask or key; a partial mask or key merges with what is there.
@@ -1377,11 +1382,15 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 													? undefined
 													: shapeSchema.parse({ ...DEFAULT_SHAPE, ...current.shape, ...shape }),
 										}),
+								...(infographic === undefined ? {} : { infographic: infographic ?? undefined }),
 							},
 							words,
 							wordStyle,
 						);
-			if (current.type === "media" && (op.patch.text !== undefined || style || wordStyle || words))
+			if (
+				current.type === "media" &&
+				(op.patch.text !== undefined || style || wordStyle || words || infographic !== undefined)
+			)
 				throw new Error("Only text clips have text, style and word timing.");
 			const next = validateClip(data, merged as Clip);
 			return {

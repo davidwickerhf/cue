@@ -6,4 +6,5 @@ dist-mcp/
 release/
 .DS_Store
 *.log
+__pycache__/
 build/native/

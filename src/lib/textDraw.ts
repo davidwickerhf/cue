@@ -13,6 +13,7 @@ export interface TextFrame {
 	/** Word-by-word captions: the word being said (-1 before the first) and how far into it, 0–1. */
 	word?: number;
 	wordP?: number;
+	chartP?: number;
 }
 
 /** How long a word's pop or bounce lasts. */
@@ -21,6 +22,7 @@ const WORD_MS = 180;
 /** Animation state for a text clip `localMs` after it starts. */
 export function textFrame(clip: TextClip, localMs: number, canvasHeight: number): TextFrame {
 	const frame: TextFrame = { alpha: 1, scale: 1, offsetY: 0, reveal: Number.POSITIVE_INFINITY };
+	if (clip.infographic) frame.chartP = Math.min(1, Math.max(0, localMs / 850));
 	const inP = Math.min(1, Math.max(0, localMs / IN_MS));
 	const outP = Math.min(1, Math.max(0, (clip.durationMs - localMs) / OUT_MS));
 	const ease = (t: number) => 1 - (1 - t) ** 3;
@@ -89,6 +91,231 @@ function roundRect(
 	ctx.roundRect(x, y, w, h, radius);
 }
 
+function drawInfographic(
+	ctx: CanvasRenderingContext2D,
+	clip: TextClip,
+	width: number,
+	height: number,
+	frame: TextFrame,
+) {
+	const chart = clip.infographic;
+	if (!chart) return;
+	const scale = height / 1080;
+	const panelW = Math.min(width * 0.8, 1350 * scale);
+	const panelH = Math.min(height * 0.77, 790 * scale);
+	const x = (width - panelW) / 2;
+	const y = (height - panelH) / 2;
+	const pad = 68 * scale;
+	const p = 1 - (1 - (frame.chartP ?? 1)) ** 3;
+	const ink =
+		chart.palette === "mono" ? "#181818" : chart.palette === "electric" ? "#eaf5ff" : "#18201c";
+	const paper =
+		chart.palette === "electric" ? "#101f29" : chart.palette === "mono" ? "#f4f3ef" : "#f3f1e8";
+	const accent =
+		chart.palette === "electric" ? "#7cf5cc" : chart.palette === "mono" ? "#b44c3d" : "#e06b43";
+	const subdued = chart.palette === "electric" ? "#829fac" : "#65716a";
+	const number = (value: number) =>
+		`${Number.isInteger(value) ? value.toLocaleString() : value.toLocaleString(undefined, { maximumFractionDigits: 1 })}${chart.unit ? ` ${chart.unit}` : ""}`;
+	ctx.save();
+	ctx.globalAlpha *= frame.alpha;
+	ctx.fillStyle = paper;
+	roundRect(ctx, x, y, panelW, panelH, 12 * scale);
+	ctx.fill();
+	ctx.fillStyle = accent;
+	ctx.fillRect(x, y, 8 * scale, panelH);
+	ctx.textBaseline = "top";
+	ctx.textAlign = "left";
+	ctx.fillStyle = subdued;
+	ctx.font = `600 ${24 * scale}px "DM Sans Variable", sans-serif`;
+	ctx.fillText("CUE  /  DATA", x + pad, y + 42 * scale);
+	ctx.fillStyle = ink;
+	ctx.font = `700 ${Math.min(64, chart.title.length > 32 ? 48 : 64) * scale}px "DM Sans Variable", sans-serif`;
+	ctx.fillText(chart.title, x + pad, y + 88 * scale, panelW - pad * 2);
+	const bodyY = y + 210 * scale;
+	const bodyH = panelH - 305 * scale;
+	const items = chart.items;
+	const max = Math.max(1, ...items.map((item) => item.value));
+	if (chart.kind === "bars") {
+		const rowH = bodyH / items.length;
+		const labelW = panelW * 0.27;
+		const barW = panelW - pad * 2 - labelW - 130 * scale;
+		items.forEach((item, i) => {
+			const ry = bodyY + i * rowH + rowH * 0.25;
+			ctx.fillStyle = ink;
+			ctx.font = `600 ${Math.min(29, (145 / Math.max(5, item.label.length)) * 5) * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(item.label, x + pad, ry, labelW - 15 * scale);
+			ctx.fillStyle = chart.palette === "electric" ? "#30444b" : "#d8dcd4";
+			roundRect(ctx, x + pad + labelW, ry, barW, 34 * scale, 5 * scale);
+			ctx.fill();
+			ctx.fillStyle = i === 0 ? accent : ink;
+			roundRect(
+				ctx,
+				x + pad + labelW,
+				ry,
+				Math.max(2, ((barW * item.value) / max) * p),
+				34 * scale,
+				5 * scale,
+			);
+			ctx.fill();
+			ctx.textAlign = "right";
+			ctx.fillStyle = ink;
+			ctx.font = `700 ${27 * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(number(item.value * p), x + panelW - pad, ry, 115 * scale);
+			ctx.textAlign = "left";
+		});
+	} else if (chart.kind === "donut") {
+		const total = items.reduce((sum, item) => sum + item.value, 0);
+		const cx = x + panelW * 0.36;
+		const cy = bodyY + bodyH * 0.48;
+		const radius = Math.min(bodyH * 0.39, panelW * 0.2);
+		let angle = -Math.PI / 2;
+		items.forEach((item, i) => {
+			const sweep = total > 0 ? (item.value / total) * Math.PI * 2 * p : 0;
+			ctx.beginPath();
+			ctx.arc(cx, cy, radius, angle, angle + sweep);
+			ctx.strokeStyle =
+				i === 0 ? accent : [ink, "#98a79d", "#c6d0c9", "#678375", "#ddd0b0", "#b5b1a1"][i % 6];
+			ctx.lineWidth = 75 * scale;
+			ctx.stroke();
+			angle += sweep;
+		});
+		ctx.textAlign = "center";
+		ctx.fillStyle = ink;
+		ctx.font = `700 ${57 * scale}px "DM Sans Variable", sans-serif`;
+		ctx.fillText(number(total * p), cx, cy - 25 * scale);
+		ctx.font = `500 ${21 * scale}px "DM Sans Variable", sans-serif`;
+		ctx.fillText("TOTAL", cx, cy + 42 * scale);
+		ctx.textAlign = "left";
+		items.forEach((item, i) => {
+			const ly = bodyY + i * Math.min(61 * scale, bodyH / items.length) + 20 * scale;
+			ctx.fillStyle = i === 0 ? accent : ink;
+			ctx.fillRect(x + panelW * 0.67, ly + 7 * scale, 12 * scale, 12 * scale);
+			ctx.fillStyle = ink;
+			ctx.font = `500 ${25 * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(item.label, x + panelW * 0.69, ly, panelW * 0.18);
+			ctx.textAlign = "right";
+			ctx.fillText(`${total ? Math.round((item.value / total) * 100) : 0}%`, x + panelW - pad, ly);
+			ctx.textAlign = "left";
+		});
+	} else if (chart.kind === "line") {
+		const left = x + pad + 30 * scale;
+		const right = x + panelW - pad - 30 * scale;
+		const top = bodyY + 25 * scale;
+		const bottom = bodyY + bodyH - 65 * scale;
+		ctx.strokeStyle = chart.palette === "electric" ? "#36535d" : "#cbd3c9";
+		ctx.lineWidth = 2 * scale;
+		for (let tick = 0; tick <= 4; tick++) {
+			const ty = top + ((bottom - top) * tick) / 4;
+			ctx.beginPath();
+			ctx.moveTo(left, ty);
+			ctx.lineTo(right, ty);
+			ctx.stroke();
+		}
+		const point = (i: number) => ({
+			px: left + ((right - left) * i) / Math.max(1, items.length - 1),
+			py: bottom - ((bottom - top) * items[i].value) / max,
+		});
+		const visible = Math.max(0, (items.length - 1) * p);
+		ctx.strokeStyle = accent;
+		ctx.lineWidth = 6 * scale;
+		ctx.lineJoin = "round";
+		ctx.beginPath();
+		items.forEach((_, i) => {
+			if (i > visible) return;
+			const { px, py } = point(i);
+			if (i === 0) ctx.moveTo(px, py);
+			else ctx.lineTo(px, py);
+		});
+		if (visible < items.length - 1) {
+			const i = Math.floor(visible);
+			const a = point(i),
+				b = point(Math.min(items.length - 1, i + 1));
+			ctx.lineTo(a.px + (b.px - a.px) * (visible - i), a.py + (b.py - a.py) * (visible - i));
+		}
+		ctx.stroke();
+		items.forEach((item, i) => {
+			if (i > visible) return;
+			const { px, py } = point(i);
+			ctx.fillStyle = paper;
+			ctx.beginPath();
+			ctx.arc(px, py, 9 * scale, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.strokeStyle = accent;
+			ctx.lineWidth = 4 * scale;
+			ctx.stroke();
+			ctx.fillStyle = ink;
+			ctx.textAlign = "center";
+			ctx.font = `700 ${24 * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(number(item.value), px, py - 41 * scale, 130 * scale);
+			ctx.font = `500 ${21 * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(
+				item.label,
+				px,
+				bottom + 21 * scale,
+				Math.max(90 * scale, (right - left) / items.length),
+			);
+		});
+		ctx.textAlign = "left";
+	} else if (chart.kind === "timeline") {
+		const left = x + pad + 28 * scale;
+		const right = x + panelW - pad - 28 * scale;
+		const cy = bodyY + bodyH * 0.53;
+		ctx.fillStyle = chart.palette === "electric" ? "#36535d" : "#cbd3c9";
+		ctx.fillRect(left, cy - 3 * scale, right - left, 6 * scale);
+		ctx.fillStyle = accent;
+		ctx.fillRect(left, cy - 3 * scale, (right - left) * p, 6 * scale);
+		items.forEach((item, i) => {
+			const progress = i / Math.max(1, items.length - 1);
+			const px = left + (right - left) * progress;
+			const active = p >= progress;
+			ctx.fillStyle = active ? accent : subdued;
+			ctx.beginPath();
+			ctx.arc(px, cy, 12 * scale, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.fillStyle = ink;
+			ctx.textAlign = "center";
+			ctx.font = `700 ${29 * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(active ? number(item.value) : "", px, cy - 85 * scale, 145 * scale);
+			ctx.font = `600 ${22 * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(
+				item.label,
+				px,
+				cy + 39 * scale,
+				Math.max(100 * scale, (right - left) / items.length),
+			);
+		});
+		ctx.textAlign = "left";
+	} else {
+		const columns = Math.min(3, items.length);
+		const rows = Math.ceil(items.length / columns);
+		const gap = 15 * scale;
+		const cardW = (panelW - pad * 2 - gap * (columns - 1)) / columns;
+		const cardH = (bodyH - gap * (rows - 1)) / rows;
+		items.forEach((item, i) => {
+			const cx = x + pad + (i % columns) * (cardW + gap);
+			const cy = bodyY + Math.floor(i / columns) * (cardH + gap);
+			ctx.fillStyle = chart.palette === "electric" ? "#1d3840" : "#e5e8df";
+			roundRect(ctx, cx, cy, cardW, cardH, 7 * scale);
+			ctx.fill();
+			ctx.fillStyle = i === 0 ? accent : ink;
+			ctx.font = `700 ${Math.min(66, 600 / Math.max(6, number(item.value).length)) * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(number(item.value * p), cx + 24 * scale, cy + 25 * scale, cardW - 48 * scale);
+			ctx.fillStyle = subdued;
+			ctx.font = `600 ${24 * scale}px "DM Sans Variable", sans-serif`;
+			ctx.fillText(item.label, cx + 24 * scale, cy + cardH - 60 * scale, cardW - 48 * scale);
+		});
+	}
+	ctx.fillStyle = subdued;
+	ctx.font = `500 ${21 * scale}px "DM Sans Variable", sans-serif`;
+	ctx.fillText(
+		chart.source ? `SOURCE  ${chart.source}` : "",
+		x + pad,
+		y + panelH - 49 * scale,
+		panelW - pad * 2,
+	);
+	ctx.restore();
+}
+
 /**
  * Draws one text clip onto a canvas that represents the full output frame
  * (`width` × `height` in output pixels; scale the context for previews).
@@ -122,6 +349,11 @@ export function drawTextClip(
 	ctx.translate(cx, cy);
 	if (style.rotation) ctx.rotate((style.rotation * Math.PI) / 180);
 	ctx.scale(f.scale, f.scale);
+	if (clip.infographic) {
+		ctx.restore();
+		drawInfographic(ctx, clip, width, height, f);
+		return;
+	}
 	if (clip.shape) drawShape(ctx, clip.shape, width, height);
 	if (!clip.text.trim()) {
 		ctx.restore();
@@ -336,7 +568,12 @@ export async function rasterise(
 	canvas.height = height;
 	const ctx = canvas.getContext("2d");
 	if (!ctx) throw new Error("Canvas is not available.");
-	if (clip.animationIn === "none" && clip.animationOut === "none" && !clip.wordStyle) {
+	if (
+		clip.animationIn === "none" &&
+		clip.animationOut === "none" &&
+		!clip.wordStyle &&
+		!clip.infographic
+	) {
 		drawTextClip(ctx, clip, width, height);
 		return { still: await png(canvas) };
 	}
@@ -347,7 +584,7 @@ export async function rasterise(
 	for (let i = 0; i < count; i++) {
 		const frame = textFrame(clip, (i * 1000) / fps, height);
 		// Identical frames (the static middle of a clip) reuse the last encode.
-		const key = `${frame.alpha.toFixed(3)}|${frame.scale.toFixed(3)}|${frame.offsetY.toFixed(1)}|${frame.reveal}|${frame.word ?? ""}|${(frame.wordP ?? 1).toFixed(2)}`;
+		const key = `${frame.alpha.toFixed(3)}|${frame.scale.toFixed(3)}|${frame.offsetY.toFixed(1)}|${frame.reveal}|${frame.word ?? ""}|${(frame.wordP ?? 1).toFixed(2)}|${(frame.chartP ?? 1).toFixed(2)}`;
 		if (previous && key === previousKey) {
 			frames.push(previous);
 			continue;

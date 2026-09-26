@@ -5,7 +5,13 @@ import {
 	EQ_BANDS,
 	FLAT_EQ,
 } from "../../electron/core/audio";
-import { BLUR_FROM, entered, overlaps, ZOOM_FROM } from "../../electron/core/transitions";
+import {
+	BLUR_FROM,
+	entered,
+	overlaps,
+	transitionClipPath,
+	ZOOM_FROM,
+} from "../../electron/core/transitions";
 import type {
 	Asset,
 	Clip,
@@ -36,6 +42,7 @@ interface Slot {
 	keyer?: Keyer | null;
 	/** Dark-edge overlay for the vignette effect, made on first use. */
 	vignette?: HTMLDivElement;
+	signal?: HTMLDivElement;
 	/** Set once the slot's layer is rebuilt; stops its frame callbacks. */
 	disposed?: boolean;
 	keyedClip?: MediaClip | null;
@@ -791,8 +798,14 @@ class PlaybackEngine {
 		const px = W / Math.max(1, project.data.canvas.width);
 		const round = clip.frame?.radius ? ` round ${clip.frame.radius * px}px` : "";
 		frame.clipPath =
-			left || c.top || right || c.bottom || round
-				? `inset(${c.top * 100}% ${right * 100}% ${c.bottom * 100}% ${left * 100}%${round})`
+			tr && (tr.kind === "paper-tear" || tr.kind === "signal-glitch") && p < 1
+				? transitionClipPath(tr.kind, p, c, Math.floor((local / 1000) * 24))
+				: left || c.top || right || c.bottom || round
+					? `inset(${c.top * 100}% ${right * 100}% ${c.bottom * 100}% ${left * 100}%${round})`
+					: "none";
+		frame.filter =
+			tr?.kind === "paper-tear" && p < 1
+				? `drop-shadow(${Math.max(2, 7 * px)}px 0 0 #f7efda)`
 				: "none";
 		const root = slot.frame.parentElement;
 		const shadow = clip.frame?.shadow
@@ -820,7 +833,17 @@ class PlaybackEngine {
 			cssFilter(look?.color),
 			effectsFilter(look?.effects, h / 1080),
 			tr?.kind === "blur" && p < 1 ? `blur(${((1 - p) * BLUR_FROM * h) / 1080}px)` : "",
+			tr?.kind === "signal-glitch" && p < 1 ? "contrast(1.2) saturate(0.65)" : "",
 		);
+		if (tr?.kind === "signal-glitch" && p < 1 && !slot.signal) {
+			const lines = document.createElement("div");
+			lines.style.cssText =
+				"position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0px,transparent 3px,rgba(0,0,0,.48) 4px);mix-blend-mode:multiply";
+			slot.frame.append(lines);
+			slot.signal = lines;
+		}
+		if (slot.signal)
+			slot.signal.style.display = tr?.kind === "signal-glitch" && p < 1 ? "" : "none";
 		this.showVignette(slot, look?.effects);
 		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
 		if (clip.key) {
@@ -999,7 +1022,7 @@ class PlaybackEngine {
 			const h = Math.max(1, Math.round(this.stageH * dpr));
 			const frames = active.map((c) => ({ c, f: textFrame(c, ms - c.startMs, H) }));
 			// Skip the redraw when nothing on this layer looks different from the last frame.
-			const key = `${w}x${h}|${frames.map(({ c, f }) => `${c.id}:${f.alpha.toFixed(3)}:${f.scale.toFixed(3)}:${f.offsetY.toFixed(1)}:${f.reveal}:${f.word ?? ""}:${(f.wordP ?? 1).toFixed(2)}`).join(",")}`;
+			const key = `${w}x${h}|${frames.map(({ c, f }) => `${c.id}:${f.alpha.toFixed(3)}:${f.scale.toFixed(3)}:${f.offsetY.toFixed(1)}:${f.reveal}:${f.word ?? ""}:${(f.wordP ?? 1).toFixed(2)}:${(f.chartP ?? 1).toFixed(2)}`).join(",")}`;
 			if (key === layer.key) continue;
 			layer.key = key;
 			if (canvas.width !== w || canvas.height !== h) {

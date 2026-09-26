@@ -83,6 +83,7 @@ import type {
 	ProjectSnapshot,
 	Proposal,
 	RecentProject,
+	Infographic,
 	TextClip,
 } from "./types";
 import { type Aspect, reframeData, shortenData, variantLabel } from "./variants";
@@ -416,11 +417,41 @@ export class ProjectStore extends EventEmitter {
 	// Analysis and AI helpers
 	// -------------------------------------------------------------------------
 
-	/**
-	 * Adds a graphic over the picture in one step: a box, circle, arrow, line or
-	 * callout (drawn with a text clip on a graphics track), or a blur or redact box
-	 * (an adjustment layer masked to the area). Positions are shares of the frame.
-	 */
+	/** Adds a source-labelled chart as one editable clip and one undo step. */
+	async addInfographic(
+		input: Infographic & { startMs: number; durationMs: number },
+		actor: Actor,
+	): Promise<{ clipId: string; trackId: string }> {
+		return this.transaction(actor, `Added ${input.kind} infographic`, () => {
+			const trackId =
+				this.current.tracks.find((t) => t.kind === "text" && t.name === "Infographics")?.id ??
+				(this.apply({ type: "addTrack", kind: "text", name: "Infographics", index: 0 }, actor)
+					.created?.[0] as string);
+			const { startMs, durationMs, ...infographic } = input;
+			const clipId = this.apply(
+				{
+					type: "addClips",
+					clips: [
+						{
+							type: "text",
+							trackId,
+							startMs,
+							durationMs,
+							text: "",
+							infographic,
+							animationIn: "none",
+							animationOut: "none",
+							name: infographic.title,
+						},
+					],
+				},
+				actor,
+			).created?.[0] as string;
+			return { clipId, trackId };
+		});
+	}
+
+	/** Adds a shape, callout, blur or redact overlay in one undo step. */
 	async addOverlay(
 		input: {
 			kind: "box" | "circle" | "arrow" | "line" | "callout" | "blur" | "redact";

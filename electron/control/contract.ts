@@ -540,7 +540,7 @@ export const contract = {
 	ungroup_clips: { description: "Unlink clips.", input: { ids: z.array(z.string()).min(1) } },
 	add_transition: {
 		description:
-			"Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the two clips (later clips move left by the overlap) and crossfades their sound: crossfade, wipe-left / wipe-right (a hard edge sweeps across), slide-left (enters from the right) / slide-right (from the left), zoom (settles in from larger while fading in), blur (sharpens while fading in). dip fades through black. Adding one to a clip that has one replaces it.",
+			"Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the clips and crossfades their sound: crossfade, wipe-left/right, slide-left/right, zoom, blur, paper-tear (ragged paper edge), signal-glitch (staggered horizontal signal breakup). Dip fades through black. Adding one to a clip that has one replaces it.",
 		input: {
 			clipId: z.string(),
 			kind: z.enum(TRANSITION_KINDS).default("crossfade"),
@@ -766,6 +766,23 @@ export const contract = {
 			height: z.number().min(-2).max(2).default(0.2),
 			color: z.string().optional(),
 			text: z.string().max(400).optional(),
+		},
+	},
+	add_infographic: {
+		description:
+			"Create an editable animated data graphic over the video. bars compares values, donut shows parts of a whole, cards highlights key metrics, line shows a numerical trend, and timeline shows ordered milestones with values. Give real numbers and a source when available. The graphic is one text clip, so it can be moved, trimmed, undone, and edited with update_clip {infographic:{...}}. Palette: editorial (paper and coral), electric (dark and mint), mono (paper and red).",
+		input: {
+			kind: z.enum(["bars", "donut", "cards", "line", "timeline"]),
+			title: z.string().min(1).max(120),
+			items: z
+				.array(z.object({ label: z.string().min(1).max(60), value: z.number().finite().min(0) }))
+				.min(1)
+				.max(6),
+			unit: z.string().max(24).optional(),
+			source: z.string().max(160).optional(),
+			palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
+			startMs: z.number().min(0),
+			durationMs: z.number().min(1000).default(4000),
 		},
 	},
 	review_changes: {

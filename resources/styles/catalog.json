@@ -802,5 +802,304 @@
         "url": "https://mixkit.co/free-after-effects-templates/slideshow/"
       }
     ]
+  },
+  {
+    "id": "style-torn-paper",
+    "name": "Torn paper reveal",
+    "category": "Transitions",
+    "description": "A tactile ripped edge pulls new footage into a documentary or collage sequence.",
+    "guide": {
+      "goal": "Use a physical break between two related ideas, with the next image entering through an irregular paper edge.",
+      "requires": [
+        "Two clips with contrasting texture or color",
+        "An editorial moment that warrants a visible transition"
+      ],
+      "structure": [
+        "Cut the outgoing scene at a motivated change in place or time.",
+        "Overlap the incoming clip for 500–850 ms.",
+        "Reveal from left to right with a light fibrous edge.",
+        "Let the incoming shot settle full frame before adding text."
+      ],
+      "directions": [
+        "Apply add_transition kind paper-tear to the incoming clip.",
+        "Pair with document-paper or newspaper-pages as an adjacent cutaway when the story calls for a scrapbook feel.",
+        "Keep the transition rare so it reads as a chapter change."
+      ],
+      "review": [
+        "Inspect the edge at normal speed and at the export resolution.",
+        "Confirm the next image is visible and unobstructed after the transition."
+      ]
+    },
+    "preview": {
+      "video": "torn-paper.mp4",
+      "poster": "torn-paper.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "document-paper",
+      "newspaper-pages",
+      "crosswalk-crowd"
+    ],
+    "references": [
+      {
+        "label": "Motion Array inspiration",
+        "url": "https://motionarray.com/after-effects-templates/torn-paper-transitions-pack-2560198/"
+      }
+    ]
+  },
+  {
+    "id": "style-no-signal",
+    "name": "No signal cut",
+    "category": "Transitions",
+    "description": "A security-feed style interruption with staggered horizontal bands and scanlines.",
+    "guide": {
+      "goal": "Turn a jump in perspective or time into a deliberate electronic disruption.",
+      "requires": [
+        "Two clips that can support a hard, tense transition"
+      ],
+      "structure": [
+        "Set up the outgoing image with a hold or simple cut.",
+        "Overlap the incoming clip for 350–650 ms.",
+        "Break the incoming image into offset horizontal bands.",
+        "Return to a clean image immediately after the transition."
+      ],
+      "directions": [
+        "Apply add_transition kind signal-glitch to the incoming clip.",
+        "Use sparingly around surveillance, screens, or a disrupted account; avoid covering essential faces or text.",
+        "For stronger sound design add a brief static hit on its own audio track."
+      ],
+      "review": [
+        "Check the scanline treatment for readability and comfort.",
+        "Confirm both picture and sound return to normal after the transition."
+      ]
+    },
+    "preview": {
+      "video": "no-signal.mp4",
+      "poster": "no-signal.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "city-night-drive",
+      "subway-arrival"
+    ],
+    "references": [
+      {
+        "label": "Motion Array inspiration",
+        "url": "https://motionarray.com/after-effects-templates/no-signal-glitch-transitions-457817/"
+      }
+    ]
+  },
+  {
+    "id": "style-data-bars",
+    "name": "Editorial comparison bars",
+    "category": "Infographics",
+    "description": "Ranked data bars with restrained motion, source line, and space for footage behind the card.",
+    "guide": {
+      "goal": "Show a comparison without making differences appear larger than the values support.",
+      "requires": [
+        "Two to six verified nonnegative values",
+        "A named source or clear demo-data label"
+      ],
+      "structure": [
+        "Introduce the question in the preceding narration.",
+        "Animate bars from the same zero baseline.",
+        "Hold the completed chart long enough to compare labels and values.",
+        "Return to the footage or a supporting example."
+      ],
+      "directions": [
+        "Use add_infographic kind bars with labels, numeric values, unit and source.",
+        "Try editorial for documentary footage, electric for technology, or mono for archival material.",
+        "Keep units consistent across every row."
+      ],
+      "review": [
+        "Verify every number, label, unit and source.",
+        "Check text at phone scale and hold duration at normal playback speed."
+      ]
+    },
+    "preview": {
+      "video": "data-bars.mp4",
+      "poster": "data-bars.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "city-aerial",
+      "business-graphs"
+    ],
+    "references": [
+      {
+        "label": "Motion Array inspiration",
+        "url": "https://motionarray.com/after-effects-templates/infographics/"
+      }
+    ]
+  },
+  {
+    "id": "style-data-donut",
+    "name": "Share of the whole",
+    "category": "Infographics",
+    "description": "A measured circular breakdown with explicit percentages and a visible total.",
+    "guide": {
+      "goal": "Explain how a whole is divided among a few categories.",
+      "requires": [
+        "Two to six verified category values",
+        "A single meaningful total and source"
+      ],
+      "structure": [
+        "State what the whole represents.",
+        "Reveal segments together without exaggerating their final share.",
+        "Hold the complete chart and labels.",
+        "Follow with the segment most relevant to the story."
+      ],
+      "directions": [
+        "Use add_infographic kind donut. Cue derives slice angles and percentages from the supplied values.",
+        "Use a source field and avoid mixing categories that overlap."
+      ],
+      "review": [
+        "Check category values sum to the intended whole.",
+        "Verify the displayed percentages and source."
+      ]
+    },
+    "preview": {
+      "video": "data-donut.mp4",
+      "poster": "data-donut.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "city-aerial"
+    ],
+    "references": [
+      {
+        "label": "Motion Array inspiration",
+        "url": "https://motionarray.com/after-effects-templates/infographics/"
+      }
+    ]
+  },
+  {
+    "id": "style-data-cards",
+    "name": "Key metric cards",
+    "category": "Infographics",
+    "description": "Three large editorial numbers that land over footage one at a time.",
+    "guide": {
+      "goal": "Give an audience a quick grasp of a small set of related measures.",
+      "requires": [
+        "One to six sourced metrics",
+        "Short labels and compatible units"
+      ],
+      "structure": [
+        "Name the topic with a concise title.",
+        "Reveal the metrics over roughly one second.",
+        "Hold the final card set for at least two seconds.",
+        "Cut to evidence that explains the most important number."
+      ],
+      "directions": [
+        "Use add_infographic kind cards; edit the values in the inspector or with update_clip.",
+        "For different units, omit the shared unit and include units in each label.",
+        "Replace the demo values before publishing."
+      ],
+      "review": [
+        "Confirm every number and unit.",
+        "Check that the cards do not hide critical footage."
+      ]
+    },
+    "preview": {
+      "video": "data-cards.mp4",
+      "poster": "data-cards.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "business-graphs",
+      "corporate-buildings"
+    ],
+    "references": [
+      {
+        "label": "Motion Array inspiration",
+        "url": "https://motionarray.com/after-effects-templates/infographics/"
+      }
+    ]
+  },
+  {
+    "id": "style-data-line",
+    "name": "Trend over time",
+    "category": "Infographics",
+    "description": "A restrained animated line chart with exact value labels and a visible zero baseline.",
+    "guide": {
+      "goal": "Show how a measured quantity changes over an ordered sequence.",
+      "requires": [
+        "Two to six chronological points with verified values",
+        "A consistent unit and named source"
+      ],
+      "structure": [
+        "Establish the measure and time span.",
+        "Reveal the path from the first point to the last.",
+        "Hold the completed values long enough to read them.",
+        "Cut to a scene that helps explain the change."
+      ],
+      "directions": [
+        "Use add_infographic kind line with ordered labels, values, unit and source.",
+        "Do not reorder the data to make a smoother curve.",
+        "Use the same unit throughout."
+      ],
+      "review": [
+        "Check the point order and values against the source.",
+        "Check label collisions and that the zero baseline does not distort the trend."
+      ]
+    },
+    "preview": {
+      "video": "data-line.mp4",
+      "poster": "data-line.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "city-aerial",
+      "business-graphs"
+    ],
+    "references": [
+      {
+        "label": "Motion Array infographic gallery",
+        "url": "https://motionarray.com/after-effects-templates/infographics/"
+      }
+    ]
+  },
+  {
+    "id": "style-data-timeline",
+    "name": "Milestone timeline",
+    "category": "Infographics",
+    "description": "An ordered series of dated or staged milestones with a number for each.",
+    "guide": {
+      "goal": "Connect a few key moments to the quantities that changed at each step.",
+      "requires": [
+        "Two to six verified milestones",
+        "Dates or short stage labels and a source"
+      ],
+      "structure": [
+        "Introduce the starting point.",
+        "Reveal milestones from left to right.",
+        "Hold the full sequence for comparison.",
+        "Return to the latest scene or outcome."
+      ],
+      "directions": [
+        "Use add_infographic kind timeline; each item is one milestone label and its associated value.",
+        "Keep the labels short and use the source field.",
+        "For more than six moments, split the story across multiple clips."
+      ],
+      "review": [
+        "Verify dates, values and order.",
+        "Check spacing at phone size."
+      ]
+    },
+    "preview": {
+      "video": "data-timeline.mp4",
+      "poster": "data-timeline.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "city-aerial",
+      "corporate-buildings"
+    ],
+    "references": [
+      {
+        "label": "Motion Array infographic gallery",
+        "url": "https://motionarray.com/after-effects-templates/infographics/"
+      }
+    ]
   }
 ]

@@ -442,6 +442,91 @@ def process_closeups(t: float) -> Image.Image:
     return im
 
 
+def torn_paper(t: float) -> Image.Image:
+    back = frame("newspaper-pages", t + .3)
+    front = frame("crosswalk-crowd", t + .4)
+    p = ease((t - .7) / 1.6)
+    edge = [(int(W * p + 10 * __import__("math").sin(y * .11) + 6 * __import__("math").sin(y * .38)), y)
+            for y in range(0, H + 4, 4)]
+    mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(mask).polygon([(0, 0), *edge, (0, H)], fill=255)
+    back.paste(front, (0, 0), mask)
+    ImageDraw.Draw(back).line(edge, fill="#f7efda", width=9)
+    text(back, (28, 27), "01  /  PAPER TEAR", 18, "#fff7ea", bold=True, stroke=2, stroke_color="#1f2827")
+    return back
+
+
+def no_signal(t: float) -> Image.Image:
+    import math
+    back = shade(frame("city", t + .3), .25)
+    front = frame("subway-arrival", t + .3)
+    p = ease((t - .6) / 1.4)
+    mask = Image.new("L", (W, H), 0)
+    draw = ImageDraw.Draw(mask)
+    for row in range(18):
+        y = row * 20
+        edge = max(0, min(W, int(W * (p + .13 * math.sin(row * 13.2 + int(t * 24) * 2.3)))))
+        draw.rectangle((0, y, edge, y + 20), fill=255)
+    back.paste(front, (0, 0), mask)
+    overlay = ImageDraw.Draw(back)
+    for y in range(0, H, 4):
+        overlay.line((0, y, W, y), fill="#151c29", width=1)
+    text(back, (28, 27), "NO SIGNAL  /  03:18:42", 19, "#e5f2ee", bold=True)
+    rect(back, (28, 315, 93, 319), "#e85b4c")
+    return back
+
+
+def infographic_preview(t: float, kind: str) -> Image.Image:
+    import math
+    im = shade(frame("city-aerial" if kind != "cards" else "business-graphs", t + .4), .7)
+    rect(im, (44, 30, 596, 331), "#f3f1e8", 6)
+    rect(im, (44, 30, 49, 331), "#e06b43")
+    title = {"bars": "WHERE THE TIME GOES", "donut": "A CHANGING SHARE", "cards": "THE THREE NUMBERS", "line": "THE TREND OVER TIME", "timeline": "A SEQUENCE OF CHANGE"}[kind]
+    text(im, (72, 53), "CUE  /  DATA STUDY", 12, "#64736c", bold=True)
+    text(im, (72, 79), title, 29, "#1c2923", bold=True)
+    p = ease((t - .35) / 1.2)
+    if kind == "bars":
+        for i, (name, value) in enumerate((("RESEARCH", .75), ("EDIT", .58), ("REVIEW", .42))):
+            yy = 154 + i * 48
+            text(im, (73, yy), name, 17, "#24352d", bold=True)
+            rect(im, (216, yy, 495, yy + 18), "#d9ddd4", 3)
+            rect(im, (216, yy, 216 + int(279 * value * p), yy + 18), "#e06b43" if i == 0 else "#263b31", 3)
+            text(im, (508, yy - 2), f"{int(value * 100 * p)}%", 18, "#24352d", bold=True)
+    elif kind == "donut":
+        draw = ImageDraw.Draw(im)
+        start = -90
+        for i, (name, share, color) in enumerate((("DIRECT", .52, "#e06b43"), ("REFERRAL", .30, "#263b31"), ("OTHER", .18, "#92a89a"))):
+            span = 360 * share * p
+            draw.arc((90, 130, 275, 315), start, start + span, fill=color, width=34)
+            start += span
+            text(im, (333, 159 + i * 43), f"{name}    {round(share * 100)}%", 18, "#24352d", bold=True)
+    elif kind == "line":
+        draw = ImageDraw.Draw(im)
+        points = ((89, 264), (195, 223), (302, 238), (408, 171), (520, 143))
+        draw.line(points[:max(1, int(1 + p * 4))], fill="#e06b43", width=6, joint="curve")
+        for i, (px, py) in enumerate(points):
+            if i <= p * 4:
+                draw.ellipse((px - 6, py - 6, px + 6, py + 6), fill="#e06b43")
+                text(im, (px, 277), str(2020 + i), 14, "#64736c", bold=True, anchor="mt")
+    elif kind == "timeline":
+        draw = ImageDraw.Draw(im)
+        draw.line((88, 211, 548, 211), fill="#c4d0c5", width=5)
+        draw.line((88, 211, 88 + int(460 * p), 211), fill="#e06b43", width=5)
+        for i, (label, value) in enumerate((("START", "12"), ("EXPAND", "34"), ("NOW", "68"))):
+            xx = 88 + i * 230
+            draw.ellipse((xx - 10, 201, xx + 10, 221), fill="#e06b43" if p >= i / 2 else "#a9b6aa")
+            text(im, (xx, 150), value, 31, "#24352d", bold=True, anchor="mt")
+            text(im, (xx, 243), label, 15, "#64736c", bold=True, anchor="mt")
+    else:
+        for i, (value, label) in enumerate((("72%", "REACHED"), ("3.4×", "GROWTH"), ("18K", "PEOPLE"))):
+            xx = 73 + i * 165
+            rect(im, (xx, 147, xx + 148, 278), "#e5e8df", 4)
+            text(im, (xx + 13, 169), value if p > .7 else "—", 35, "#e06b43" if i == 0 else "#24352d", bold=True)
+            text(im, (xx + 13, 242), label, 15, "#64736c", bold=True)
+    text(im, (72, 305), "DEMO DATA  /  REPLACE WITH SOURCED VALUES", 11, "#64736c", bold=True)
+    return im
+
+
 STYLES = {
     "kinetic-quote": kinetic,
     "beat-grid": beat,
@@ -461,6 +546,13 @@ STYLES = {
     "journey-cuts": journey_cuts,
     "data-contrast": data_contrast,
     "process-closeups": process_closeups,
+	"torn-paper": torn_paper,
+	"no-signal": no_signal,
+	"data-bars": lambda t: infographic_preview(t, "bars"),
+	"data-donut": lambda t: infographic_preview(t, "donut"),
+	"data-cards": lambda t: infographic_preview(t, "cards"),
+	"data-line": lambda t: infographic_preview(t, "line"),
+	"data-timeline": lambda t: infographic_preview(t, "timeline"),
 }
 
 
