@@ -15,6 +15,8 @@ export interface Layout {
 	id?: string;
 	sidebarWidth: number;
 	inspectorWidth: number;
+	/** Width of the timeline's track headers. */
+	headerWidth: number;
 	timelineHeight: number;
 	panel: SidebarPanel;
 	sidebarOpen: boolean;
@@ -32,13 +34,14 @@ export interface Layout {
 const BASE: Layout = {
 	sidebarWidth: 300,
 	inspectorWidth: 300,
+	headerWidth: 236,
 	timelineHeight: 320,
 	panel: "media",
 	sidebarOpen: true,
 	inspectorOpen: true,
 	dock: "none",
 	dockWidth: 320,
-	tracks: { video: 58, audio: 50, text: 34 },
+	tracks: { video: 64, audio: 60, text: 40 },
 	overlays: { safeAreas: false, teleprompter: false, compare: false },
 	sections: [],
 };
@@ -57,7 +60,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		timelineHeight: 440,
 		dock: "mixer",
 		dockWidth: 380,
-		tracks: { video: 30, audio: 96, text: 26 },
+		tracks: { video: 40, audio: 100, text: 34 },
 		sections: ["Audio", "Timing"],
 	}),
 	colour: workspace("Colour", "⌥3", {
@@ -66,7 +69,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		timelineHeight: 230,
 		dock: "scopes",
 		dockWidth: 300,
-		tracks: { video: 72, audio: 30, text: 28 },
+		tracks: { video: 76, audio: 40, text: 34 },
 		overlays: { safeAreas: false, teleprompter: false, compare: true },
 		sections: ["Colour", "Effects", "Mask", "Chroma key"],
 	}),
@@ -75,7 +78,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		timelineHeight: 300,
 		panel: "script",
 		inspectorOpen: false,
-		tracks: { video: 34, audio: 72, text: 26 },
+		tracks: { video: 44, audio: 80, text: 34 },
 		overlays: { safeAreas: false, teleprompter: true, compare: false },
 	}),
 	titles: workspace("Titles", "⌥5", {
@@ -83,7 +86,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		inspectorWidth: 340,
 		timelineHeight: 280,
 		panel: "text",
-		tracks: { video: 40, audio: 30, text: 56 },
+		tracks: { video: 48, audio: 40, text: 60 },
 		overlays: { safeAreas: true, teleprompter: false, compare: false },
 		sections: ["Text", "Style", "Layout", "Animation", "Timing"],
 	}),
@@ -100,7 +103,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		timelineHeight: 200,
 		dock: "notes",
 		dockWidth: 320,
-		tracks: { video: 34, audio: 28, text: 24 },
+		tracks: { video: 44, audio: 40, text: 34 },
 	}),
 };
 
@@ -157,6 +160,9 @@ export const clampLayout = (l: Partial<Layout>): Partial<Layout> => ({
 		: {}),
 	...(l.inspectorWidth !== undefined
 		? { inspectorWidth: Math.min(520, Math.max(240, l.inspectorWidth)) }
+		: {}),
+	...(l.headerWidth !== undefined
+		? { headerWidth: Math.min(380, Math.max(170, l.headerWidth)) }
 		: {}),
 	...(l.dockWidth !== undefined ? { dockWidth: Math.min(640, Math.max(220, l.dockWidth)) } : {}),
 	...(l.timelineHeight !== undefined

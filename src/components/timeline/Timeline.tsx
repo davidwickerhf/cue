@@ -61,17 +61,18 @@ import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
-import { layout } from "../../lib/workspace";
+import { clampLayout, layout } from "../../lib/workspace";
 import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
 import { IconButton, Segmented } from "../ui/controls";
 import { Filmstrip, Tiled, Waveform } from "./ClipVisuals";
 import { SequenceTabs } from "./SequenceTabs";
 
-const HEADER_W = 212;
+/** Width of the track headers (resizable, remembered with the layout). */
+const headerW = () => layout.get().headerWidth;
 const RULER_H = 28;
 const SCRIPT_H = 34;
-const TRACK_H: Record<Track["kind"], number> = { video: 58, audio: 50, text: 34 };
+const TRACK_H: Record<Track["kind"], number> = { video: 64, audio: 60, text: 40 };
 
 /**
  * Track heights the user dragged, per project (a view setting, not an edit, so
@@ -172,7 +173,10 @@ export function Timeline() {
 		if (committed && revision !== committed.revision) setCommitted(null);
 	}, [revision, committed]);
 	const [menu, setMenu] = useState<{ x: number; y: number; clip: Clip; atMs: number } | null>(null);
-	const [viewWidth, setViewWidth] = useState(1000);
+	const [scrollerWidth, setScrollerWidth] = useState(1200);
+	// Re-render when the header column is resized.
+	const headerWidth = layout.use((s) => s.headerWidth);
+	const viewWidth = scrollerWidth - headerWidth;
 	const heights = trackHeights.use((s) => s.heights);
 	const kindHeights = layout.use((s) => s.tracks);
 	const [marquee, setMarquee] = useState<Marquee | null>(null);
@@ -182,7 +186,7 @@ export function Timeline() {
 	useEffect(() => {
 		const el = scroller.current;
 		if (!el) return;
-		const observer = new ResizeObserver(() => setViewWidth(el.clientWidth - HEADER_W));
+		const observer = new ResizeObserver(() => setScrollerWidth(el.clientWidth));
 		observer.observe(el);
 		return () => observer.disconnect();
 	}, []);
@@ -228,7 +232,7 @@ export function Timeline() {
 		const el = scroller.current;
 		if (!el) return 0;
 		const rect = el.getBoundingClientRect();
-		return Math.max(0, (clientX - rect.left - HEADER_W + el.scrollLeft) / pxPerMs);
+		return Math.max(0, (clientX - rect.left - headerW() + el.scrollLeft) / pxPerMs);
 	};
 
 	useEffect(() => {
@@ -237,7 +241,7 @@ export function Timeline() {
 			const total = app.get().state?.project?.durationMs ?? 0;
 			if (!el || total <= 0) return;
 			editor.set({
-				zoom: Math.max(4, Math.min(600, (el.clientWidth - HEADER_W - 40) / (total / 1000))),
+				zoom: Math.max(4, Math.min(600, (el.clientWidth - headerW() - 40) / (total / 1000))),
 			});
 			el.scrollLeft = 0;
 		};
@@ -253,7 +257,7 @@ export function Timeline() {
 			if (!(e.metaKey || e.ctrlKey)) return;
 			e.preventDefault();
 			const rect = el.getBoundingClientRect();
-			const anchorX = e.clientX - rect.left - HEADER_W;
+			const anchorX = e.clientX - rect.left - headerW();
 			const anchorMs = (anchorX + el.scrollLeft) / (editor.get().zoom / 1000);
 			const next = Math.min(600, Math.max(4, editor.get().zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
 			editor.set({ zoom: next });
@@ -697,13 +701,15 @@ export function Timeline() {
 					e.currentTarget.setPointerCapture(e.pointerId);
 				}}
 			>
-				<div className="relative" style={{ width: HEADER_W + contentWidth }}>
+				<div className="relative" style={{ width: headerW() + contentWidth }}>
 					{/* Ruler */}
 					<div className="sticky top-0 z-30 flex" style={{ height: RULER_H }}>
 						<div
 							className="sticky left-0 z-40 shrink-0 border-r border-b border-separator bg-surface"
-							style={{ width: HEADER_W }}
-						/>
+							style={{ width: headerW() }}
+						>
+							<HeaderResizer />
+						</div>
 						<Ruler
 							width={contentWidth}
 							pxPerMs={pxPerMs}
@@ -770,7 +776,13 @@ export function Timeline() {
 								trackId={track.id}
 								height={heightOf(track, heights, kindHeights)}
 								onResize={(h) => setTrackHeight(track.id, h)}
-								header={<TrackHeader track={track} project={project} />}
+								header={
+									<TrackHeader
+										track={track}
+										project={project}
+										height={heightOf(track, heights, kindHeights)}
+									/>
+								}
 								dim={track.hidden || track.muted}
 								onDragOver={(e) => {
 									e.preventDefault();
@@ -839,7 +851,7 @@ export function Timeline() {
 					<AddTrackRow />
 
 					{/* Snap guide and playhead */}
-					{snapLine !== null && <SnapGuide x={HEADER_W + toX(snapLine)} scroller={scroller} />}
+					{snapLine !== null && <SnapGuide x={headerW() + toX(snapLine)} scroller={scroller} />}
 					<Playhead pxPerMs={pxPerMs} scroller={scroller} />
 					{marquee && <MarqueeBox marquee={marquee} scroller={scroller} />}
 				</div>
@@ -1062,8 +1074,9 @@ function Row({
 			<div
 				data-track-header
 				className="sticky left-0 z-20 shrink-0 border-r border-separator bg-surface"
-				style={{ width: HEADER_W }}
+				style={{ width: headerW() }}
 			>
+				<HeaderResizer />
 				{header}
 				{onResize && (
 					// biome-ignore lint/a11y/noStaticElementInteractions: a resize handle, double-click resets
@@ -1100,51 +1113,91 @@ function Row({
 }
 
 /** Which track is being dragged by its header, and where it would land. */
-const trackDrag = createStore<{ id: string | null; overId: string | null; after: boolean }>({
+const trackDrag = createStore<{
+	id: string | null;
+	overId: string | null;
+	after: boolean;
+	y: number;
+}>({
+	y: 0,
 	id: null,
 	overId: null,
 	after: false,
 });
 
 /** Drag handle: reorder tracks within their group (picture above, sound below). */
-function TrackGrip({ track, project }: { track: Track; project: ProjectSnapshot }) {
+/**
+ * Reordering by dragging a track's header (anywhere but its buttons and name):
+ * a line shows where it will land, within its own group (picture or sound),
+ * and the timeline scrolls when you reach its top or bottom.
+ */
+function startTrackDrag(
+	e: React.PointerEvent<HTMLElement>,
+	track: Track,
+	project: ProjectSnapshot,
+) {
+	if (e.button !== 0 || (e.target as HTMLElement).closest("button,input,[role=button]")) return;
 	const group = (t: Track) => (t.kind === "audio" ? "sound" : "picture");
-	const target = (e: React.PointerEvent) => {
-		const row = document
-			.elementFromPoint(e.clientX, e.clientY)
-			?.closest<HTMLElement>("[data-track-id]");
-		const over = project.data.tracks.find((t) => t.id === row?.dataset.trackId);
-		if (!row || !over || group(over) !== group(track)) return null;
-		const r = row.getBoundingClientRect();
-		return { overId: over.id, after: e.clientY > r.top + r.height / 2 };
+	const el = e.currentTarget;
+	const scroller = el.closest<HTMLElement>(".overflow-auto");
+	const y0 = e.clientY;
+	let moving = false;
+	let timer = 0;
+	const at = (y: number, x: number) => {
+		const rows = [...document.querySelectorAll<HTMLElement>("[data-track-id]")];
+		const same = rows.filter((r) => {
+			const t = project.data.tracks.find((x) => x.id === r.dataset.trackId);
+			return t && group(t) === group(track);
+		});
+		if (!same.length) return null;
+		// The nearest row of the same group, even when the pointer is past its group.
+		let best = same[0];
+		let bestDistance = Number.POSITIVE_INFINITY;
+		for (const r of same) {
+			const b = r.getBoundingClientRect();
+			const d = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
+			if (d < bestDistance) {
+				bestDistance = d;
+				best = r;
+			}
+		}
+		const b = best.getBoundingClientRect();
+		return { overId: best.dataset.trackId as string, after: y > b.top + b.height / 2, x };
 	};
-	return (
-		<button
-			type="button"
-			aria-label={`Drag to reorder ${track.name}`}
-			title="Drag to reorder"
-			className="flex h-6 w-3.5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted/0 group-hover:text-muted/70 hover:bg-default active:cursor-grabbing"
-			onPointerDown={(e) => {
-				e.currentTarget.setPointerCapture(e.pointerId);
-				trackDrag.set({ id: track.id, overId: null, after: false });
-			}}
-			onPointerMove={(e) => {
-				if (trackDrag.get().id !== track.id) return;
-				const t = target(e);
-				trackDrag.set(t ?? { overId: null, after: false });
-			}}
-			onPointerUp={() => {
-				const { overId, after } = trackDrag.get();
-				trackDrag.set({ id: null, overId: null, after: false });
-				if (!overId || overId === track.id) return;
-				const rest = project.data.tracks.filter((t) => t.id !== track.id);
-				const index = rest.findIndex((t) => t.id === overId) + (after ? 1 : 0);
-				void run("move_track", { id: track.id, index });
-			}}
-		>
-			<DotsSixVertical weight="bold" className="size-3.5" />
-		</button>
-	);
+	const move = (m: PointerEvent) => {
+		if (!moving && Math.abs(m.clientY - y0) < 4) return;
+		if (!moving) {
+			moving = true;
+			el.setPointerCapture(m.pointerId);
+		}
+		const t = at(m.clientY, m.clientX);
+		trackDrag.set({
+			id: track.id,
+			overId: t?.overId ?? null,
+			after: t?.after ?? false,
+			y: m.clientY,
+		});
+		// Scroll when near the top or bottom edge of the timeline.
+		window.clearInterval(timer);
+		if (scroller) {
+			const r = scroller.getBoundingClientRect();
+			const dir = m.clientY < r.top + 40 ? -1 : m.clientY > r.bottom - 30 ? 1 : 0;
+			if (dir) timer = window.setInterval(() => (scroller.scrollTop += dir * 12), 16);
+		}
+	};
+	const up = () => {
+		window.removeEventListener("pointermove", move);
+		window.removeEventListener("pointerup", up);
+		window.clearInterval(timer);
+		const { overId, after } = trackDrag.get();
+		trackDrag.set({ id: null, overId: null, after: false, y: 0 });
+		if (!moving || !overId || overId === track.id) return;
+		const rest = project.data.tracks.filter((t) => t.id !== track.id);
+		const index = rest.findIndex((t) => t.id === overId) + (after ? 1 : 0);
+		void run("move_track", { id: track.id, index });
+	};
+	window.addEventListener("pointermove", move);
+	window.addEventListener("pointerup", up);
 }
 
 /** The line between picture tracks and sound tracks. */
@@ -1153,7 +1206,7 @@ function GroupDivider() {
 		<div className="flex h-1.5 border-b border-separator bg-background">
 			<div
 				className="sticky left-0 z-20 shrink-0 border-r border-separator bg-background"
-				style={{ width: HEADER_W }}
+				style={{ width: headerW() }}
 			/>
 		</div>
 	);
@@ -1171,159 +1224,252 @@ function RowLabel({ icon, label, sub }: { icon: React.ReactNode; label: string; 
 
 const KIND_ICON = { video: FilmStrip, audio: WaveIcon, text: TextT } as const;
 
-function TrackHeader({ track, project }: { track: Track; project: ProjectSnapshot }) {
+/** Drag the right edge of the track headers to make them wider or narrower. */
+function HeaderResizer() {
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: a resize edge; double-click resets
+		<div
+			title="Drag to resize the track headers"
+			className="absolute inset-y-0 -right-[3px] z-30 w-[6px] cursor-col-resize hover:bg-accent/40"
+			onPointerDown={(e) => {
+				e.stopPropagation();
+				e.preventDefault();
+				const x0 = e.clientX;
+				const w0 = layout.get().headerWidth;
+				const move = (m: PointerEvent) =>
+					layout.set(clampLayout({ headerWidth: w0 + m.clientX - x0 }));
+				const up = () => {
+					window.removeEventListener("pointermove", move);
+					window.removeEventListener("pointerup", up);
+				};
+				window.addEventListener("pointermove", move);
+				window.addEventListener("pointerup", up);
+			}}
+			onDoubleClick={() => layout.set({ headerWidth: 236 })}
+		/>
+	);
+}
+
+/** A small toggle in a track header: dim when off, coloured when on, always in place. */
+function HeaderToggle({
+	label,
+	on,
+	onToggle,
+	children,
+	tone = "accent",
+}: {
+	label: string;
+	on: boolean;
+	onToggle: () => void;
+	children: React.ReactNode;
+	tone?: "accent" | "warning" | "danger";
+}) {
+	return (
+		<button
+			type="button"
+			title={label}
+			aria-label={label}
+			aria-pressed={on}
+			onClick={onToggle}
+			className={cn(
+				"flex size-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold transition-colors",
+				on
+					? tone === "warning"
+						? "bg-warning/20 text-warning"
+						: tone === "danger"
+							? "bg-danger/15 text-danger"
+							: "bg-accent/15 text-accent"
+					: "text-muted/60 hover:bg-default hover:text-foreground",
+			)}
+		>
+			{children}
+		</button>
+	);
+}
+
+function TrackHeader({
+	track,
+	project,
+	height,
+}: {
+	track: Track;
+	project: ProjectSnapshot;
+	height: number;
+}) {
 	const Icon = KIND_ICON[track.kind];
 	const patch = (p: Partial<Track>) => void run("update_track", { id: track.id, patch: p });
 	const index = project.data.tracks.findIndex((t) => t.id === track.id);
-	return (
-		<div className="group flex h-full items-center gap-1 pr-1.5 pl-1">
-			<TrackGrip track={track} project={project} />
-			<Icon
-				className={cn(
-					"size-3.5 shrink-0",
-					track.kind === "video"
-						? "text-track-video"
-						: track.kind === "audio"
-							? track.voiceover
-								? "text-track-voice"
-								: "text-track-audio"
-							: "text-track-text",
+	const dragging = trackDrag.use((d) => d.id === track.id);
+	// Tall tracks show the controls on their own row; short ones fit them beside the name.
+	const tall = height >= 52;
+	const note =
+		track.kind === "audio" && track.voiceover
+			? "Voiceover"
+			: track.kind === "audio" && track.duck
+				? "Ducks"
+				: null;
+	const controls = (
+		<div className="flex shrink-0 items-center gap-px">
+			{track.kind !== "text" && (
+				<HeaderToggle
+					label={track.muted ? "Unmute" : "Mute"}
+					on={track.muted}
+					tone="danger"
+					onToggle={() => patch({ muted: !track.muted })}
+				>
+					{track.muted ? (
+						<SpeakerSlash className="size-3.5" />
+					) : (
+						<SpeakerHigh className="size-3.5" />
+					)}
+				</HeaderToggle>
+			)}
+			{track.kind !== "text" && (
+				<HeaderToggle
+					label={track.solo ? "Unsolo" : "Solo: hear only this track"}
+					on={!!track.solo}
+					tone="warning"
+					onToggle={() => patch({ solo: !track.solo })}
+				>
+					S
+				</HeaderToggle>
+			)}
+			{track.kind !== "audio" && (
+				<HeaderToggle
+					label={track.hidden ? "Show" : "Hide"}
+					on={track.hidden}
+					onToggle={() => patch({ hidden: !track.hidden })}
+				>
+					{track.hidden ? <EyeSlash className="size-3.5" /> : <Eye className="size-3.5" />}
+				</HeaderToggle>
+			)}
+			<HeaderToggle
+				label={track.locked ? "Unlock" : "Lock"}
+				on={track.locked}
+				onToggle={() => patch({ locked: !track.locked })}
+			>
+				{track.locked ? (
+					<LockSimple className="size-3.5" />
+				) : (
+					<LockSimpleOpen className="size-3.5" />
 				)}
-			/>
-			<div className="min-w-0 flex-1">
+			</HeaderToggle>
+			<Dropdown>
+				<Dropdown.Trigger
+					aria-label="Track options"
+					className="flex size-6 items-center justify-center rounded-md text-muted/60 hover:bg-default hover:text-foreground"
+				>
+					<CaretDown className="size-3" />
+				</Dropdown.Trigger>
+				<Dropdown.Popover placement="bottom start">
+					<Dropdown.Menu
+						aria-label="Track options"
+						onAction={(key) => {
+							if (key === "up")
+								void run("move_track", { id: track.id, index: Math.max(0, index - 1) });
+							if (key === "down") void run("move_track", { id: track.id, index: index + 1 });
+							if (key === "voiceover") patch({ voiceover: true });
+							if (key === "duck") patch({ duck: !track.duck });
+							if (key === "vol-50") patch({ volume: 0.5 });
+							if (key === "vol-100") patch({ volume: 1 });
+							if (key === "vol-150") patch({ volume: 1.5 });
+							if (key === "delete") void run("remove_track", { id: track.id });
+						}}
+					>
+						<Dropdown.Item id="up" textValue="Move up">
+							Move up
+						</Dropdown.Item>
+						<Dropdown.Item id="down" textValue="Move down">
+							Move down
+						</Dropdown.Item>
+						{track.kind === "audio" && !track.voiceover ? (
+							<Dropdown.Item id="voiceover" textValue="Voiceover">
+								<span className="flex items-center gap-2">
+									<Star className="size-3.5" /> Use for voiceover takes
+								</span>
+							</Dropdown.Item>
+						) : null}
+						{track.kind === "audio" && !track.voiceover ? (
+							<Dropdown.Item id="duck" textValue="Duck under voiceover">
+								{track.duck ? "✓ " : ""}Lower while the voiceover speaks
+							</Dropdown.Item>
+						) : null}
+						{track.kind !== "text" ? (
+							<Dropdown.Item id="vol-50" textValue="Volume 50%">
+								Volume 50%{track.volume === 0.5 ? " ✓" : ""}
+							</Dropdown.Item>
+						) : null}
+						{track.kind !== "text" ? (
+							<Dropdown.Item id="vol-100" textValue="Volume 100%">
+								Volume 100%{track.volume === 1 ? " ✓" : ""}
+							</Dropdown.Item>
+						) : null}
+						{track.kind !== "text" ? (
+							<Dropdown.Item id="vol-150" textValue="Volume 150%">
+								Volume 150%{track.volume === 1.5 ? " ✓" : ""}
+							</Dropdown.Item>
+						) : null}
+						<Dropdown.Item id="delete" textValue="Delete track" className="text-danger">
+							Delete track
+						</Dropdown.Item>
+					</Dropdown.Menu>
+				</Dropdown.Popover>
+			</Dropdown>
+		</div>
+	);
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: dragging the header reorders; the grip button says so
+		<div
+			className={cn(
+				"group flex h-full min-w-0 cursor-grab flex-col justify-center gap-0.5 pr-1.5 pl-1 active:cursor-grabbing",
+				dragging && "opacity-50",
+			)}
+			onPointerDown={(e) => startTrackDrag(e, track, project)}
+		>
+			<div className="flex min-w-0 items-center gap-1">
+				<span
+					aria-hidden
+					title="Drag to reorder"
+					className="flex h-6 w-3.5 shrink-0 items-center justify-center text-muted/30 group-hover:text-muted/80"
+				>
+					<DotsSixVertical weight="bold" className="size-3.5" />
+				</span>
+				<Icon
+					className={cn(
+						"size-3.5 shrink-0",
+						track.kind === "video"
+							? "text-track-video"
+							: track.kind === "audio"
+								? track.voiceover
+									? "text-track-voice"
+									: "text-track-audio"
+								: "text-track-text",
+					)}
+				/>
 				<input
 					key={track.name}
 					defaultValue={track.name}
+					title={track.name}
 					onBlur={(e) =>
 						e.target.value.trim() &&
 						e.target.value !== track.name &&
 						patch({ name: e.target.value.trim() })
 					}
 					onKeyDown={nameFieldKeys(track.name)}
-					className="w-full truncate rounded bg-transparent px-1 text-[12px] font-semibold outline-none focus:bg-default"
+					className="min-w-0 flex-1 cursor-text truncate rounded bg-transparent px-1 text-[12px] font-semibold outline-none focus:bg-default"
 				/>
-				{track.kind === "audio" && (track.voiceover || track.duck) && (
-					<p className="px-1 text-[10px] text-muted">
-						{track.voiceover ? "Voiceover" : "Ducks under voice"}
-					</p>
-				)}
+				{!tall && controls}
 			</div>
-			<div className="flex items-center">
-				{track.kind !== "text" && (
-					<IconButton
-						label={track.muted ? "Unmute" : "Mute"}
-						active={track.muted}
-						className={cn(!track.muted && "hidden group-hover:flex")}
-						onPress={() => patch({ muted: !track.muted })}
-					>
-						{track.muted ? (
-							<SpeakerSlash className="size-3.5" />
-						) : (
-							<SpeakerHigh className="size-3.5" />
-						)}
-					</IconButton>
-				)}
-				{track.kind !== "text" && (
-					<button
-						type="button"
-						title={track.solo ? "Unsolo" : "Solo: hear only this track"}
-						aria-label={track.solo ? "Unsolo" : "Solo"}
-						aria-pressed={!!track.solo}
-						onClick={() => patch({ solo: !track.solo })}
-						className={cn(
-							"flex size-7 items-center justify-center rounded-md text-[11px] font-bold",
-							track.solo
-								? "bg-warning/20 text-warning"
-								: "hidden text-muted group-hover:flex hover:bg-default hover:text-foreground",
-						)}
-					>
-						S
-					</button>
-				)}
-				{track.kind !== "audio" && (
-					<IconButton
-						label={track.hidden ? "Show" : "Hide"}
-						active={track.hidden}
-						className={cn(!track.hidden && "hidden group-hover:flex")}
-						onPress={() => patch({ hidden: !track.hidden })}
-					>
-						{track.hidden ? <EyeSlash className="size-3.5" /> : <Eye className="size-3.5" />}
-					</IconButton>
-				)}
-				<IconButton
-					label={track.locked ? "Unlock" : "Lock"}
-					active={track.locked}
-					className={cn(!track.locked && "hidden group-hover:flex")}
-					onPress={() => patch({ locked: !track.locked })}
-				>
-					{track.locked ? (
-						<LockSimple className="size-3.5" />
+			{tall && (
+				<div className="flex min-w-0 items-center gap-1 pl-5">
+					{note ? (
+						<span className="min-w-0 truncate text-[10px] text-muted">{note}</span>
 					) : (
-						<LockSimpleOpen className="size-3.5" />
+						<span className="flex-1" />
 					)}
-				</IconButton>
-				<Dropdown>
-					<Dropdown.Trigger
-						aria-label="Track options"
-						className="hidden size-7 group-hover:flex data-[pressed]:flex items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
-					>
-						<CaretDown className="size-3" />
-					</Dropdown.Trigger>
-					<Dropdown.Popover placement="bottom start">
-						<Dropdown.Menu
-							aria-label="Track options"
-							onAction={(key) => {
-								if (key === "up")
-									void run("move_track", { id: track.id, index: Math.max(0, index - 1) });
-								if (key === "down") void run("move_track", { id: track.id, index: index + 1 });
-								if (key === "voiceover") patch({ voiceover: true });
-								if (key === "duck") patch({ duck: !track.duck });
-								if (key === "vol-50") patch({ volume: 0.5 });
-								if (key === "vol-100") patch({ volume: 1 });
-								if (key === "vol-150") patch({ volume: 1.5 });
-								if (key === "delete") void run("remove_track", { id: track.id });
-							}}
-						>
-							<Dropdown.Item id="up" textValue="Move up">
-								Move up
-							</Dropdown.Item>
-							<Dropdown.Item id="down" textValue="Move down">
-								Move down
-							</Dropdown.Item>
-							{track.kind === "audio" && !track.voiceover ? (
-								<Dropdown.Item id="voiceover" textValue="Voiceover">
-									<span className="flex items-center gap-2">
-										<Star className="size-3.5" /> Use for voiceover takes
-									</span>
-								</Dropdown.Item>
-							) : null}
-							{track.kind === "audio" && !track.voiceover ? (
-								<Dropdown.Item id="duck" textValue="Duck under voiceover">
-									{track.duck ? "✓ " : ""}Lower while the voiceover speaks
-								</Dropdown.Item>
-							) : null}
-							{track.kind !== "text" ? (
-								<Dropdown.Item id="vol-50" textValue="Volume 50%">
-									Volume 50%{track.volume === 0.5 ? " ✓" : ""}
-								</Dropdown.Item>
-							) : null}
-							{track.kind !== "text" ? (
-								<Dropdown.Item id="vol-100" textValue="Volume 100%">
-									Volume 100%{track.volume === 1 ? " ✓" : ""}
-								</Dropdown.Item>
-							) : null}
-							{track.kind !== "text" ? (
-								<Dropdown.Item id="vol-150" textValue="Volume 150%">
-									Volume 150%{track.volume === 1.5 ? " ✓" : ""}
-								</Dropdown.Item>
-							) : null}
-							<Dropdown.Item id="delete" textValue="Delete track" className="text-danger">
-								Delete track
-							</Dropdown.Item>
-						</Dropdown.Menu>
-					</Dropdown.Popover>
-				</Dropdown>
-			</div>
+					<div className="ml-auto">{controls}</div>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -1333,7 +1479,7 @@ function AddTrackRow() {
 		<div className="flex h-9">
 			<div
 				className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-separator bg-surface px-2"
-				style={{ width: HEADER_W }}
+				style={{ width: headerW() }}
 			>
 				<Dropdown>
 					<Dropdown.Trigger className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-muted hover:bg-default hover:text-foreground">
@@ -1713,7 +1859,7 @@ function SnapGuide({
 	scroller: React.RefObject<HTMLDivElement | null>;
 }) {
 	const scrollLeft = useScrollLeft(scroller);
-	if (x < scrollLeft + HEADER_W) return null;
+	if (x < scrollLeft + headerW()) return null;
 	return (
 		<div
 			className="pointer-events-none absolute top-0 bottom-0 z-20 w-px bg-warning"
@@ -1732,16 +1878,16 @@ function Playhead({
 	const ms = playback.clock.use((s) => s.currentMs);
 	const playing = playback.clock.use((s) => s.playing);
 	const scrollLeft = useScrollLeft(scroller);
-	const x = HEADER_W + ms * pxPerMs;
+	const x = headerW() + ms * pxPerMs;
 	useEffect(() => {
 		const el = scroller.current;
 		if (!el || !playing) return;
-		const visibleStart = el.scrollLeft + HEADER_W;
+		const visibleStart = el.scrollLeft + headerW();
 		const visibleEnd = el.scrollLeft + el.clientWidth;
-		if (x > visibleEnd - 60 || x < visibleStart) el.scrollLeft = x - HEADER_W - 80;
+		if (x > visibleEnd - 60 || x < visibleStart) el.scrollLeft = x - headerW() - 80;
 	}, [x, playing, scroller]);
 	// Scrolled behind the track headers: out of view, like the clips there.
-	if (x < scrollLeft + HEADER_W) return null;
+	if (x < scrollLeft + headerW()) return null;
 	return (
 		<div
 			className="pointer-events-none absolute top-0 bottom-0 z-30 w-px bg-danger"
