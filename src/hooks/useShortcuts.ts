@@ -57,6 +57,16 @@ export function useShortcuts() {
 			else if (key === "r" && !mod) {
 				const line = findLine(project, state.selectedLineId);
 				if (line) void recorder.record(project, line);
+			} else if (key === "k" && !mod) playback.pause();
+			else if (key === "l" && !mod) {
+				if (!playback.playing) playback.play();
+			} else if (key === "j" && !mod) playback.seek(playback.currentMs - 5000);
+			else if (key === "i" && !mod) editor.set({ inPoint: Math.round(playback.currentMs) });
+			else if (key === "o" && !mod) editor.set({ outPoint: Math.round(playback.currentMs) });
+			else if (key === "x" && !mod) editor.set({ inPoint: null, outPoint: null });
+			else if (key === "/" && !mod) {
+				const { inPoint, outPoint } = editor.get();
+				playback.play({ fromMs: inPoint ?? playback.currentMs, toMs: outPoint ?? undefined });
 			} else if (key === "m" && !mod) void run("add_marker", { atMs: playback.currentMs, label: "Marker" });
 			else if (key === "arrowup" || key === "arrowdown") {
 				const lines = project.lines;

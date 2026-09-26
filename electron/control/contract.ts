@@ -57,10 +57,10 @@ export const contract = {
 	remove_media: { description: "Remove a media item and every clip that uses it.", input: { id: z.string() } },
 	add_track: { description: "Add a video, audio or text track. index 0 is the top.", input: { kind: z.enum(["video", "audio", "text"]), name: z.string().optional(), index: z.number().int().optional() } },
 	update_track: {
-		description: "Rename, mute, lock, hide, set volume (0–2) or mark as the voiceover track.",
+		description: "Rename, mute, lock, hide, set volume (0–2), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks).",
 		input: {
 			id: z.string(),
-			patch: z.object({ name: z.string(), muted: z.boolean(), locked: z.boolean(), hidden: z.boolean(), volume: z.number().min(0).max(2), voiceover: z.boolean() }).partial(),
+			patch: z.object({ name: z.string(), muted: z.boolean(), locked: z.boolean(), hidden: z.boolean(), volume: z.number().min(0).max(2), voiceover: z.boolean(), duck: z.boolean() }).partial(),
 		},
 	},
 	remove_track: { description: "Delete a track and its clips.", input: { id: z.string() } },
@@ -85,7 +85,7 @@ export const contract = {
 		},
 	},
 	update_clip: {
-		description: "Change a clip: timing, in-point, speed, volume, fades, transform (x, y, scale, opacity), text, style or animations.",
+		description: "Change a clip: timing, in-point, speed, volume, fades, denoise, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations.",
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: { description: "Move clips by deltaMs, optionally onto another track.", input: { ids, deltaMs: z.number(), trackId: z.string().optional() } },
@@ -96,6 +96,22 @@ export const contract = {
 	split_clip: { description: "Split one clip at a timeline position.", input: { id: z.string(), atMs: z.number() } },
 	split_at: { description: "Blade: split every clip crossing atMs (optionally only on some tracks).", input: { atMs: z.number(), trackIds: z.array(z.string()).optional() } },
 	delete_clips: { description: "Delete clips; ripple closes the gap on their tracks.", input: { ids, ripple: z.boolean().default(false) } },
+	detach_audio: { description: "Split a video clip's sound onto its own audio track (the video clip is muted).", input: { id: z.string(), trackId: z.string().optional() } },
+	remove_ranges: {
+		description: "Cut time ranges out of the timeline on every (or the given) track and close the gaps. Script lines and markers after a range move with it.",
+		input: { ranges: z.array(z.object({ startMs: z.number().min(0), endMs: z.number().min(0) })).min(1), trackIds: z.array(z.string()).optional() },
+	},
+	remove_silence: {
+		description:
+			"Find pauses in the speech (video and voiceover audio, or given clips) and cut them out across all tracks. keepMs leaves a little air on each side. Use dryRun to preview the ranges first.",
+		input: {
+			clipIds: z.array(z.string()).optional(),
+			thresholdDb: z.number().min(-80).max(-10).default(-38),
+			minSilenceMs: z.number().min(100).max(10000).default(600),
+			keepMs: z.number().min(0).max(1000).default(150),
+			dryRun: z.boolean().default(false),
+		},
+	},
 	duplicate_clips: { description: "Copy clips right after themselves, or offsetMs from their start.", input: { ids, offsetMs: z.number().optional() } },
 	select_clips: { description: "Select clips in the editor so the user sees what you mean.", input: { ids: z.array(z.string()) } },
 
@@ -165,8 +181,8 @@ export const contract = {
 	redo: { description: "Redo.", input: {} },
 	export: {
 		description:
-			"Export. stems: one WAV per script line + durations.json. voiceover: the voiceover track as one WAV. audio: full mix. video: rendered MP4 with every visible track and the mix.",
-		input: { kind: z.enum(["stems", "voiceover", "audio", "video"]), out: z.string().optional() },
+			"Export. stems: one WAV per script line + durations.json. voiceover: the voiceover track as one WAV. audio: full mix (with ducking). video: rendered video with every visible track and the mix (codec, hardware encoding and scale from export settings). captions: SRT + VTT from the caption clips.",
+		input: { kind: z.enum(["stems", "voiceover", "audio", "video", "captions"]), out: z.string().optional() },
 	},
 	focus_window: { description: "Bring the Cue window to the front.", input: {} },
 } as const;

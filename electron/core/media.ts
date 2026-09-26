@@ -168,3 +168,30 @@ export function kindOf(file: string): "video" | "audio" | "image" | null {
 	if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext)) return "image";
 	return null;
 }
+
+/** Silent stretches inside [fromMs, fromMs + durationMs) of a file, in file time. */
+export async function detectSilences(
+	file: string,
+	options: { thresholdDb: number; minSilenceMs: number; fromMs?: number; durationMs?: number },
+): Promise<{ startMs: number; endMs: number }[]> {
+	const from = options.fromMs ?? 0;
+	const range = options.durationMs !== undefined ? ["-t", (options.durationMs / 1000).toFixed(3)] : [];
+	const log = await ffmpeg([
+		"-ss", (from / 1000).toFixed(3), ...range, "-i", file, "-vn",
+		"-af", `silencedetect=noise=${options.thresholdDb}dB:d=${(options.minSilenceMs / 1000).toFixed(3)}`,
+		"-f", "null", "-",
+	]);
+	const out: { startMs: number; endMs: number }[] = [];
+	let open: number | null = null;
+	for (const line of log.split("\n")) {
+		const start = /silence_start: (-?[\d.]+)/.exec(line);
+		const end = /silence_end: ([\d.]+)/.exec(line);
+		if (start) open = Math.max(0, Number(start[1]) * 1000);
+		if (end && open !== null) {
+			out.push({ startMs: from + open, endMs: from + Number(end[1]) * 1000 });
+			open = null;
+		}
+	}
+	if (open !== null && options.durationMs !== undefined) out.push({ startMs: from + open, endMs: from + options.durationMs });
+	return out;
+}

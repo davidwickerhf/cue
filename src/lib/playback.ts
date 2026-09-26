@@ -25,6 +25,7 @@ class PlaybackEngine {
 	private stage: HTMLDivElement | null = null;
 	private textCanvas: HTMLCanvasElement | null = null;
 	private layers = new Map<string, Layer>();
+	private textLayers = new Map<string, HTMLCanvasElement>();
 	private ctx: AudioContext | null = null;
 	private buffers = new Map<string, Promise<AudioBuffer | null>>();
 	private scheduled: { source: AudioBufferSourceNode; gain: GainNode }[] = [];
@@ -220,6 +221,9 @@ class PlaybackEngine {
 		const scheduledAtPerf = this.startPerf;
 		const tracks = new Map(project.data.tracks.map((t) => [t.id, t]));
 		const assets = new Map(project.data.assets.map((a) => [a.id, a]));
+		const voiceRanges = project.data.clips
+			.filter((c) => c.type === "media" && tracks.get(c.trackId)?.voiceover && !tracks.get(c.trackId)?.muted)
+			.map((c) => ({ start: c.startMs, end: clipEnd(c) }));
 		for (const clip of project.data.clips) {
 			if (clip.type !== "media") continue;
 			const track = tracks.get(clip.trackId);
@@ -256,22 +260,50 @@ class PlaybackEngine {
 					gain.gain.setValueAtTime(levelAt(Math.max(localStart, fadeStart)), at);
 					gain.gain.linearRampToValueAtTime(0, when + (clip.durationMs - localStart) / 1000);
 				}
-				source.connect(gain).connect(ctx.destination);
+				// Ducked tracks dip while the voiceover speaks (the export uses a sidechain compressor).
+				let output: AudioNode = gain;
+				if (track.duck && !track.voiceover && voiceRanges.length) {
+					const duck = ctx.createGain();
+					duck.gain.setValueAtTime(1, ctx.currentTime);
+					for (const r of voiceRanges) {
+						if (r.end <= nowMs) continue;
+						const at = ctx.currentTime + Math.max(0, r.start - nowMs) / 1000;
+						const until = ctx.currentTime + Math.max(0, r.end - nowMs) / 1000;
+						duck.gain.setTargetAtTime(0.3, at, 0.06);
+						duck.gain.setTargetAtTime(1, until, 0.18);
+					}
+					gain.connect(duck);
+					output = duck;
+				}
+				source.connect(gain);
+				output.connect(ctx.destination);
 				source.start(when, offset, duration);
 				this.scheduled.push({ source, gain });
 			});
 		}
 	}
 
+	/**
+	 * One DOM layer per visual track, stacked in track order (upper tracks on
+	 * top), exactly like the exporter composites them.
+	 */
 	private rebuildLayers() {
 		const stage = this.stage;
 		const project = this.project;
 		if (!stage || !project) return;
 		for (const layer of this.layers.values()) layer.root.remove();
+		for (const canvas of this.textLayers.values()) canvas.remove();
 		this.layers.clear();
-		// Bottom video track first so upper tracks stack above it.
-		const videoTracks = project.data.tracks.filter((t) => t.kind === "video").reverse();
-		for (const track of videoTracks) {
+		this.textLayers.clear();
+		const visual = project.data.tracks.filter((t) => t.kind === "video" || t.kind === "text").reverse();
+		for (const track of visual) {
+			if (track.kind === "text") {
+				const canvas = document.createElement("canvas");
+				canvas.className = "pointer-events-none absolute inset-0 size-full";
+				stage.insertBefore(canvas, this.overlayAnchor());
+				this.textLayers.set(track.id, canvas);
+				continue;
+			}
 			const root = document.createElement("div");
 			root.className = "absolute inset-0 overflow-hidden pointer-events-none";
 			const video = document.createElement("video");
@@ -283,9 +315,14 @@ class PlaybackEngine {
 			image.className = "absolute object-contain";
 			image.draggable = false;
 			root.append(video, image);
-			stage.insertBefore(root, this.textCanvas);
+			stage.insertBefore(root, this.overlayAnchor());
 			this.layers.set(track.id, { track, root, video, image, assetId: null });
 		}
+	}
+
+	/** Layers go below the editor's own overlays (selection box), which follow the anchor canvas. */
+	private overlayAnchor(): Node | null {
+		return this.textCanvas;
 	}
 
 	/** Brings every layer to the state of the timeline at `ms`. */
@@ -315,12 +352,21 @@ class PlaybackEngine {
 			other.style.display = "none";
 			element.style.display = "";
 			const t = active.transform;
+			// Size the element to the fitted media so crop percentages refer to the picture itself.
+			const W = layer.root.clientWidth;
+			const H = layer.root.clientHeight;
+			const ar = asset?.width && asset.height ? asset.width / asset.height : W / Math.max(1, H);
+			const fit = Math.min(W / ar, H) * t.scale;
+			const w = fit * ar;
+			const h = fit;
+			const c = t.crop ?? { left: 0, top: 0, right: 0, bottom: 0 };
 			Object.assign(element.style, {
-				left: `${t.x * 100}%`,
-				top: `${t.y * 100}%`,
-				width: `${t.scale * 100}%`,
-				height: `${t.scale * 100}%`,
-				transform: "translate(-50%, -50%)",
+				left: `${t.x * W - w / 2}px`,
+				top: `${t.y * H - h / 2}px`,
+				width: `${w}px`,
+				height: `${h}px`,
+				transform: "none",
+				clipPath: c.left || c.top || c.right || c.bottom ? `inset(${c.top * 100}% ${c.right * 100}% ${c.bottom * 100}% ${c.left * 100}%)` : "none",
 				opacity: String(Math.max(0, Math.min(1, opacity))),
 			});
 			if (asset?.kind === "image") {
@@ -353,32 +399,31 @@ class PlaybackEngine {
 	}
 
 	private drawText(ms: number) {
-		const canvas = this.textCanvas;
 		const project = this.project;
-		if (!canvas || !project) return;
-		const rect = canvas.getBoundingClientRect();
-		const dpr = window.devicePixelRatio || 1;
-		const w = Math.max(1, Math.round(rect.width * dpr));
-		const h = Math.max(1, Math.round(rect.height * dpr));
-		if (canvas.width !== w || canvas.height !== h) {
-			canvas.width = w;
-			canvas.height = h;
-		}
-		const ctx = canvas.getContext("2d");
-		if (!ctx) return;
-		ctx.clearRect(0, 0, w, h);
+		if (!project) return;
 		const { width: W, height: H } = project.data.canvas;
-		ctx.save();
-		ctx.scale(w / W, h / H);
-		// Upper tracks draw last (on top).
-		for (const track of [...project.data.tracks].reverse()) {
-			if (track.kind !== "text" || track.hidden) continue;
+		const dpr = window.devicePixelRatio || 1;
+		for (const [trackId, canvas] of this.textLayers) {
+			const track = project.data.tracks.find((t) => t.id === trackId);
+			const rect = canvas.getBoundingClientRect();
+			const w = Math.max(1, Math.round(rect.width * dpr));
+			const h = Math.max(1, Math.round(rect.height * dpr));
+			if (canvas.width !== w || canvas.height !== h) {
+				canvas.width = w;
+				canvas.height = h;
+			}
+			const ctx = canvas.getContext("2d");
+			if (!ctx) continue;
+			ctx.clearRect(0, 0, w, h);
+			if (!track || track.hidden) continue;
+			ctx.save();
+			ctx.scale(w / W, h / H);
 			for (const clip of project.data.clips) {
-				if (clip.type !== "text" || clip.trackId !== track.id || ms < clip.startMs || ms >= clipEnd(clip)) continue;
+				if (clip.type !== "text" || clip.trackId !== trackId || ms < clip.startMs || ms >= clipEnd(clip)) continue;
 				drawTextClip(ctx, clip as TextClip, W, H, textFrame(clip as TextClip, ms - clip.startMs, H));
 			}
+			ctx.restore();
 		}
-		ctx.restore();
 	}
 }
 

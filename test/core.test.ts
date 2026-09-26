@@ -119,6 +119,29 @@ describe("timeline editing", () => {
 	});
 });
 
+describe("ripple cuts and detaching audio", () => {
+	it("removes ranges across tracks and moves lines and markers after them", () => {
+		const { data } = withMedia();
+		let next = applyOp(data, { type: "addMarker", atMs: 8000, label: "m" }).data;
+		next = applyOp(next, { type: "removeRanges", ranges: [{ startMs: 2000, endMs: 3000 }, { startMs: 2500, endMs: 3500 }] }).data;
+		const video = next.clips.filter((c) => c.trackId === "V1") as MediaClip[];
+		expect(video).toHaveLength(2);
+		expect(video[1]).toMatchObject({ startMs: 2000, inMs: 3500, durationMs: 6500 });
+		expect(next.lines.find((l) => l.id === "B1")?.startMs).toBe(3500);
+		expect(next.markers[0].atMs).toBe(6500);
+	});
+
+	it("detaches a video's audio onto an audio track and mutes the video clip", () => {
+		const { data } = withMedia();
+		const [clip] = data.clips as MediaClip[];
+		const result = applyOp(data, { type: "detachAudio", id: clip.id });
+		const audio = result.data.clips.find((c) => c.id === result.created?.[0]) as MediaClip;
+		expect(audio.trackId).toBe("A2");
+		expect(audio.inMs).toBe(clip.inMs);
+		expect((result.data.clips[0] as MediaClip).volume).toBe(0);
+	});
+});
+
 describe("srt and captions", () => {
 	it("uses cue length as target and the gap to the next cue as max", () => {
 		const parsed = parseSrt("1\n00:00:00,800 --> 00:00:07,250\nHello there.\n\n2\n00:00:07,500 --> 00:00:20,450\nSecond line\ncontinues.\n");
@@ -132,6 +155,28 @@ describe("srt and captions", () => {
 		expect(chunks.length).toBeGreaterThan(2);
 		expect(chunks.every((c) => c.text.length <= 40)).toBe(true);
 	});
+});
+
+describe("silence removal", () => {
+	it("finds the pause in a clip and closes it on every track", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-silence-"));
+		const audio = path.join(dir, "speech.wav");
+		await ffmpeg([
+			"-f", "lavfi", "-i", "sine=frequency=300:duration=2:sample_rate=48000",
+			"-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=2",
+			"-f", "lavfi", "-i", "sine=frequency=300:duration=2:sample_rate=48000",
+			"-filter_complex", "[0][1][2]concat=n=3:v=0:a=1", audio,
+		]);
+		const store = new ProjectStore({ mediaUrl: (f) => f, recentFile: path.join(dir, "recent.json") });
+		await store.create({ path: dir, name: "Silence" });
+		const [asset] = await store.importMedia([audio], "user", { trackId: "A1", startMs: 0 });
+		const result = await store.removeSilence("agent", { thresholdDb: -40, minSilenceMs: 500, keepMs: 100 });
+		expect(result.ranges).toHaveLength(1);
+		expect(result.removedMs).toBeGreaterThan(1600);
+		const clips = store.current.clips.filter((c) => c.type === "media" && c.assetId === asset.id);
+		expect(clips).toHaveLength(2);
+		expect(Math.round(clips[1].startMs / 100)).toBe(Math.round((2000 + 100) / 100));
+	}, 60000);
 });
 
 describe("store with real media", () => {
@@ -164,11 +209,24 @@ describe("store with real media", () => {
 
 		const overlay = path.join(dir, "text.png");
 		await ffmpeg(["-f", "lavfi", "-i", "color=c=white@0.5:s=640x360,format=rgba", "-frames:v", "1", overlay]);
-		const report = await store.export("video", "export/out.mp4", "user", async (clips) => Object.fromEntries(clips.map((c) => [c.id, overlay])));
+		const report = await store.export("video", "export/out.mp4", "user", async (clips) => Object.fromEntries(clips.map((c) => [c.id, { kind: "still" as const, file: overlay }])));
 		const info = await probe(report.outputs[0]);
 		expect(info.width).toBe(640);
 		expect(info.hasAudio).toBe(true);
 		expect(info.durationMs).toBeGreaterThan(5500);
+
+		// Crop, ducking and denoise all go through the real export graph.
+		const videoClip = store.current.clips.find((c) => c.trackId === "V1") as MediaClip;
+		store.apply({ type: "updateClip", id: videoClip.id, patch: { transform: { crop: { left: 0.1, right: 0.1 } }, denoise: true } }, "user");
+		store.apply({ type: "addClips", clips: [{ type: "media", trackId: "A2", assetId: videoClip.assetId, startMs: 0 }] }, "user");
+		const ducked = await store.export("video", "export/ducked.mp4", "user", async (clips) => Object.fromEntries(clips.map((c) => [c.id, { kind: "still" as const, file: overlay }])));
+		expect((await probe(ducked.outputs[0])).width).toBe(640);
+
+		store.apply({ type: "addTrack", kind: "text", name: "Captions" }, "user");
+		const captionsTrack = store.current.tracks.find((t) => t.name === "Captions")?.id as string;
+		store.apply({ type: "addClips", clips: [{ type: "text", trackId: captionsTrack, startMs: 1000, durationMs: 1500, text: "Hello" }] }, "user");
+		const captions = await store.export("captions", undefined, "user");
+		expect(await fs.readFile(captions.outputs[0], "utf8")).toContain("00:00:01,000 --> 00:00:02,500");
 
 		const peaks = await store.peaks(take.id);
 		expect(peaks.length).toBeGreaterThan(80);

@@ -42,10 +42,10 @@ export function useEditorCommands() {
 					try {
 						if (!project) throw new Error("No project open.");
 						const { width, height } = project.data.canvas;
-						const images: Record<string, string> = {};
+						const images: Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }> = {};
 						for (const id of command.clipIds) {
 							const clip = project.data.clips.find((c): c is TextClip => c.id === id && c.type === "text");
-							if (clip) images[id] = await rasterise(clip, width, height);
+							if (clip) images[id] = await rasterise(clip, width, height, command.fps);
 						}
 						window.cue.reply(command.requestId, null, images);
 					} catch (error) {

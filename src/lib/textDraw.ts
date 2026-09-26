@@ -112,14 +112,44 @@ export function drawTextClip(ctx: CanvasRenderingContext2D, clip: TextClip, widt
 	ctx.restore();
 }
 
-/** Full-frame transparent PNG of a text clip, used by the exporter. */
-export async function rasterise(clip: TextClip, width: number, height: number): Promise<string> {
+async function png(canvas: HTMLCanvasElement): Promise<ArrayBuffer> {
+	const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+	if (!blob) throw new Error("Could not encode text.");
+	return blob.arrayBuffer();
+}
+
+/**
+ * Renders a text clip for export at the output size. Clips with animations
+ * become a frame sequence so the exported motion matches the preview exactly.
+ */
+export async function rasterise(clip: TextClip, width: number, height: number, fps: number): Promise<{ still?: ArrayBuffer; frames?: ArrayBuffer[] }> {
 	await document.fonts.load(`${clip.style.fontWeight} ${clip.style.fontSize}px "${clip.style.fontFamily}"`).catch(() => {});
 	const canvas = document.createElement("canvas");
 	canvas.width = width;
 	canvas.height = height;
 	const ctx = canvas.getContext("2d");
 	if (!ctx) throw new Error("Canvas is not available.");
-	drawTextClip(ctx, clip, width, height);
-	return canvas.toDataURL("image/png");
+	if (clip.animationIn === "none" && clip.animationOut === "none") {
+		drawTextClip(ctx, clip, width, height);
+		return { still: await png(canvas) };
+	}
+	const frames: ArrayBuffer[] = [];
+	const count = Math.max(1, Math.ceil((clip.durationMs / 1000) * fps));
+	let previous: ArrayBuffer | null = null;
+	let previousKey = "";
+	for (let i = 0; i < count; i++) {
+		const frame = textFrame(clip, (i * 1000) / fps, height);
+		// Identical frames (the static middle of a clip) reuse the last encode.
+		const key = `${frame.alpha.toFixed(3)}|${frame.scale.toFixed(3)}|${frame.offsetY.toFixed(1)}|${frame.reveal}`;
+		if (previous && key === previousKey) {
+			frames.push(previous);
+			continue;
+		}
+		ctx.clearRect(0, 0, width, height);
+		drawTextClip(ctx, clip, width, height, frame);
+		previous = await png(canvas);
+		previousKey = key;
+		frames.push(previous);
+	}
+	return { frames };
 }

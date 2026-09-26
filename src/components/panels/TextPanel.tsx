@@ -56,7 +56,7 @@ export function TextPanel() {
 									}}
 									className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-default/70"
 								>
-									<TextT className="size-3.5 shrink-0 text-clip-text" />
+									<TextT className="size-3.5 shrink-0 text-track-text" />
 									<span className="truncate text-[13px]">{clip.type === "text" ? clip.text : ""}</span>
 									<span className="ml-auto text-[11px] text-muted tabular-nums">{(clip.startMs / 1000).toFixed(1)}s</span>
 								</button>

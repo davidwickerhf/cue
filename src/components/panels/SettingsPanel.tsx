@@ -80,6 +80,31 @@ export function SettingsPanel() {
 				<Field label="Video file" hint="{name} is the project name. Relative to the project folder.">
 					<TextInput value={out.videoFile} onCommit={(videoFile) => setExport({ videoFile })} />
 				</Field>
+				<Field label="Codec" inline>
+					<Segmented
+						size="xs"
+						value={out.codec}
+						onChange={(codec) => setExport({ codec })}
+						options={[
+							{ value: "h264", label: "H.264" },
+							{ value: "hevc", label: "HEVC" },
+							{ value: "prores", label: "ProRes" },
+						]}
+					/>
+				</Field>
+				<Field label="Size" inline>
+					<Segmented
+						size="xs"
+						value={String(out.scale) as "1"}
+						onChange={(v) => setExport({ scale: Number(v) })}
+						options={[
+							{ value: "1" as "1", label: "100%" },
+							{ value: "0.75" as "1", label: "75%" },
+							{ value: "0.5" as "1", label: "50%" },
+						]}
+					/>
+				</Field>
+				<Toggle label="Hardware encoding (faster)" checked={out.hardware} onChange={(hardware) => setExport({ hardware })} />
 				<Field label="Quality" inline>
 					<Segmented
 						size="xs"
@@ -100,6 +125,9 @@ export function SettingsPanel() {
 						<TextInput value={out.stemPattern} onCommit={(stemPattern) => setExport({ stemPattern })} />
 					</Field>
 				</div>
+				<Field label="Captions file" hint="SRT; a VTT is written next to it.">
+					<TextInput value={out.captionsFile} onCommit={(captionsFile) => setExport({ captionsFile })} />
+				</Field>
 				<Field label="Voiceover file">
 					<TextInput value={out.voiceoverFile} onCommit={(voiceoverFile) => setExport({ voiceoverFile })} />
 				</Field>

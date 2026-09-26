@@ -14,11 +14,11 @@
 	--accent-foreground: #fff;
 	--viewer: #e9e9ec;
 	--lane: #f4f4f6;
-	--clip-video: oklch(0.62 0.1 252);
-	--clip-audio: oklch(0.63 0.09 175);
-	--clip-voice: oklch(0.62 0.12 150);
-	--clip-text: oklch(0.6 0.12 300);
-	--clip-image: oklch(0.66 0.1 70);
+	--track-video: oklch(0.62 0.1 252);
+	--track-audio: oklch(0.63 0.09 175);
+	--track-voice: oklch(0.62 0.12 150);
+	--track-text: oklch(0.6 0.12 300);
+	--track-image: oklch(0.66 0.1 70);
 }
 
 .dark {
@@ -38,11 +38,11 @@
 	--segment: #2c2c32;
 	--viewer: #0a0a0b;
 	--lane: #121215;
-	--clip-video: oklch(0.47 0.08 252);
-	--clip-audio: oklch(0.49 0.07 180);
-	--clip-voice: oklch(0.5 0.1 152);
-	--clip-text: oklch(0.47 0.1 300);
-	--clip-image: oklch(0.52 0.08 70);
+	--track-video: oklch(0.47 0.08 252);
+	--track-audio: oklch(0.49 0.07 180);
+	--track-voice: oklch(0.5 0.1 152);
+	--track-text: oklch(0.47 0.1 300);
+	--track-image: oklch(0.52 0.08 70);
 }
 
 @theme inline {
@@ -50,11 +50,11 @@
 	--font-mono: "SF Mono", ui-monospace, Menlo, monospace;
 	--color-viewer: var(--viewer);
 	--color-lane: var(--lane);
-	--color-clip-video: var(--clip-video);
-	--color-clip-audio: var(--clip-audio);
-	--color-clip-voice: var(--clip-voice);
-	--color-clip-text: var(--clip-text);
-	--color-clip-image: var(--clip-image);
+	--color-track-video: var(--track-video);
+	--color-track-audio: var(--track-audio);
+	--color-track-voice: var(--track-voice);
+	--color-track-text: var(--track-text);
+	--color-track-image: var(--track-image);
 	--color-field: var(--field-background);
 }
 

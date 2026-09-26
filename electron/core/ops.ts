@@ -5,7 +5,9 @@ import {
 	exportSchema,
 	settingsSchema,
 	DEFAULT_TRANSFORM,
+	NO_CROP,
 	assertUnique,
+	cropSchema,
 	clipEnd,
 	lineInputSchema,
 	newId,
@@ -38,7 +40,8 @@ export const mediaClipInput = z.object({
 	volume: z.number().min(0).max(2).optional(),
 	fadeInMs: ms.min(0).optional(),
 	fadeOutMs: ms.min(0).optional(),
-	transform: transformSchema.partial().optional(),
+	transform: transformSchema.partial().extend({ crop: cropSchema.partial() }).partial().optional(),
+	denoise: z.boolean().optional(),
 	name: z.string().max(120).optional(),
 });
 
@@ -66,7 +69,8 @@ export const clipPatch = z.object({
 	volume: z.number().min(0).max(2),
 	fadeInMs: ms.min(0),
 	fadeOutMs: ms.min(0),
-	transform: transformSchema.partial(),
+	transform: transformSchema.partial().extend({ crop: cropSchema.partial() }).partial(),
+	denoise: z.boolean(),
 	text: z.string().max(4000),
 	style: textStyleSchema.partial(),
 	animationIn: animation,
@@ -82,6 +86,7 @@ const trackPatch = z
 		hidden: z.boolean(),
 		volume: z.number().min(0).max(2),
 		voiceover: z.boolean(),
+		duck: z.boolean(),
 	})
 	.partial();
 
@@ -110,6 +115,12 @@ export const opSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("splitAt"), atMs: ms, trackIds: z.array(z.string()).optional() }),
 	z.object({ type: z.literal("removeClips"), ids: z.array(z.string()).min(1), ripple: z.boolean().default(false) }),
 	z.object({ type: z.literal("duplicateClips"), ids: z.array(z.string()).min(1), offsetMs: ms.optional() }),
+	z.object({
+		type: z.literal("removeRanges"),
+		ranges: z.array(z.object({ startMs: ms.min(0), endMs: ms.min(0) })).min(1),
+		trackIds: z.array(z.string()).optional(),
+	}),
+	z.object({ type: z.literal("detachAudio"), id: z.string(), trackId: z.string().optional() }),
 	// Voiceover script
 	z.object({ type: z.literal("setLines"), lines: z.array(lineInputSchema) }),
 	z.object({ type: z.literal("addLine"), line: lineInputSchema }),
@@ -225,7 +236,8 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 		volume: input.volume ?? 1,
 		fadeInMs: input.fadeInMs ?? 0,
 		fadeOutMs: input.fadeOutMs ?? 0,
-		transform: { ...DEFAULT_TRANSFORM, ...input.transform },
+		transform: { ...DEFAULT_TRANSFORM, ...input.transform, crop: { ...NO_CROP, ...input.transform?.crop } },
+		denoise: input.denoise ?? false,
 		name: input.name ?? a.name,
 	});
 }
@@ -349,7 +361,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			const { transform, style, ...rest } = op.patch;
 			const merged =
 				current.type === "media"
-					? { ...current, ...rest, transform: { ...current.transform, ...transform } }
+					? { ...current, ...rest, transform: { ...current.transform, ...transform, crop: { ...current.transform.crop, ...transform?.crop } } }
 					: { ...current, ...rest, style: { ...current.style, ...style } };
 			if (current.type === "media" && (op.patch.text !== undefined || style)) throw new Error("Only text clips have text and style.");
 			const next = validateClip(data, merged as Clip);
@@ -428,6 +440,55 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			return { data: next, summary: `Duplicated ${created.length} clip(s)`, created };
 		}
 
+		case "removeRanges": {
+			// Merge overlapping ranges, then cut from the last one backwards so earlier positions stay valid.
+			const ranges = [...op.ranges].filter((r) => r.endMs - r.startMs > 1).sort((a, b) => a.startMs - b.startMs);
+			const merged: { startMs: number; endMs: number }[] = [];
+			for (const r of ranges) {
+				const last = merged.at(-1);
+				if (last && r.startMs <= last.endMs) last.endMs = Math.max(last.endMs, r.endMs);
+				else merged.push({ ...r });
+			}
+			const affected = new Set(op.trackIds ?? data.tracks.filter((t) => !t.locked).map((t) => t.id));
+			let next = data;
+			let removed = 0;
+			for (const range of [...merged].reverse()) {
+				const width = range.endMs - range.startMs;
+				for (const edge of [range.endMs, range.startMs]) {
+					for (const c of next.clips) {
+						if (!affected.has(c.trackId) || edge <= c.startMs + 1 || edge >= clipEnd(c) - 1) continue;
+						next = splitOne(next, c, edge).data;
+					}
+				}
+				next = {
+					...next,
+					clips: next.clips
+						.filter((c) => !(affected.has(c.trackId) && c.startMs >= range.startMs - 1 && clipEnd(c) <= range.endMs + 1))
+						.map((c) => (affected.has(c.trackId) && c.startMs >= range.endMs - 1 ? { ...c, startMs: Math.max(0, Math.round(c.startMs - width)) } : c)),
+					lines: next.lines.map((l) => (l.startMs >= range.endMs ? { ...l, startMs: Math.round(l.startMs - width) } : l)),
+					markers: next.markers.map((m) => (m.atMs >= range.endMs ? { ...m, atMs: Math.round(m.atMs - width) } : m)),
+				};
+				removed += width;
+			}
+			return { data: next, summary: `Removed ${merged.length} range(s), ${sec(removed)} in total` };
+		}
+		case "detachAudio": {
+			const c = clip(data, op.id);
+			if (c.type !== "media") throw new Error("Only media clips have audio.");
+			const a = asset(data, c.assetId);
+			if (a.kind !== "video" || !a.hasAudio) throw new Error(`"${a.name}" has no audio to detach.`);
+			let next = data;
+			let trackId = op.trackId ?? next.tracks.find((t) => t.kind === "audio" && !t.voiceover && !t.locked && !next.clips.some((x) => x.trackId === t.id && x.startMs < clipEnd(c) && clipEnd(x) > c.startMs))?.id;
+			if (!trackId) {
+				const created = applyOp(next, { type: "addTrack", kind: "audio", name: "Detached audio" });
+				next = created.data;
+				trackId = created.created?.[0];
+			}
+			if (!trackId) throw new Error("No audio track available.");
+			const audio: MediaClip = { ...c, id: newId("c"), trackId, transform: { ...DEFAULT_TRANSFORM }, lineId: undefined, name: `${c.name ?? a.name} (audio)` };
+			next = { ...next, clips: [...next.clips.map((x) => (x.id === c.id ? { ...c, volume: 0 } : x)), validateClip(next, audio)] };
+			return { data: next, summary: `Detached the audio of ${c.name ?? a.name}`, created: [audio.id] };
+		}
 		case "setLines": {
 			const lines = sortLines(op.lines.map(normaliseLine));
 			assertUnique(lines.map((l) => l.id), "line");

@@ -7,6 +7,7 @@ import { contract, type MethodName } from "./control/contract";
 import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
+import type { TextRender } from "./core/exporter";
 import { resolveInProject } from "./core/project";
 import { ProjectStore } from "./core/store";
 import type { EditorCommand, RecorderStatus, TextClip } from "./core/types";
@@ -51,17 +52,29 @@ function askWindow<T>(command: (requestId: string) => EditorCommand, timeoutMs =
 	});
 }
 
-async function renderText(clips: TextClip[]): Promise<Record<string, string>> {
-	const images = await askWindow<Record<string, string>>((requestId) => ({ type: "renderText", requestId, clipIds: clips.map((c) => c.id) }), 120000);
-	const dir = path.join(store.cacheDir(), "text");
-	await fs.mkdir(dir, { recursive: true });
-	const files: Record<string, string> = {};
-	for (const [id, dataUrl] of Object.entries(images)) {
-		const file = path.join(dir, `${id}.png`);
-		await fs.writeFile(file, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ""), "base64"));
-		files[id] = file;
+async function renderText(clips: TextClip[]): Promise<Record<string, TextRender>> {
+	const fps = store.current.canvas.fps;
+	const images = await askWindow<Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }>>(
+		(requestId) => ({ type: "renderText", requestId, clipIds: clips.map((c) => c.id), fps }),
+		300000,
+	);
+	const root = path.join(store.cacheDir(), "text");
+	const out: Record<string, TextRender> = {};
+	for (const [id, image] of Object.entries(images)) {
+		if (image.frames?.length) {
+			const dir = path.join(root, id);
+			await fs.rm(dir, { recursive: true, force: true });
+			await fs.mkdir(dir, { recursive: true });
+			await Promise.all(image.frames.map((frame, i) => fs.writeFile(path.join(dir, `${String(i).padStart(5, "0")}.png`), Buffer.from(frame))));
+			out[id] = { kind: "sequence", pattern: path.join(dir, "%05d.png"), fps };
+		} else if (image.still) {
+			await fs.mkdir(root, { recursive: true });
+			const file = path.join(root, `${id}.png`);
+			await fs.writeFile(file, Buffer.from(image.still));
+			out[id] = { kind: "still", file };
+		}
 	}
-	return files;
+	return out;
 }
 
 async function captureFrame(atMs: number): Promise<string> {

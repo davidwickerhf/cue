@@ -50,6 +50,16 @@ export interface Track {
 	volume: number;
 	/** The track new voiceover takes are placed on. */
 	voiceover?: boolean;
+	/** Lower this track while the voiceover speaks. */
+	duck?: boolean;
+}
+
+export interface Crop {
+	/** Share of the source removed from each edge, 0–0.45. */
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
 }
 
 export interface Transform {
@@ -59,6 +69,7 @@ export interface Transform {
 	/** 1 fits the canvas. */
 	scale: number;
 	opacity: number;
+	crop: Crop;
 }
 
 export interface MediaClip {
@@ -77,6 +88,8 @@ export interface MediaClip {
 	fadeInMs: number;
 	fadeOutMs: number;
 	transform: Transform;
+	/** Reduce background noise in this clip's audio. */
+	denoise: boolean;
 	/** Voiceover clips remember the script line they belong to. */
 	lineId?: string;
 	name?: string;
@@ -177,6 +190,12 @@ export interface ExportSettings {
 	voiceoverFile: string;
 	videoFile: string;
 	videoQuality: "draft" | "standard" | "high";
+	codec: "h264" | "hevc" | "prores";
+	/** Use the GPU encoder (VideoToolbox on macOS) for H.264/HEVC. */
+	hardware: boolean;
+	/** Output size relative to the canvas. */
+	scale: number;
+	captionsFile: string;
 }
 
 export interface AiSettings {
@@ -291,5 +310,5 @@ export type EditorCommand =
 	| { type: "pause" }
 	| { type: "seek"; ms: number }
 	| { type: "previewAsset"; assetId: string }
-	| { type: "renderText"; requestId: string; clipIds: string[] }
+	| { type: "renderText"; requestId: string; clipIds: string[]; fps: number }
 	| { type: "captureFrame"; requestId: string; atMs: number };

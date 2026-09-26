@@ -4,6 +4,7 @@ import path from "node:path";
 import { DEFAULT_TEXT_STYLE, type LineInput, clipEnd, speechOf } from "./core/project";
 import { parseSrt } from "./core/srt";
 import type { AiCredentials } from "./core/ai";
+import type { TextRender } from "./core/exporter";
 import type { ProjectStore } from "./core/store";
 import type {
 	Actor,
@@ -31,7 +32,7 @@ export interface ControllerHooks {
 	sendCommand: (command: EditorCommand) => boolean;
 	focusWindow: () => void;
 	/** Rasterise text clips to full-canvas PNGs (editor window). */
-	renderText: (clips: TextClip[]) => Promise<Record<string, string>>;
+	renderText: (clips: TextClip[]) => Promise<Record<string, TextRender>>;
 	/** PNG of the preview at a moment (editor window). */
 	captureFrame: (atMs: number) => Promise<string>;
 	credentials: () => Promise<AiCredentials | null>;
@@ -208,6 +209,14 @@ export class Controller extends EventEmitter {
 				const result = this.store.apply({ type: "removeClips", ...input }, actor);
 				this.selectedClipIds = this.selectedClipIds.filter((id) => !input.ids.includes(id));
 				return result;
+			}
+			case "detach_audio":
+				return this.store.apply({ type: "detachAudio", ...parseInput("detach_audio", params) }, actor);
+			case "remove_ranges":
+				return this.store.apply({ type: "removeRanges", ...parseInput("remove_ranges", params) }, actor);
+			case "remove_silence": {
+				const input = parseInput("remove_silence", params);
+				return this.job(input.dryRun ? "Finding pauses" : "Removing pauses", () => this.store.removeSilence(actor, input));
 			}
 			case "duplicate_clips":
 				return this.store.apply({ type: "duplicateClips", ...parseInput("duplicate_clips", params) }, actor);

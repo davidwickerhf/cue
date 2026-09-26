@@ -34,6 +34,10 @@ export const DEFAULT_EXPORT: ExportSettings = {
 	voiceoverFile: "export/voiceover.wav",
 	videoFile: "export/{name}.mp4",
 	videoQuality: "standard",
+	codec: "h264",
+	hardware: true,
+	scale: 1,
+	captionsFile: "export/{name}.srt",
 };
 
 export const DEFAULT_AI: AiSettings = {
@@ -44,7 +48,8 @@ export const DEFAULT_AI: AiSettings = {
 	imageModel: "gpt-image-1",
 };
 
-export const DEFAULT_TRANSFORM: Transform = { x: 0.5, y: 0.5, scale: 1, opacity: 1 };
+export const NO_CROP = { left: 0, top: 0, right: 0, bottom: 0 };
+export const DEFAULT_TRANSFORM: Transform = { x: 0.5, y: 0.5, scale: 1, opacity: 1, crop: NO_CROP };
 
 export const DEFAULT_TEXT_STYLE: TextStyle = {
 	fontFamily: "DM Sans Variable",
@@ -82,11 +87,19 @@ export const lineInputSchema = z.object({
 });
 export type LineInput = z.infer<typeof lineInputSchema>;
 
+export const cropSchema = z.object({
+	left: z.number().min(0).max(0.45),
+	top: z.number().min(0).max(0.45),
+	right: z.number().min(0).max(0.45),
+	bottom: z.number().min(0).max(0.45),
+});
+
 export const transformSchema = z.object({
 	x: z.number().min(-1).max(2),
 	y: z.number().min(-1).max(2),
 	scale: z.number().min(0.05).max(10),
 	opacity: z.number().min(0).max(1),
+	crop: cropSchema.default(NO_CROP),
 });
 
 export const textStyleSchema = z.object({
@@ -125,6 +138,10 @@ export const exportSchema = z.object({
 	voiceoverFile: z.string().min(1),
 	videoFile: z.string().min(1),
 	videoQuality: z.enum(["draft", "standard", "high"]),
+	codec: z.enum(["h264", "hevc", "prores"]),
+	hardware: z.boolean(),
+	scale: z.number().min(0.1).max(2),
+	captionsFile: z.string().min(1),
 });
 
 export const aiSchema = z.object({
@@ -166,6 +183,7 @@ const trackSchema = z.object({
 	hidden: z.boolean().default(false),
 	volume: z.number().min(0).max(2).default(1),
 	voiceover: z.boolean().optional(),
+	duck: z.boolean().optional(),
 });
 
 const mediaClipSchema = z.object({
@@ -181,6 +199,7 @@ const mediaClipSchema = z.object({
 	fadeInMs: ms.default(0),
 	fadeOutMs: ms.default(0),
 	transform: transformSchema.default(DEFAULT_TRANSFORM),
+	denoise: z.boolean().default(false),
 	lineId: z.string().optional(),
 	name: z.string().max(120).optional(),
 });
@@ -268,10 +287,10 @@ function pick<T extends object>(defaults: T, raw: Partial<T>): T {
 
 export function defaultTracks(): Track[] {
 	return [
-		{ id: "V1", kind: "video", name: "Video", muted: false, locked: false, hidden: false, volume: 1 },
 		{ id: "T1", kind: "text", name: "Text", muted: false, locked: false, hidden: false, volume: 1 },
+		{ id: "V1", kind: "video", name: "Video", muted: false, locked: false, hidden: false, volume: 1 },
 		{ id: "A1", kind: "audio", name: "Voiceover", muted: false, locked: false, hidden: false, volume: 1, voiceover: true },
-		{ id: "A2", kind: "audio", name: "Music", muted: false, locked: false, hidden: false, volume: 0.6 },
+		{ id: "A2", kind: "audio", name: "Music", muted: false, locked: false, hidden: false, volume: 0.6, duck: true },
 	];
 }
 
@@ -392,6 +411,7 @@ export function takeClip(asset: Asset, trackId: string, padMs: number, lineStart
 		fadeInMs: 0,
 		fadeOutMs: 0,
 		transform: { ...DEFAULT_TRANSFORM },
+		denoise: false,
 		lineId: asset.lineId,
 		name: asset.lineId ? `${asset.lineId} · ${asset.name}` : asset.name,
 	};

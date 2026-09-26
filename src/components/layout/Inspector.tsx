@@ -96,6 +96,8 @@ function Nothing({ count }: { count: number }) {
 							["Record line", "R"],
 							["Step frame · second", "← · ⇧←"],
 							["Marker", "M"],
+							["Shuttle", "J · K · L"],
+							["In · out · play range", "I · O · /"],
 						] as const
 					).map(([label, keys]) => (
 						<div key={label} className="contents">
@@ -194,8 +196,26 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 							<NumberInput value={clip.transform.y} scale={0.01} digits={0} step={1} suffix="%" onCommit={(y) => patch({ transform: { y } })} />
 						</Field>
 					</div>
-					<Button size="sm" variant="ghost" className="h-7 self-start text-[12px]" onPress={() => patch({ transform: { x: 0.5, y: 0.5, scale: 1, opacity: 1 } })}>
+					<Button size="sm" variant="ghost" className="h-7 self-start text-[12px]" onPress={() => patch({ transform: { x: 0.5, y: 0.5, scale: 1, opacity: 1, crop: { left: 0, top: 0, right: 0, bottom: 0 } } })}>
 						Reset
+					</Button>
+				</Section>
+			)}
+			{visual && (
+				<Section title="Crop">
+					<div className="grid grid-cols-2 gap-2">
+						{(["left", "right", "top", "bottom"] as const).map((edge) => (
+							<Field key={edge} label={edge[0].toUpperCase() + edge.slice(1)}>
+								<NumberInput value={clip.transform.crop[edge]} scale={0.01} digits={0} step={1} min={0} max={0.45} suffix="%" onCommit={(v) => patch({ transform: { crop: { [edge]: v } } })} />
+							</Field>
+						))}
+					</div>
+				</Section>
+			)}
+			{visual && asset?.kind === "video" && asset.hasAudio && clip.volume > 0 && (
+				<Section>
+					<Button size="sm" variant="secondary" className="h-7 text-[12px]" onPress={() => void run("detach_audio", { id: clip.id })}>
+						Detach audio to its own track
 					</Button>
 				</Section>
 			)}

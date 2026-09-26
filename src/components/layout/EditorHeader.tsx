@@ -15,7 +15,7 @@ export function EditorHeader() {
 	if (!project) return null;
 	const agentActive = !!agent?.lastSeenAt && Date.now() - Date.parse(agent.lastSeenAt) < 5 * 60 * 1000;
 
-	const exportAs = async (kind: "video" | "voiceover" | "stems" | "audio") => {
+	const exportAs = async (kind: "video" | "voiceover" | "stems" | "audio" | "captions") => {
 		notify(`Exporting ${kind}…`);
 		const report = await run<{ outputs: string[]; missing: string[] }>("export", { kind });
 		if (!report) return;
@@ -92,7 +92,10 @@ export function EditorHeader() {
 					<Dropdown.Popover placement="bottom end" className="min-w-[240px]">
 						<Dropdown.Menu aria-label="Export" onAction={(key) => void exportAs(key as "video")}>
 							<Dropdown.Item id="video" textValue="Video">
-								<ExportItem title="Video" body={`MP4 · ${project.data.canvas.width}×${project.data.canvas.height} · ${project.data.export.videoQuality}`} />
+								<ExportItem
+									title="Video"
+									body={`${project.data.export.codec === "prores" ? "MOV · ProRes" : `MP4 · ${project.data.export.codec.toUpperCase()}`} · ${Math.round(project.data.canvas.width * project.data.export.scale)}×${Math.round(project.data.canvas.height * project.data.export.scale)} · ${project.data.export.videoQuality}`}
+								/>
 							</Dropdown.Item>
 							<Dropdown.Item id="voiceover" textValue="Voiceover">
 								<ExportItem title="Voiceover track" body="WAV, full length" />
@@ -102,6 +105,9 @@ export function EditorHeader() {
 							</Dropdown.Item>
 							<Dropdown.Item id="audio" textValue="Audio mix">
 								<ExportItem title="Audio mix" body="WAV, every audible track" />
+							</Dropdown.Item>
+							<Dropdown.Item id="captions" textValue="Captions">
+								<ExportItem title="Captions" body="SRT and VTT from the caption clips" />
 							</Dropdown.Item>
 						</Dropdown.Menu>
 					</Dropdown.Popover>

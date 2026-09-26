@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type AiCredentials, chunkCaptions, generateImage, synthesizeSpeech, transcribe } from "./ai";
-import { exportAudioMix, exportStems, exportVideo, exportVoiceover, type ExportReport } from "./exporter";
-import { analyseSpeech, computePeaks, extractThumbnails, kindOf, probe, toWav } from "./media";
+import { exportAudioMix, exportCaptions, exportStems, exportVideo, exportVoiceover, type ExportReport, type TextRender } from "./exporter";
+import { analyseSpeech, computePeaks, detectSilences, extractThumbnails, kindOf, probe, toWav } from "./media";
 import { type InternalOp, type Op, applyOp } from "./ops";
 import {
 	DEFAULT_TEXT_STYLE,
@@ -43,7 +43,7 @@ export interface StoreOptions {
 	recentFile: string;
 }
 
-type TextRenderer = (clips: TextClip[]) => Promise<Record<string, string>>;
+type TextRenderer = (clips: TextClip[]) => Promise<Record<string, TextRender>>;
 
 /**
  * Owns the open project. Every edit goes through `apply`, which validates it,
@@ -418,6 +418,47 @@ export class ProjectStore extends EventEmitter {
 		return lines.length;
 	}
 
+	/**
+	 * Finds silent stretches in the audio of the given clips (default: the
+	 * voiceover and video tracks) and cuts them out of every track, closing
+	 * the gaps so everything stays in sync.
+	 */
+	async removeSilence(
+		actor: Actor,
+		options: { clipIds?: string[]; thresholdDb: number; minSilenceMs: number; keepMs: number; dryRun?: boolean },
+	): Promise<{ ranges: { startMs: number; endMs: number }[]; removedMs: number }> {
+		const data = this.current;
+		const clips = data.clips.filter((c): c is import("./types").MediaClip => {
+			if (c.type !== "media") return false;
+			if (options.clipIds) return options.clipIds.includes(c.id);
+			const track = data.tracks.find((t) => t.id === c.trackId);
+			const asset = data.assets.find((a) => a.id === c.assetId);
+			return !!track && !track.muted && !!asset?.hasAudio && (track.kind === "video" || !!track.voiceover);
+		});
+		if (clips.length === 0) throw new Error("No clips with audio to analyse.");
+		// A moment is removable only if every analysed clip covering it is silent.
+		const silentByClip = await Promise.all(
+			clips.map(async (c) => {
+				const found = await detectSilences(this.assetPath(c.assetId), { thresholdDb: options.thresholdDb, minSilenceMs: options.minSilenceMs, fromMs: c.inMs, durationMs: c.durationMs * c.speed });
+				return found
+					.map((r) => ({ startMs: c.startMs + (r.startMs - c.inMs) / c.speed + options.keepMs, endMs: c.startMs + (r.endMs - c.inMs) / c.speed - options.keepMs }))
+					.filter((r) => r.endMs - r.startMs > 40);
+			}),
+		);
+		const covered = (ms: number) => clips.filter((c) => ms >= c.startMs && ms < c.startMs + c.durationMs);
+		const candidates = silentByClip.flat().sort((a, b) => a.startMs - b.startMs);
+		const ranges: { startMs: number; endMs: number }[] = [];
+		for (const r of candidates) {
+			const mid = (r.startMs + r.endMs) / 2;
+			const owners = covered(mid);
+			const allSilent = owners.every((c) => silentByClip[clips.indexOf(c)].some((x) => x.startMs <= r.startMs + 1 && x.endMs >= r.endMs - 1));
+			if (allSilent && !ranges.some((x) => x.startMs < r.endMs && x.endMs > r.startMs)) ranges.push({ startMs: Math.round(r.startMs), endMs: Math.round(r.endMs) });
+		}
+		const removedMs = ranges.reduce((sum, r) => sum + r.endMs - r.startMs, 0);
+		if (!options.dryRun && ranges.length) this.apply({ type: "removeRanges", ranges }, actor);
+		return { ranges, removedMs };
+	}
+
 	async peaks(assetId: string): Promise<number[]> {
 		const cache = path.join(this.projectDir, CACHE_DIR, "peaks", `${assetId}.json`);
 		try {
@@ -454,7 +495,7 @@ export class ProjectStore extends EventEmitter {
 		return { dir: this.projectDir, data: this.current, renderText, onProgress };
 	}
 
-	async export(kind: "stems" | "voiceover" | "audio" | "video", out: string | undefined, actor: Actor, renderText?: TextRenderer): Promise<ExportReport> {
+	async export(kind: "stems" | "voiceover" | "audio" | "video" | "captions", out: string | undefined, actor: Actor, renderText?: TextRenderer): Promise<ExportReport> {
 		const ctx = this.exportContext(renderText);
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
@@ -464,7 +505,9 @@ export class ProjectStore extends EventEmitter {
 					? await exportVoiceover(ctx, target)
 					: kind === "audio"
 						? await exportAudioMix(ctx, target ?? path.join(this.projectDir, "export", "mix.wav"))
-						: await exportVideo(ctx, target);
+						: kind === "captions"
+							? await exportCaptions(ctx, target)
+							: await exportVideo(ctx, target);
 		this.log(actor, `Exported ${kind} → ${report.outputs.map((f) => path.basename(f)).join(", ")}${report.missing.length ? ` (no take yet: ${report.missing.join(", ")})` : ""}`);
 		return report;
 	}

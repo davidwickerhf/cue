@@ -25,7 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Clip, LineView, MediaClip, ProjectSnapshot, Track } from "../../../electron/core/types";
-import { run } from "../../lib/api";
+import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { editor, useApp, useProject } from "../../lib/state";
@@ -417,6 +417,19 @@ function Toolbar({ project, viewWidth, scroller, selectedLine }: { project: Proj
 				>
 					Ripple
 				</button>
+				<button
+					type="button"
+					onClick={async () => {
+						const preview = await run<{ ranges: unknown[]; removedMs: number }>("remove_silence", { dryRun: true });
+						if (!preview) return;
+						if (preview.ranges.length === 0) return notify("No pauses long enough to remove.");
+						if (window.confirm(`Remove ${preview.ranges.length} pauses (${(preview.removedMs / 1000).toFixed(1)} s) from every track?`)) void run("remove_silence", {});
+					}}
+					className="h-7 rounded-md px-2 text-[11px] font-medium text-muted transition hover:bg-default hover:text-foreground"
+					title="Find pauses in the speech and cut them from every track"
+				>
+					Remove pauses
+				</button>
 			</div>
 
 			<div className="flex-1" />
@@ -512,7 +525,7 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 	const index = project.data.tracks.findIndex((t) => t.id === track.id);
 	return (
 		<div className="group flex h-full items-center gap-1 pr-1.5 pl-3">
-			<Icon className={cn("size-3.5 shrink-0", track.kind === "video" ? "text-clip-video" : track.kind === "audio" ? (track.voiceover ? "text-clip-voice" : "text-clip-audio") : "text-clip-text")} />
+			<Icon className={cn("size-3.5 shrink-0", track.kind === "video" ? "text-track-video" : track.kind === "audio" ? (track.voiceover ? "text-track-voice" : "text-track-audio") : "text-track-text")} />
 			<div className="min-w-0 flex-1">
 				<input
 					key={track.name}
@@ -524,7 +537,7 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 					}}
 					className="w-full truncate rounded bg-transparent px-1 text-[12px] font-semibold outline-none focus:bg-default"
 				/>
-				{track.kind === "audio" && track.voiceover && <p className="px-1 text-[10px] text-clip-voice">Voiceover</p>}
+				{track.kind === "audio" && (track.voiceover || track.duck) && <p className="px-1 text-[10px] text-muted">{track.voiceover ? "Voiceover" : "Ducks under voice"}</p>}
 			</div>
 			<div className="flex items-center">
 				{track.kind !== "text" && (
@@ -551,6 +564,7 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 								if (key === "up") void run("move_track", { id: track.id, index: Math.max(0, index - 1) });
 								if (key === "down") void run("move_track", { id: track.id, index: index + 1 });
 								if (key === "voiceover") patch({ voiceover: true });
+								if (key === "duck") patch({ duck: !track.duck });
 								if (key === "vol-50") patch({ volume: 0.5 });
 								if (key === "vol-100") patch({ volume: 1 });
 								if (key === "vol-150") patch({ volume: 1.5 });
@@ -568,6 +582,11 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 									<span className="flex items-center gap-2">
 										<Star className="size-3.5" /> Use for voiceover takes
 									</span>
+								</Dropdown.Item>
+							) : null}
+							{track.kind === "audio" && !track.voiceover ? (
+								<Dropdown.Item id="duck" textValue="Duck under voiceover">
+									{track.duck ? "✓ " : ""}Lower while the voiceover speaks
 								</Dropdown.Item>
 							) : null}
 							{track.kind !== "text" ? (
@@ -625,6 +644,8 @@ function AddTrackRow() {
 }
 
 function Ruler({ width, pxPerMs, markers, onDown }: { width: number; pxPerMs: number; markers: ProjectSnapshot["data"]["markers"]; onDown: (e: ReactPointerEvent) => void }) {
+	const inPoint = editor.use((s) => s.inPoint);
+	const outPoint = editor.use((s) => s.outPoint);
 	const steps = [100, 250, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000];
 	const step = steps.find((s) => s * pxPerMs >= 72) ?? 120000;
 	const count = Math.ceil(width / (step * pxPerMs));
@@ -642,6 +663,13 @@ function Ruler({ width, pxPerMs, markers, onDown }: { width: number; pxPerMs: nu
 					</div>
 				);
 			})}
+			{(inPoint !== null || outPoint !== null) && (
+				<div
+					className="pointer-events-none absolute inset-y-0 border-x border-accent bg-accent/15"
+					style={{ left: (inPoint ?? 0) * pxPerMs, width: Math.max(1, ((outPoint ?? width / pxPerMs) - (inPoint ?? 0)) * pxPerMs) }}
+					title="In/out range (I, O, / to play, X to clear)"
+				/>
+			)}
 			{markers.map((m) => (
 				<button
 					key={m.id}
@@ -682,11 +710,11 @@ function Playhead({ pxPerMs, scroller }: { pxPerMs: number; scroller: React.RefO
 // -------------------------------------------------------------------------
 
 const CLIP_TONE: Record<string, string> = {
-	video: "bg-clip-video",
-	image: "bg-clip-image",
-	audio: "bg-clip-audio",
-	voice: "bg-clip-voice",
-	text: "bg-clip-text",
+	video: "bg-track-video",
+	image: "bg-track-image",
+	audio: "bg-track-audio",
+	voice: "bg-track-voice",
+	text: "bg-track-text",
 };
 
 function ClipView({

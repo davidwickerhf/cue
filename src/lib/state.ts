@@ -61,4 +61,7 @@ export const editor = createStore({
 	ripple: false,
 	previewMode: "all" as "all" | "voiceover" | "muted",
 	inspectorOpen: true,
+	/** In and out points for playing or exporting a range. */
+	inPoint: null as number | null,
+	outPoint: null as number | null,
 });
