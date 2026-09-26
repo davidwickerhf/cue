@@ -57,7 +57,7 @@ import type {
 
 /** Calls that only read, so they never wait for a transaction. */
 const READ_ONLY =
-	/^(get_|list_|render_frame$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
+	/^(get_|list_|render_frame$|inspect_edit$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
 
 /** File types each kind of output may have, for paths chosen by an agent. */
 const OUTPUT_TYPES: Record<string, string[]> = {
@@ -538,6 +538,37 @@ export class Controller extends EventEmitter {
 			case "render_frame": {
 				const { atMs } = parseInput("render_frame", params);
 				return { png: await this.hooks.captureFrame(atMs) };
+			}
+			case "inspect_edit": {
+				const { fromMs, toMs, sampleCount } = parseInput("inspect_edit", params);
+				const clips = this.store.current.clips;
+				const durationMs = clips.reduce((end, clip) => Math.max(end, clipEnd(clip)), 0);
+				if (durationMs === 0) throw new Error("The timeline is empty.");
+				const startMs = fromMs ?? 0;
+				const endMs = Math.min(toMs ?? durationMs, durationMs);
+				if (startMs >= endMs) throw new Error("Choose a time range inside the timeline.");
+				const frames = [];
+				for (let i = 0; i < sampleCount; i++) {
+					const atMs = Math.round(startMs + ((i + 0.5) / sampleCount) * (endMs - startMs));
+					frames.push({
+						atMs,
+						png: await this.hooks.captureFrame(atMs),
+						clips: clips
+							.filter((clip) => !clip.disabled && clip.startMs <= atMs && clipEnd(clip) > atMs)
+							.map(({ id, trackId, startMs, durationMs }) => ({
+								id,
+								trackId,
+								startMs,
+								durationMs,
+							})),
+					});
+				}
+				return {
+					durationMs,
+					range: { fromMs: startMs, toMs: endMs },
+					frames,
+					notes: reviewEdit(this.store.current, { offline: this.store.offline() }),
+				};
 			}
 			case "get_activity":
 				return this.store.getActivity().slice(0, parseInput("get_activity", params).limit);
@@ -1217,6 +1248,36 @@ export class Controller extends EventEmitter {
 			}
 			case "list_recipes":
 				return this.recipes();
+			case "list_styles": {
+				const { category, query } = parseInput("list_styles", params);
+				return (await this.recipes())
+					.filter((r) => r.format === "style" || !!r.guide)
+					.filter((r) => !category || r.category?.toLowerCase() === category.toLowerCase())
+					.filter(
+						(r) =>
+							!query ||
+							`${r.name} ${r.description} ${r.category ?? ""}`
+								.toLowerCase()
+								.includes(query.toLowerCase()),
+					)
+					.map(({ id, name, category, description, guide }) => ({
+						id,
+						name,
+						category,
+						description,
+						requires: guide?.requires ?? [],
+					}));
+			}
+			case "show_style": {
+				const { id } = parseInput("show_style", params);
+				const style = (await this.recipes()).find(
+					(r) => r.id === id && (r.format === "style" || !!r.guide),
+				);
+				if (!style) throw new Error(`No style "${id}". Use list_styles to browse them.`);
+				if (!this.hooks.sendCommand({ type: "showStyle", id }))
+					throw new Error("The Cue window is not open.");
+				return style;
+			}
 			case "run_recipe": {
 				const { id, dryRun } = parseInput("run_recipe", params);
 				return this.runRecipe(id, dryRun, actor);
@@ -1349,6 +1410,11 @@ export class Controller extends EventEmitter {
 	private async runRecipe(id: string, dryRun: boolean, actor: Actor) {
 		const recipe = (await this.recipes()).find((r) => r.id === id);
 		if (!recipe) throw new Error(`No recipe "${id}". list_recipes shows them.`);
+		if (recipe.steps.length === 0)
+			throw new Error(
+				`"${recipe.name}" is a style guide. Open it in the Style library or ask an agent to follow it.`,
+			);
+		const startingStep = this.store.historyEntries(1)[0]?.n;
 		const context = () =>
 			recipeContext(this.store.current, {
 				playheadMs: this.recorder.currentMs,
@@ -1370,9 +1436,15 @@ export class Controller extends EventEmitter {
 						done.push({ step: index + 1, tool: call.tool, label: call.label, skipped: message });
 						continue;
 					}
+					let rolledBack = false;
+					if (done.some((step) => !step.skipped) && startingStep !== undefined) {
+						await this.store.restoreHistory(startingStep, actor);
+						rolledBack = true;
+					}
 					return {
 						recipe: recipe.name,
 						ok: false,
+						rolledBack,
 						done,
 						failed: { step: index + 1, tool: call.tool, label: call.label, error: message },
 					};

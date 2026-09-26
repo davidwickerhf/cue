@@ -71,6 +71,7 @@ export function RecordDialog() {
 
 	const load = async () => {
 		setLoading(true);
+		setError(null);
 		try {
 			const found = await window.cue.captureSources();
 			setSources(found);
@@ -81,6 +82,9 @@ export function RecordDialog() {
 						? c.sourceId
 						: (found.sources.find((s) => s.kind === "screen")?.id ?? null),
 			}));
+		} catch (cause) {
+			setSources(null);
+			setError(`Could not list recording sources: ${(cause as Error).message}`);
 		} finally {
 			setLoading(false);
 		}

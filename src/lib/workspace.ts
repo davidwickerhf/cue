@@ -18,6 +18,8 @@ export interface Layout {
 	/** Width of the timeline's track headers. */
 	headerWidth: number;
 	timelineHeight: number;
+	/** Whether the timeline panel is visible; its height is kept when hidden. */
+	timelineOpen: boolean;
 	panel: SidebarPanel;
 	sidebarOpen: boolean;
 	inspectorOpen: boolean;
@@ -48,6 +50,7 @@ const BASE: Layout = {
 	inspectorWidth: 300,
 	headerWidth: 236,
 	timelineHeight: 320,
+	timelineOpen: true,
 	panel: "media",
 	sidebarOpen: true,
 	inspectorOpen: true,

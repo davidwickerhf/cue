@@ -105,6 +105,7 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [x] One-click variants (lengths and aspect ratios)
 - [x] Animated word-by-word captions
 - [x] Recipes: reusable edit templates for people and agents
+- [x] Style library: eight guided editing structures, browsable in Cue and on the website; MCP agents can list and show a style, then apply it with Cue tools
 - [x] Music-driven montage (beat_montage: cuts on every 1, 2 or 4 beats, fresh shots first, push-ins on stills)
 - [x] Auto-mix: levelled dialogue and ML noise removal (auto_mix and the mixer's Auto-mix and LUFS readout; per-clip denoise Off / Light / Voice (ML) with RNNoise, heard in the preview too)
 

@@ -11,7 +11,7 @@ Cue is a desktop video editor built so that you, an agent, can do anything the u
 1. get_state: the open project (tracks, media count, markers, script lines, settings), the selection, and view (playhead, in/out marks, open panel). If project is null, use list_projects then open_project, or create_project.
 2. get_timeline (optionally fromMs/toMs/trackId): every clip with its timing.
 3. list_media: the media items (assets) you can place, with their bins, tags and ratings.
-Look before and after you edit: render_frame(atMs) returns a PNG path of exactly what the viewer shows.
+Look before and after you edit: inspect_edit returns several actual viewer images, active clips and director's notes across a range. render_frame(atMs) returns one actual image and its PNG path for a closer look.
 
 ## Units and ids
 - All times are milliseconds (ms). Timeline time is where something plays in the edit; source time (inMs) is where in the media file a clip starts.
@@ -45,8 +45,8 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 - Shape: set_canvas, reframe (e.g. 1080×1920 for vertical; then adjust transform.x per clip to follow the subject).
 - Markers: add_marker, update_marker, remove_marker, clear_markers.
 - Media problems: get_state.offlineMedia lists missing files; relink_media or find_offline_media fix them.
-- Review: review_edit returns director's notes on the open timeline (flash frames, jump cuts, static shots, rushed or tiny titles, abrupt music, long pauses, missing captions, offline media), each with an optional fix {tool, params}. Run it when you finish an edit and apply the fixes that make sense by calling fix.tool with fix.params.
-- Recipes: list_recipes shows reusable edits (Social clip, Podcast polish, Punchy intro, Clean up and the user's own); run_recipe runs one (dryRun first to see the resolved calls); save_recipe stores a sequence of tool calls, with placeholders such as {playheadMs}, {selectedClipIds} or {musicAssetId}, so it can be repeated on other projects; delete_recipe removes one.
+- Review: inspect_edit lets you see sampled frames along with active clips and director's notes. review_edit returns a fuller list of notes on the open timeline (flash frames, jump cuts, static shots, rushed or tiny titles, abrupt music, long pauses, missing captions, offline media), each with an optional fix {tool, params}. Run it when you finish an edit and apply the fixes that make sense by calling fix.tool with fix.params.
+- Recipes and styles: list_styles browses the style library by category or query; show_style selects one in the editor and returns its full guide. Inspect the project and footage, then carry out its goal, structure and directions adaptively with Cue tools. Tell the user when required footage is missing and check the result against its review criteria. list_recipes also shows quick recipes; use run_recipe with dryRun first for those. Do not call run_recipe on a style with no steps. save_recipe can store a list of calls or a style guide (or both); delete_recipe removes a saved one.
 
 ## Organising media
 The media library has bins (folders, one level of sub-bins), tags, star ratings (1–5; 5 is a favourite) and a note per item. list_media returns each item's bin, tags, rating, note, where it is used and technical info (codec, frame rate, bitrate, file size, audio channels, recording date); pass filter {binId, tag, kind, unused, minRating, query} to narrow it, e.g. {unused: true} for footage not yet in the edit or {query: "drone"} to search names, tags, notes and transcripts. list_bins shows the bins. Organise with create_bin, rename_bin, remove_bin (its media moves up a level, nothing is deleted), move_media (binId null for the top level) and tag_media (add or remove tags, set rating or note for several items at once). rename_media renames an item; remove_media takes several ids at once. Keep to the user's own naming when they already have bins or tags.
@@ -66,7 +66,7 @@ export kinds: video (optional range {startMs,endMs}), audio, voiceover, stems (o
 Projects are .cueproj files: open_project, create_project, save_project_as, close_project, list_projects, import_timeline (OpenTimelineIO). Project-level settings: update_settings (recording), update_export, update_ai (voice, models). App-wide: get_app_settings/update_app_settings (theme, providers such as macOS voices, local Whisper, Ollama, editing defaults); API keys and agent access are the user's to change.
 
 ## Good practice
-- Prefer precise, small edits; check with get_timeline or render_frame afterwards.
+- Prefer precise, small edits; check with get_timeline, render_frame or inspect_edit afterwards.
 - Every edit is one undo step; if something goes wrong, call undo rather than patching around it.
 - get_history shows every change ever made to the project (also in earlier sessions, by the user or agents); restore_history goes back to any step.
 - Locked tracks reject edits: unlock only if the user asked.

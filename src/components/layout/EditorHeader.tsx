@@ -4,6 +4,7 @@ import {
 	ArrowCounterClockwise,
 	CaretLeft,
 	Rectangle,
+	FilmStrip,
 	SidebarSimple,
 	SquareSplitHorizontal,
 } from "@phosphor-icons/react";
@@ -23,6 +24,7 @@ import { WorkspaceMenu } from "./WorkspaceMenu";
 export function EditorHeader() {
 	const project = useProject();
 	const dual = layout.use((l) => l.overlays.sourceTwoUp);
+	const timelineOpen = layout.use((l) => l.timelineOpen);
 	const agent = useApp((s) => s.agent);
 	const jobs = useApp((s) => s.jobs) ?? [];
 	const inspectorOpen = editor.use((s) => s.inspectorOpen);
@@ -124,6 +126,13 @@ export function EditorHeader() {
 					onPress={() => void run("redo")}
 				>
 					<ArrowClockwise className="size-4" />
+				</IconButton>
+				<IconButton
+					label={timelineOpen ? "Hide timeline" : "Show timeline"}
+					active={timelineOpen}
+					onPress={() => layout.set({ timelineOpen: !timelineOpen })}
+				>
+					<FilmStrip className="size-4" />
 				</IconButton>
 				<IconButton
 					label={dual ? "Single viewer" : "Dual viewer: source monitor beside the viewer"}

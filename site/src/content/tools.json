@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 146,
+	"count": 149,
 	"groups": [
 		{
 			"title": "Overview",
@@ -38,12 +38,34 @@
 				},
 				{
 					"name": "render_frame",
-					"description": "Render what the viewer sees at a moment as a PNG and return its path, so you can look at the edit (text layout, framing, captions).",
+					"description": "Show the actual viewer image at a moment, with its PNG path. Use it to inspect framing, text and captions.",
 					"inputs": [
 						{
 							"name": "atMs",
 							"type": "number",
 							"required": true
+						}
+					]
+				},
+				{
+					"name": "inspect_edit",
+					"description": "Inspect the current edit in one call: sampled viewer images across a time range, active clips at each sample, and director's notes about likely issues. Returns actual images as MCP content so you can see the cut. Use get_timeline for exact clip details and render_frame to zoom in on a problem moment.",
+					"inputs": [
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "sampleCount",
+							"type": "integer",
+							"required": false,
+							"default": "4"
 						}
 					]
 				},
@@ -2172,12 +2194,39 @@
 				},
 				{
 					"name": "list_recipes",
-					"description": "Recipes: reusable edits, each a list of tool calls (built-in ones and those saved by the user or agents). Returns id, name, description and steps.",
+					"description": "List quick recipes and style guides. Style guides include a goal, required media, structure, directions and review checks. Follow them adaptively with Cue tools; only quick recipes run automatically.",
 					"inputs": []
 				},
 				{
+					"name": "list_styles",
+					"description": "Browse the style library. Returns each style's id, name, category, description and required footage; use show_style to select one in the editor and read its full guide.",
+					"inputs": [
+						{
+							"name": "category",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "query",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "show_style",
+					"description": "Select a style in Cue's Style library and return its full goal, footage requirements, structure, directions and review checks. Then use the normal Cue editing tools to adapt it to the project.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
 					"name": "run_recipe",
-					"description": "Run a recipe's steps in order on the open project. Placeholders in the params are filled in from the project first. Stops at the first failing step (optional steps are skipped instead) and says which one failed. dryRun returns the resolved calls without running them.",
+					"description": "Run a quick recipe's steps in order on the open project. Style guides without steps are followed by an agent using normal Cue tools instead. Placeholders are filled from the project; dryRun returns resolved calls without running them. On a required-step failure, earlier project edits are restored; optional steps are skipped.",
 					"inputs": [
 						{
 							"name": "id",
@@ -2194,7 +2243,7 @@
 				},
 				{
 					"name": "save_recipe",
-					"description": "Save a recipe (e.g. what you just did, to repeat on other projects). steps: [{tool, params, label?, optional?, each?}]. Params may use placeholders filled in when it runs: {playheadMs}, {selectedClipIds}, {selectedClipId}, {durationMs}, {projectName}, {voiceoverAssetId} (the main speech media), {musicAssetId}, {firstVideoClipId}, {firstMusicClipId}, {voiceClipIds}, {captionSource}. each: '{voiceClipIds}' or '{selectedClipIds}' runs the step once per clip with {clipId} set. Saving with the name of one of your recipes replaces it.",
+					"description": "Save a quick recipe, style guide, or both. A style guide has format 'style' and guide {goal, requires[], structure[], directions[], review[]}; agents follow it adaptively. Repeatable edits use steps [{tool, params, label?, optional?, each?}] and may use {playheadMs}, {selectedClipIds}, {selectedClipId}, {durationMs}, {projectName}, {voiceoverAssetId}, {musicAssetId}, {firstVideoClipId}, {firstMusicClipId}, {voiceClipIds}, {captionSource}. Saving with the same name replaces your recipe.",
 					"inputs": [
 						{
 							"name": "name",
@@ -2206,6 +2255,21 @@
 							"type": "string",
 							"required": false,
 							"default": "\"\""
+						},
+						{
+							"name": "category",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "format",
+							"type": "\"recipe\" | \"style\"",
+							"required": false
+						},
+						{
+							"name": "guide",
+							"type": "object",
+							"required": false
 						},
 						{
 							"name": "steps",

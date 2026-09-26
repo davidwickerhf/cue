@@ -265,6 +265,8 @@ class ScreenCapture {
 				writing = writing.then(async () =>
 					window.cue.captureChunk(id, part, await event.data.arrayBuffer()),
 				);
+				// stop() observes this same promise; suppress an early unhandled-rejection event.
+				void writing.catch(() => {});
 				(recorder as MediaRecorder & { writing?: Promise<void> }).writing = writing;
 			};
 			return recorder;
@@ -317,22 +319,35 @@ class ScreenCapture {
 		}
 		if ((phase !== "recording" && phase !== "paused") || !this.sessionId) return;
 		const id = this.sessionId;
+		const requestId = this.requestId;
 		window.clearInterval(this.timer);
 		this.status.set({ phase: "saving" });
-		await Promise.all(
-			this.recorders.map(
-				(r) =>
-					new Promise<void>((resolve) => {
-						if (r.state === "inactive") return resolve();
-						r.addEventListener("stop", () => resolve(), { once: true });
-						r.stop();
-					}),
-			),
-		);
-		// The final dataavailable fires before stop; wait for every chunk to be written.
-		await Promise.all(
-			this.recorders.map((r) => (r as MediaRecorder & { writing?: Promise<void> }).writing),
-		);
+		try {
+			await Promise.all(
+				this.recorders.map(
+					(r) =>
+						new Promise<void>((resolve) => {
+							if (r.state === "inactive") return resolve();
+							r.addEventListener("stop", () => resolve(), { once: true });
+							r.stop();
+						}),
+				),
+			);
+			// The final dataavailable fires before stop; wait for every chunk to be written.
+			await Promise.all(
+				this.recorders.map((r) => (r as MediaRecorder & { writing?: Promise<void> }).writing),
+			);
+		} catch (error) {
+			const message = `Could not save the recording: ${(error as Error).message}`;
+			this.recorders = [];
+			this.sessionId = null;
+			this.requestId = undefined;
+			this.status.set({ phase: "idle", error: message });
+			this.release();
+			await window.cue.captureCancel(id, message, requestId).catch(() => {});
+			notify(message, "danger");
+			return;
+		}
 		const bubble = !!this.choice?.bubble;
 		const studio = this.choice?.studio ?? null;
 		const clock = {

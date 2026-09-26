@@ -162,6 +162,26 @@ async function rpc(method: MethodName, params: unknown): Promise<unknown> {
 	return body.result;
 }
 
+function toolContent(name: MethodName, result: unknown) {
+	const text = { type: "text" as const, text: JSON.stringify(result, null, 2) };
+	if (name !== "render_frame" && name !== "inspect_edit") return [text];
+	const frames =
+		name === "render_frame"
+			? [{ ...(result as { png: string }), atMs: undefined }]
+			: (result as { frames: { atMs: number; png: string }[] }).frames;
+	return [
+		text,
+		...frames.flatMap((frame) => [
+			{ type: "text" as const, text: `Viewer at ${frame.atMs ?? "requested time"} ms` },
+			{
+				type: "image" as const,
+				data: readFileSync(frame.png).toString("base64"),
+				mimeType: "image/png" as const,
+			},
+		]),
+	];
+}
+
 const server = new McpServer(
 	{ name: "cue", version: VERSION },
 	{
@@ -179,7 +199,7 @@ for (const [name, spec] of Object.entries(contract) as [
 		async (args: unknown) => {
 			try {
 				const result = await rpc(name, args);
-				return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+				return { content: toolContent(name, result) };
 			} catch (error) {
 				return {
 					isError: true,

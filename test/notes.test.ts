@@ -8,9 +8,11 @@ import { applyOp } from "../electron/core/ops";
 import { emptyProject } from "../electron/core/project";
 import {
 	BUILT_IN_RECIPES,
+	loadRecipes,
 	recipeContext,
 	resolveParams,
 	resolveRecipe,
+	saveRecipes,
 } from "../electron/core/recipes";
 import type { AiRuntime } from "../electron/core/runtime";
 import { ProjectStore } from "../electron/core/store";
@@ -180,6 +182,26 @@ describe("director's notes", () => {
 });
 
 describe("recipes", () => {
+	it("keeps an unreadable recipe file intact instead of treating it as an empty library", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-recipe-bad-"));
+		const file = path.join(dir, "recipes.json");
+		await fs.writeFile(file, "{broken");
+		await expect(loadRecipes(file)).rejects.toThrow(/Could not load saved recipes/);
+		expect(await fs.readFile(file, "utf8")).toBe("{broken");
+		await expect(loadRecipes(path.join(dir, "missing.json"))).resolves.toEqual([]);
+		await saveRecipes(path.join(dir, "fresh.json"), []);
+		expect(await fs.readFile(path.join(dir, "fresh.json"), "utf8")).toContain("recipes");
+	});
+
+	it("lists style guides as agent-readable entries, without executable steps", () => {
+		const styles = BUILT_IN_RECIPES.filter((r) => r.format === "style");
+		expect(styles.length).toBeGreaterThanOrEqual(8);
+		for (const style of styles) {
+			expect(style.guide?.structure.length).toBeGreaterThan(0);
+			expect(style.guide?.directions.length).toBeGreaterThan(0);
+			expect(style.steps).toEqual([]);
+		}
+	});
 	it("fills placeholders, keeping lists and numbers whole", () => {
 		const missing = new Set<string>();
 		const out = resolveParams(
@@ -208,7 +230,7 @@ describe("recipes", () => {
 		expect(ctx.musicAssetId).toBe(song.id);
 		expect(ctx.voiceoverAssetId).toBe(voice.id);
 		expect(ctx.captionSource).toBe("voiceover");
-		for (const recipe of BUILT_IN_RECIPES) {
+		for (const recipe of BUILT_IN_RECIPES.filter((r) => r.steps.length > 0)) {
 			const steps = resolveRecipe(recipe, ctx);
 			expect(steps.filter((s) => s.problem)).toEqual([]);
 		}
@@ -223,8 +245,12 @@ describe("recipes", () => {
 		});
 		await store.create({ path: path.join(dir, "P") });
 		store.apply({ type: "addAsset", asset: video }, "user");
+		const commands: unknown[] = [];
 		const controller = new Controller(store, {
-			sendCommand: () => false,
+			sendCommand: (command) => {
+				commands.push(command);
+				return true;
+			},
 			focusWindow: () => {},
 			renderText: async () => ({}),
 			captureFrame: async () => "",
@@ -248,6 +274,15 @@ describe("recipes", () => {
 		expect(saved.id).toBe("mark-and-title");
 		const list = (await controller.call("list_recipes", {}, "agent")) as { id: string }[];
 		expect(list.map((r) => r.id)).toContain("mark-and-title");
+		const styles = (await controller.call("list_styles", { category: "Transitions" }, "agent")) as {
+			id: string;
+		}[];
+		expect(styles.map((r) => r.id)).toContain("style-match-motion");
+		const shown = (await controller.call("show_style", { id: "style-match-motion" }, "agent")) as {
+			guide: { goal: string };
+		};
+		expect(shown.guide.goal).toMatch(/cut feel continuous/);
+		expect(commands).toContainEqual({ type: "showStyle", id: "style-match-motion" });
 
 		const dry = (await controller.call("run_recipe", { id: saved.id, dryRun: true }, "agent")) as {
 			steps: { params: Record<string, unknown>; problem?: string }[];
@@ -264,8 +299,8 @@ describe("recipes", () => {
 		expect(result.ok).toBe(false);
 		expect(result.done).toHaveLength(2);
 		expect(result.failed?.step).toBe(3);
-		expect(store.current.markers.map((m) => m.atMs)).toEqual([2500]);
-		expect(store.current.clips.find((c) => c.type === "text")?.startMs).toBe(2500);
+		expect(store.current.markers).toEqual([]);
+		expect(store.current.clips.find((c) => c.type === "text")).toBeUndefined();
 
 		await expect(
 			controller.call("delete_recipe", { id: "social-clip" }, "agent"),
@@ -276,9 +311,28 @@ describe("recipes", () => {
 		await expect(
 			controller.call("save_recipe", { name: "Nested", steps: [{ tool: "run_recipe" }] }, "agent"),
 		).rejects.toThrow();
+		await expect(
+			controller.call("run_recipe", { id: "style-match-motion" }, "agent"),
+		).rejects.toThrow(/style guide/);
 
 		const notes = (await controller.call("review_edit", {}, "agent")) as { notes: unknown[] };
 		expect(Array.isArray(notes.notes)).toBe(true);
+		store.apply(
+			{
+				type: "addClips",
+				clips: [{ type: "media", trackId: "V1", assetId: video.id, startMs: 0, durationMs: 4000 }],
+			},
+			"user",
+		);
+		const inspection = (await controller.call("inspect_edit", { sampleCount: 2 }, "agent")) as {
+			durationMs: number;
+			frames: { atMs: number; clips: { id: string }[] }[];
+			notes: unknown[];
+		};
+		expect(inspection.durationMs).toBe(4000);
+		expect(inspection.frames.map((frame) => frame.atMs)).toEqual([1000, 3000]);
+		expect(inspection.frames.every((frame) => frame.clips.length === 1)).toBe(true);
+		expect(Array.isArray(inspection.notes)).toBe(true);
 		await store.close("user");
 	});
 });

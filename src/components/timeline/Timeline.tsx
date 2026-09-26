@@ -1062,6 +1062,9 @@ function Toolbar({
 				>
 					Fit
 				</button>
+				<IconButton label="Close timeline" onPress={() => layout.set({ timelineOpen: false })}>
+					<X className="size-4" />
+				</IconButton>
 			</div>
 		</div>
 	);

@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { contract, type MethodName, parseInput } from "../control/contract";
 import { mixRole } from "./audio";
+import styleCatalog from "../../resources/styles/catalog.json";
 import { clipEnd } from "./project";
 import type { MediaClip, ProjectData } from "./types";
 
@@ -37,12 +38,27 @@ export const recipeStepSchema = z.object({
 	optional: z.boolean().optional(),
 });
 
-export const recipeSchema = z.object({
-	id: z.string().min(1).max(80),
-	name: z.string().min(1).max(120),
-	description: z.string().max(1000).default(""),
-	steps: z.array(recipeStepSchema).min(1).max(50),
-});
+export const recipeSchema = z
+	.object({
+		id: z.string().min(1).max(80),
+		name: z.string().min(1).max(120),
+		description: z.string().max(1000).default(""),
+		category: z.string().max(60).optional(),
+		format: z.enum(["recipe", "style"]).optional(),
+		guide: z
+			.object({
+				goal: z.string().min(1).max(1000),
+				requires: z.array(z.string().min(1)).max(12),
+				structure: z.array(z.string().min(1)).min(1).max(12),
+				directions: z.array(z.string().min(1)).min(1).max(12),
+				review: z.array(z.string().min(1)).max(12),
+			})
+			.optional(),
+		steps: z.array(recipeStepSchema).max(50).default([]),
+	})
+	.refine((recipe) => recipe.steps.length > 0 || !!recipe.guide, {
+		message: "Add at least one step or a style guide.",
+	});
 
 export type RecipeStep = z.infer<typeof recipeStepSchema>;
 export type Recipe = z.infer<typeof recipeSchema> & { builtIn?: boolean };
@@ -221,7 +237,7 @@ function zodMessage(error: unknown): string {
 // Built-in recipes
 // ---------------------------------------------------------------------------
 
-export const BUILT_IN_RECIPES: Recipe[] = [
+const QUICK_RECIPES: Recipe[] = [
 	{
 		id: "social-clip",
 		name: "Social clip",
@@ -303,6 +319,11 @@ export const BUILT_IN_RECIPES: Recipe[] = [
 	},
 ];
 
+export const BUILT_IN_RECIPES: Recipe[] = [
+	...QUICK_RECIPES,
+	...styleCatalog.map((style) => recipeSchema.parse({ ...style, format: "style", steps: [] })),
+];
+
 // ---------------------------------------------------------------------------
 // User recipes, stored in app data
 // ---------------------------------------------------------------------------
@@ -313,15 +334,24 @@ export async function loadRecipes(file: string | undefined): Promise<Recipe[]> {
 	if (!file) return [];
 	try {
 		return fileSchema.parse(JSON.parse(await fs.readFile(file, "utf8"))).recipes;
-	} catch {
-		return [];
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		throw new Error(`Could not load saved recipes from ${file}: ${(error as Error).message}`, {
+			cause: error,
+		});
 	}
 }
 
 export async function saveRecipes(file: string, recipes: Recipe[]): Promise<void> {
 	await fs.mkdir(path.dirname(file), { recursive: true });
 	const clean = recipes.map(({ builtIn: _, ...r }) => r);
-	await fs.writeFile(file, JSON.stringify({ recipes: clean }, null, 2));
+	const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+	try {
+		await fs.writeFile(temporary, JSON.stringify({ recipes: clean }, null, 2));
+		await fs.rename(temporary, file);
+	} finally {
+		await fs.rm(temporary, { force: true }).catch(() => {});
+	}
 }
 
 /** An id from the name, unique among `taken`. */

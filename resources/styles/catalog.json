@@ -1,0 +1,106 @@
+[
+  {
+    "id": "style-kinetic-quote",
+    "name": "Kinetic quote",
+    "category": "Typography",
+    "description": "A spoken line becomes a sequence of large, timed words with one phrase held for emphasis.",
+    "guide": {
+      "goal": "Make one memorable sentence feel paced by the speaker rather than by a preset animation.",
+      "requires": ["A short spoken passage with a transcript", "A clear background shot or room for text"],
+      "structure": ["Choose a line of 5–12 words with a clear point.", "Cut to its opening breath, then reveal words on their spoken beats.", "Hold the key phrase for roughly twice the duration of the surrounding words.", "End on the speaker or the next visual idea."],
+      "directions": ["Use auto_captions with a word animation as a starting point, then edit individual text clips where emphasis needs to differ.", "Keep text inside title safe and preserve faces.", "Use one type family and one accent colour; let scale and timing carry the effect."],
+      "review": ["Read every word at normal playback speed.", "Check that the emphasized phrase is still legible on a phone-sized frame."]
+    }
+  },
+  {
+    "id": "style-beat-grid",
+    "name": "Beat grid montage",
+    "category": "Montage",
+    "description": "A tight music-led run of changing shots, with one held beat to reset the rhythm.",
+    "guide": {
+      "goal": "Build energy from shot selection and rhythmic contrast, not from transitions on every cut.",
+      "requires": ["A music track with a steady beat", "At least six distinct shots or images"],
+      "structure": ["Find the downbeats and make a first pass of one shot every two beats.", "Cluster three quick cuts around the strongest musical accent.", "Hold one visually strong shot for four beats.", "Finish on a clear image or title rather than an arbitrary music stop."],
+      "directions": ["Use detect_beats and beat_montage for a draft, then adjust cuts by hand.", "Alternate wide and close views; avoid repeating adjacent angles.", "Reserve speed ramps or zooms for one or two emphasis points."],
+      "review": ["Watch once without audio: the visual sequence should still progress.", "Check the last cut against the music ending."]
+    }
+  },
+  {
+    "id": "style-match-motion",
+    "name": "Match motion cut",
+    "category": "Transitions",
+    "description": "Two different shots meet at a cut because their subjects move in the same direction.",
+    "guide": {
+      "goal": "Make a cut feel continuous through direction, position and speed of movement.",
+      "requires": ["Two shots with related motion", "Enough handle before and after the cut"],
+      "structure": ["Find the action peak in each shot.", "Trim so the first movement exits as the next enters.", "Align the moving subject near the same screen position.", "Add a brief sound bridge if the cut feels abrupt."],
+      "directions": ["Use slip_clip, trim_clip and transform keyframes to align the action.", "Prefer a hard cut; use a transition only when the footage needs it.", "Keep the perceived motion direction consistent across the cut."],
+      "review": ["Step through two frames on each side of the cut.", "Play at full speed to confirm the eye follows the movement."]
+    }
+  },
+  {
+    "id": "style-paper-collage",
+    "name": "Paper collage",
+    "category": "Compositing",
+    "description": "Layered picture cutouts, labels and staggered entrances create a tactile editorial spread.",
+    "guide": {
+      "goal": "Turn a group of related images into a composed, readable sequence with visible depth.",
+      "requires": ["Three or more related images or short shots", "A phrase or label that gives the sequence a subject"],
+      "structure": ["Start on a quiet background and introduce the first image.", "Layer two supporting images at different scales with slight timing offsets.", "Bring in a short label after the picture is understood.", "Clear the spread with one decisive cut or wipe."],
+      "directions": ["Use picture-in-picture layout or clip transforms on separate video tracks.", "Use restrained rotation and shadow; preserve a strong reading order.", "Animate position and scale with keyframes, staggered by a few frames."],
+      "review": ["Check overlaps at every entrance and exit.", "Ensure text remains legible over all layers."]
+    }
+  },
+  {
+    "id": "style-light-leak",
+    "name": "Light leak passage",
+    "category": "Transitions",
+    "description": "A warm flash bridges two moments, then resolves quickly back into the picture.",
+    "guide": {
+      "goal": "Mark a change of place or time with one brief wash of light.",
+      "requires": ["Two shots with a motivated change", "A warm light texture or gradient image to use as a short overlay"],
+      "structure": ["Start the colour bloom just before the cut.", "Peak the wash across the cut for only a handful of frames.", "Reveal the second shot cleanly and let it settle."],
+      "directions": ["Place the light image on an upper picture track over the cut, with a short fade in and fade out.", "Avoid a full white frame unless it matches the footage's exposure.", "Match the brightness of the adjacent shots before adding the flash."],
+      "review": ["Check for an unintended blank frame.", "View the transition at full speed and at reduced brightness."]
+    }
+  },
+  {
+    "id": "style-screen-focus",
+    "name": "Screen focus",
+    "category": "Screen recording",
+    "description": "A clean screen demo that follows the pointer, zooms into the important action and returns to context.",
+    "guide": {
+      "goal": "Help the viewer understand one interface action without losing where it happened.",
+      "requires": ["A screen recording", "One action or feature to explain"],
+      "structure": ["Open with the full interface for orientation.", "Move in before the action begins and hold through the interaction.", "Return to the full view after the result appears.", "Cut dead time around the action."],
+      "directions": ["Use the studio look when recording or add_zoom and transform keyframes afterward.", "Keep the pointer visible and the active target away from the camera bubble.", "Make each zoom slow enough to track, then hold still while text is read."],
+      "review": ["Check that every click target can be identified at normal playback speed.", "Verify the camera bubble never covers the active control."]
+    }
+  },
+  {
+    "id": "style-split-reveal",
+    "name": "Split reveal",
+    "category": "Layouts",
+    "description": "A two-up comparison starts balanced and then gives the winning image the full frame.",
+    "guide": {
+      "goal": "Show a meaningful before/after or two viewpoints with an unmistakable reveal.",
+      "requires": ["Two comparable shots or states", "A clear reason to favour one side"],
+      "structure": ["Introduce both views at equal size.", "Hold long enough for comparison.", "Move the divider or cut to the chosen view.", "End on the result at full frame."],
+      "directions": ["Use arrange_clips for the initial two-up layout.", "Match colour and scale before the reveal.", "Keep captions outside the dividing line."],
+      "review": ["The comparison must be understandable without a label.", "Check framing in square and vertical variants if needed."]
+    }
+  },
+  {
+    "id": "style-quiet-portrait",
+    "name": "Quiet portrait",
+    "category": "Editorial",
+    "description": "A restrained character moment built from a close shot, breathing room and a spare title.",
+    "guide": {
+      "goal": "Let a person or object carry the scene with minimal editorial interference.",
+      "requires": ["A strong portrait or detail shot", "Clean natural sound or a low music bed"],
+      "structure": ["Begin before the visible action so the shot can settle.", "Introduce a short title after the subject is established.", "Hold through a natural gesture or line of speech.", "Leave on a motivated movement or breath."],
+      "directions": ["Use subtle grading and a gentle push-in only if the frame is truly static.", "Avoid decorative transitions and dense captions.", "Keep the title away from the face and use generous negative space."],
+      "review": ["Watch with sound muted to check the visual pacing.", "Confirm the title feels secondary to the subject."]
+    }
+  }
+]

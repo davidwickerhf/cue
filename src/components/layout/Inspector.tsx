@@ -91,7 +91,7 @@ export function Inspector() {
 		<FoldingSections.Provider value={true}>
 			<aside
 				className="flex shrink-0 flex-col border-l border-separator bg-surface"
-				style={{ width: inspectorWidth }}
+				style={{ width: inspectorWidth, maxWidth: "25vw" }}
 			>
 				<header className="flex h-10 shrink-0 items-center justify-between border-b border-separator pr-2 pl-4">
 					<h2 className="truncate text-[12px] font-semibold">

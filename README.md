@@ -13,7 +13,7 @@ A fast, open-source video editor for macOS (Windows and Linux in preview). Edit 
 [![Platform](https://img.shields.io/badge/platform-macOS%20·%20Windows%20%26%20Linux%20preview-lightgrey)](https://github.com/davidwickerhf/cue/releases/latest)
 [![MCP](https://img.shields.io/badge/MCP-110%2B%20tools-8a2be2)](#ai-agents)
 
-[**Website**](https://cue.wicker.life) · [**Download**](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) · [**Releases**](https://github.com/davidwickerhf/cue/releases) · [**Report a bug**](https://github.com/davidwickerhf/cue/issues/new) · [**Support Cue ☕**](https://ko-fi.com/davidwickerhf)
+[**Website**](https://cue.wicker.life) · [**Style library**](https://cue.wicker.life/styles) · [**Download**](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) · [**Releases**](https://github.com/davidwickerhf/cue/releases) · [**Report a bug**](https://github.com/davidwickerhf/cue/issues/new) · [**Support Cue ☕**](https://ko-fi.com/davidwickerhf)
 
 <br />
 
@@ -62,6 +62,7 @@ A fast, open-source video editor for macOS (Windows and Linux in preview). Edit 
 | **Speech** | Word-level transcripts, text-based editing, filler-word removal, search by meaning, chapters, captions (SRT and VTT). |
 | **Voiceover** | A script on the timeline as timed lines, teleprompter recording with takes per line, AI voices. |
 | **Generate** | Voices, captions, images and B-roll with OpenAI, or on-device with macOS voices, Whisper and Ollama or LM Studio. |
+| **Style library** | Browse eight adaptable guides for montage, typography, transitions, compositing and screen stories. Open one in Generate and ask your agent to build it with the footage in your project; agents can browse and select styles over MCP. |
 | **Media** | Bins and sub-bins, tags, star ratings and notes, search across names, tags, notes and transcripts, Unused and Rated filters, list and grid views, and media info (codecs, frame rate, bitrate, audio layout, recording date) with where each item is used. |
 | **Projects** | `.cueproj` files, projects overview with posters, relinking of moved media, persistent history of every change, workspaces. |
 | **Export** | H.264, HEVC and ProRes with hardware encoding, presets, in-to-out ranges, stills, per-line stems, captions, and timelines for other editors. |

@@ -69,6 +69,9 @@ export async function Header({ home = false }: { home?: boolean }) {
 				<Link href="/docs" className="hover:text-white">
 					Docs
 				</Link>
+				<Link href="/styles" className="hover:text-white">
+					Styles
+				</Link>
 				<Link href="/changelog" className="hover:text-white">
 					Changelog
 				</Link>
@@ -110,6 +113,9 @@ export function Footer({ home = false }: { home?: boolean }) {
 						</a>
 						<Link href="/docs" className="text-muted hover:text-white">
 							Docs
+						</Link>
+						<Link href="/styles" className="text-muted hover:text-white">
+							Style library
 						</Link>
 						<Link href="/changelog" className="text-muted hover:text-white">
 							Changelog

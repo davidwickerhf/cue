@@ -4,6 +4,7 @@ import { capture } from "../lib/capture";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
+import { styleSelection } from "../lib/styleLibrary";
 import { app, editor, findLine, type SidebarPanel } from "../lib/state";
 import { rasterise } from "../lib/textDraw";
 import { viewerZoom, zoomViewer } from "../lib/viewer";
@@ -96,6 +97,11 @@ export function useEditorCommands() {
 						// After a workspace switch has resized the viewer.
 						requestAnimationFrame(() => requestAnimationFrame(() => zoomViewer(zoom, width)));
 					}
+					break;
+				case "showStyle":
+					styleSelection.set({ id: command.id });
+					editor.set({ panel: "generate" });
+					layout.set({ sidebarOpen: true });
 					break;
 				case "pauseScreen":
 					if (command.paused) capture.pause();

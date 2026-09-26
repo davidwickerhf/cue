@@ -45,8 +45,17 @@ export const contract = {
 	},
 	render_frame: {
 		description:
-			"Render what the viewer sees at a moment as a PNG and return its path, so you can look at the edit (text layout, framing, captions).",
+			"Show the actual viewer image at a moment, with its PNG path. Use it to inspect framing, text and captions.",
 		input: { atMs: z.number().min(0) },
+	},
+	inspect_edit: {
+		description:
+			"Inspect the current edit in one call: sampled viewer images across a time range, active clips at each sample, and director's notes about likely issues. Returns actual images as MCP content so you can see the cut. Use get_timeline for exact clip details and render_frame to zoom in on a problem moment.",
+		input: {
+			fromMs: z.number().min(0).optional(),
+			toMs: z.number().min(0).optional(),
+			sampleCount: z.number().int().min(1).max(6).default(4),
+		},
 	},
 	get_activity: {
 		description: "Recent edits with who made them (user or agent).",
@@ -918,20 +927,41 @@ export const contract = {
 	},
 	list_recipes: {
 		description:
-			"Recipes: reusable edits, each a list of tool calls (built-in ones and those saved by the user or agents). Returns id, name, description and steps.",
+			"List quick recipes and style guides. Style guides include a goal, required media, structure, directions and review checks. Follow them adaptively with Cue tools; only quick recipes run automatically.",
 		input: {},
+	},
+	list_styles: {
+		description:
+			"Browse the style library. Returns each style's id, name, category, description and required footage; use show_style to select one in the editor and read its full guide.",
+		input: { category: z.string().optional(), query: z.string().optional() },
+	},
+	show_style: {
+		description:
+			"Select a style in Cue's Style library and return its full goal, footage requirements, structure, directions and review checks. Then use the normal Cue editing tools to adapt it to the project.",
+		input: { id: z.string() },
 	},
 	run_recipe: {
 		description:
-			"Run a recipe's steps in order on the open project. Placeholders in the params are filled in from the project first. Stops at the first failing step (optional steps are skipped instead) and says which one failed. dryRun returns the resolved calls without running them.",
+			"Run a quick recipe's steps in order on the open project. Style guides without steps are followed by an agent using normal Cue tools instead. Placeholders are filled from the project; dryRun returns resolved calls without running them. On a required-step failure, earlier project edits are restored; optional steps are skipped.",
 		input: { id: z.string(), dryRun: z.boolean().default(false) },
 	},
 	save_recipe: {
 		description:
-			"Save a recipe (e.g. what you just did, to repeat on other projects). steps: [{tool, params, label?, optional?, each?}]. Params may use placeholders filled in when it runs: {playheadMs}, {selectedClipIds}, {selectedClipId}, {durationMs}, {projectName}, {voiceoverAssetId} (the main speech media), {musicAssetId}, {firstVideoClipId}, {firstMusicClipId}, {voiceClipIds}, {captionSource}. each: '{voiceClipIds}' or '{selectedClipIds}' runs the step once per clip with {clipId} set. Saving with the name of one of your recipes replaces it.",
+			"Save a quick recipe, style guide, or both. A style guide has format 'style' and guide {goal, requires[], structure[], directions[], review[]}; agents follow it adaptively. Repeatable edits use steps [{tool, params, label?, optional?, each?}] and may use {playheadMs}, {selectedClipIds}, {selectedClipId}, {durationMs}, {projectName}, {voiceoverAssetId}, {musicAssetId}, {firstVideoClipId}, {firstMusicClipId}, {voiceClipIds}, {captionSource}. Saving with the same name replaces your recipe.",
 		input: {
 			name: z.string().min(1).max(120),
 			description: z.string().max(1000).default(""),
+			category: z.string().max(60).optional(),
+			format: z.enum(["recipe", "style"]).optional(),
+			guide: z
+				.object({
+					goal: z.string().min(1).max(1000),
+					requires: z.array(z.string().min(1)).max(12),
+					structure: z.array(z.string().min(1)).min(1).max(12),
+					directions: z.array(z.string().min(1)).min(1).max(12),
+					review: z.array(z.string().min(1)).max(12),
+				})
+				.optional(),
 			steps: z
 				.array(
 					z.object({
@@ -942,8 +972,8 @@ export const contract = {
 						optional: z.boolean().optional(),
 					}),
 				)
-				.min(1)
-				.max(50),
+				.max(50)
+				.default([]),
 		},
 	},
 	delete_recipe: {
