@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 144,
+	"count": 146,
 	"groups": [
 		{
 			"title": "Overview",
@@ -382,7 +382,7 @@
 				},
 				{
 					"name": "record_screen",
-					"description": "Start recording a screen or window, optionally with the camera and microphone, in the editor window (a 3-2-1 countdown, then a recording bar the user can stop). Tell the user before calling. Returns once recording has started; call stop_screen_recording to finish, or it stops by itself after maxSeconds. The result is imported and placed at the playhead: the screen on a free video track, the camera on the track above (as a picture-in-picture bubble when bubble is true), linked together; the microphone is recorded into the screen's sound.",
+					"description": "Start recording a screen or window, optionally with the camera and microphone, in the editor window (a 3-2-1 countdown, then a recording bar the user can stop). Tell the user before calling. Returns once recording has started; call stop_screen_recording to finish, or it stops by itself after maxSeconds. The screen is recorded natively (ScreenCaptureKit on macOS) at full resolution. The result is imported and placed at the playhead: the screen on a free video track, the camera on the track above (as a picture-in-picture bubble when bubble is true, round with the studio look), linked together; the microphone is recorded into the screen's sound. Use pause_screen_recording to pause and resume.",
 					"inputs": [
 						{
 							"name": "sourceId",
@@ -407,12 +407,76 @@
 							"type": "boolean",
 							"required": false,
 							"default": "true",
-							"note": "Show the camera small in the bottom-right corner"
+							"note": "Show the camera small in the bottom-right corner (round, with the studio look)"
 						},
 						{
 							"name": "maxSeconds",
 							"type": "number",
 							"required": false
+						},
+						{
+							"name": "studio",
+							"type": "boolean",
+							"required": false,
+							"default": "true",
+							"note": "The Recordly-style finish: the screen inset on a wallpaper with rounded corners and a shadow, the real pointer replaced by a smooth larger cursor, zooms on the clicks and a ripple on each click. All of it is ordinary clips, keyframes and zooms on their own tracks (Background, Cursor, Clicks), so it can be edited afterwards"
+						},
+						{
+							"name": "wallpaper",
+							"type": "\"none\"",
+							"required": false,
+							"note": "Studio background (default dusk)"
+						},
+						{
+							"name": "autoZoom",
+							"type": "boolean",
+							"required": false,
+							"default": "true",
+							"note": "Studio: zoom in where the clicks are"
+						},
+						{
+							"name": "smoothCursor",
+							"type": "boolean",
+							"required": false,
+							"default": "true",
+							"note": "Studio: leave the real pointer out and draw a smooth, larger cursor"
+						},
+						{
+							"name": "cursorSize",
+							"type": "number",
+							"required": false,
+							"default": "1",
+							"note": "Studio: cursor size (1 is about 5% of the frame height)"
+						},
+						{
+							"name": "clickRipples",
+							"type": "boolean",
+							"required": false,
+							"default": "true",
+							"note": "Studio: a ripple on each click"
+						},
+						{
+							"name": "cameraId",
+							"type": "string",
+							"required": false,
+							"note": "A camera id from list_capture_sources (default: the system camera)"
+						},
+						{
+							"name": "microphoneId",
+							"type": "string",
+							"required": false,
+							"note": "A microphone id from list_capture_sources (default: the system microphone)"
+						}
+					]
+				},
+				{
+					"name": "pause_screen_recording",
+					"description": "Pause (paused: true) or resume (paused: false) the running screen recording. Paused time is left out of the recording, the pointer track and the zooms.",
+					"inputs": [
+						{
+							"name": "paused",
+							"type": "boolean",
+							"required": true
 						}
 					]
 				},
@@ -552,7 +616,7 @@
 				},
 				{
 					"name": "update_clip",
-					"description": "Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+					"description": "Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 					"inputs": [
 						{
 							"name": "id",
@@ -1791,6 +1855,13 @@
 							"type": "integer",
 							"required": false,
 							"default": "12"
+						},
+						{
+							"name": "describe",
+							"type": "boolean",
+							"required": false,
+							"default": "false",
+							"note": "also describe each sampled frame with the vision model of the text provider in Settings (OpenAI sends small frames to OpenAI; Ollama or LM Studio stay on this Mac); descriptions are cached, so later searches are instant"
 						}
 					]
 				},
@@ -2238,7 +2309,7 @@
 			"tools": [
 				{
 					"name": "update_settings",
-					"description": "Recording settings: prerollMs, postrollMs, autoStop, monitor (mute/timeline), padMs, silenceDb.",
+					"description": "Project settings: recording (prerollMs, postrollMs, autoStop, monitor mute/timeline, padMs, silenceDb), useProxies, and separateAudio (a placed video's sound goes on an audio track, linked; default true).",
 					"inputs": [
 						{
 							"name": "settings",
@@ -2397,7 +2468,7 @@
 				},
 				{
 					"name": "set_view",
-					"description": "Show the user something: switch workspace (window layout), open a sidebar panel, fit the whole timeline in view, zoom the timeline (px per second), or open a media item in the source monitor.",
+					"description": "Show the user something: switch workspace (window layout), open a sidebar panel or a dock beside the viewer, fit the whole timeline in view, zoom the timeline (px per second), open a media item in the source monitor, zoom the viewer, turn viewer overlays on or off, split before/after, or A/B compare two sequences.",
 					"inputs": [
 						{
 							"name": "panel",
@@ -2425,6 +2496,31 @@
 							"type": "string",
 							"required": false,
 							"note": "asset id"
+						},
+						{
+							"name": "viewerZoom",
+							"type": "value",
+							"required": false,
+							"note": "Zoom the viewer to inspect the frame: 'fit', or a percentage of the canvas's real pixels (100 = one canvas pixel per screen pixel)"
+						},
+						{
+							"name": "overlays",
+							"type": "object",
+							"required": false,
+							"note": "Viewer overlays: safeAreas (title and action safe guides), teleprompter (script beside the viewer), compare (before/after controls), sourceTwoUp (source monitor beside the viewer), clipStrip (shots under the viewer)"
+						},
+						{
+							"name": "beforeAfter",
+							"type": "object",
+							"required": false,
+							"note": "Split before/after in the viewer: the ungraded picture left of a divider at `at`"
+						},
+						{
+							"name": "compareSequences",
+							"type": "value",
+							"required": false,
+							"nullable": true,
+							"note": "A/B compare two sequences (ids from list_sequences): the user flips between them at the same moment with the backquote key; null stops"
 						},
 						{
 							"name": "workspace",

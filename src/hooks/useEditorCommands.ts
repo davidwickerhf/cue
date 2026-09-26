@@ -6,7 +6,8 @@ import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
 import { app, editor, findLine, type SidebarPanel } from "../lib/state";
 import { rasterise } from "../lib/textDraw";
-import { type Dock, layout, switchWorkspace } from "../lib/workspace";
+import { zoomViewer } from "../lib/viewer";
+import { compareView, type Dock, layout, sequenceCompare, switchWorkspace } from "../lib/workspace";
 
 /** Carries out commands from the main process (and therefore from agents). */
 export function useEditorCommands() {
@@ -35,6 +36,8 @@ export function useEditorCommands() {
 							bubble: command.bubble,
 							maxSeconds: command.maxSeconds,
 							studio: command.studio,
+							cameraId: command.cameraId,
+							microphoneId: command.microphoneId,
 						},
 						command.requestId,
 					);
@@ -72,6 +75,25 @@ export function useEditorCommands() {
 					if (command.zoom) editor.set({ zoom: command.zoom });
 					if (command.fitTimeline) window.dispatchEvent(new CustomEvent("cue:fit"));
 					if (command.openSource) openSource(command.openSource);
+					if (command.overlays)
+						layout.set({ overlays: { ...layout.get().overlays, ...command.overlays } });
+					if (command.beforeAfter)
+						compareView.set({
+							split: command.beforeAfter.split,
+							...(command.beforeAfter.at !== undefined ? { at: command.beforeAfter.at } : {}),
+						});
+					if (command.compareSequences !== undefined)
+						sequenceCompare.set({ pair: command.compareSequences });
+					if (command.viewerZoom !== undefined && project) {
+						const zoom = command.viewerZoom;
+						const width = project.data.canvas.width;
+						// After a workspace switch has resized the viewer.
+						requestAnimationFrame(() => requestAnimationFrame(() => zoomViewer(zoom, width)));
+					}
+					break;
+				case "pauseScreen":
+					if (command.paused) capture.pause();
+					else capture.resume();
 					break;
 				case "previewAsset": {
 					const url = project?.assetUrls[command.assetId];

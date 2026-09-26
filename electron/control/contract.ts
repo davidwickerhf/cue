@@ -194,7 +194,7 @@ export const contract = {
 	},
 	record_screen: {
 		description:
-			"Start recording a screen or window, optionally with the camera and microphone, in the editor window (a 3-2-1 countdown, then a recording bar the user can stop). Tell the user before calling. Returns once recording has started; call stop_screen_recording to finish, or it stops by itself after maxSeconds. The result is imported and placed at the playhead: the screen on a free video track, the camera on the track above (as a picture-in-picture bubble when bubble is true), linked together; the microphone is recorded into the screen's sound.",
+			"Start recording a screen or window, optionally with the camera and microphone, in the editor window (a 3-2-1 countdown, then a recording bar the user can stop). Tell the user before calling. Returns once recording has started; call stop_screen_recording to finish, or it stops by itself after maxSeconds. The screen is recorded natively (ScreenCaptureKit on macOS) at full resolution. The result is imported and placed at the playhead: the screen on a free video track, the camera on the track above (as a picture-in-picture bubble when bubble is true, round with the studio look), linked together; the microphone is recorded into the screen's sound. Use pause_screen_recording to pause and resume.",
 		input: {
 			sourceId: z
 				.string()
@@ -220,7 +220,31 @@ export const contract = {
 				.optional()
 				.describe("Studio background (default dusk)"),
 			autoZoom: z.boolean().default(true).describe("Studio: zoom in where the clicks are"),
+			smoothCursor: z
+				.boolean()
+				.default(true)
+				.describe("Studio: leave the real pointer out and draw a smooth, larger cursor"),
+			cursorSize: z
+				.number()
+				.min(0.5)
+				.max(2)
+				.default(1)
+				.describe("Studio: cursor size (1 is about 5% of the frame height)"),
+			clickRipples: z.boolean().default(true).describe("Studio: a ripple on each click"),
+			cameraId: z
+				.string()
+				.optional()
+				.describe("A camera id from list_capture_sources (default: the system camera)"),
+			microphoneId: z
+				.string()
+				.optional()
+				.describe("A microphone id from list_capture_sources (default: the system microphone)"),
 		},
+	},
+	pause_screen_recording: {
+		description:
+			"Pause (paused: true) or resume (paused: false) the running screen recording. Paused time is left out of the recording, the pointer track and the zooms.",
+		input: { paused: z.boolean() },
 	},
 	stop_screen_recording: {
 		description:
@@ -1032,7 +1056,7 @@ export const contract = {
 	},
 	set_view: {
 		description:
-			"Show the user something: switch workspace (window layout), open a sidebar panel, fit the whole timeline in view, zoom the timeline (px per second), or open a media item in the source monitor.",
+			"Show the user something: switch workspace (window layout), open a sidebar panel or a dock beside the viewer, fit the whole timeline in view, zoom the timeline (px per second), open a media item in the source monitor, zoom the viewer, turn viewer overlays on or off, split before/after, or A/B compare two sequences.",
 		input: {
 			panel: z
 				.enum([
@@ -1054,6 +1078,36 @@ export const contract = {
 			fitTimeline: z.boolean().optional(),
 			zoom: z.number().min(4).max(600).optional(),
 			openSource: z.string().optional().describe("asset id"),
+			viewerZoom: z
+				.union([z.literal("fit"), z.number().min(10).max(800)])
+				.optional()
+				.describe(
+					"Zoom the viewer to inspect the frame: 'fit', or a percentage of the canvas's real pixels (100 = one canvas pixel per screen pixel)",
+				),
+			overlays: z
+				.object({
+					safeAreas: z.boolean(),
+					teleprompter: z.boolean(),
+					compare: z.boolean(),
+					sourceTwoUp: z.boolean(),
+					clipStrip: z.boolean(),
+				})
+				.partial()
+				.optional()
+				.describe(
+					"Viewer overlays: safeAreas (title and action safe guides), teleprompter (script beside the viewer), compare (before/after controls), sourceTwoUp (source monitor beside the viewer), clipStrip (shots under the viewer)",
+				),
+			beforeAfter: z
+				.object({ split: z.boolean(), at: z.number().min(0).max(1).optional() })
+				.optional()
+				.describe("Split before/after in the viewer: the ungraded picture left of a divider at `at`"),
+			compareSequences: z
+				.tuple([z.string(), z.string()])
+				.nullable()
+				.optional()
+				.describe(
+					"A/B compare two sequences (ids from list_sequences): the user flips between them at the same moment with the backquote key; null stops",
+				),
 			workspace: z
 				.enum(["editing", "audio", "colour", "voiceover", "titles", "agent", "review"])
 				.optional()

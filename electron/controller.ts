@@ -630,6 +630,13 @@ export class Controller extends EventEmitter {
 			}
 			case "record_screen":
 				return this.recordScreen(parseInput("record_screen", params));
+			case "pause_screen_recording": {
+				const { paused } = parseInput("pause_screen_recording", params);
+				if (!this.capture) throw new Error("Nothing is being recorded.");
+				if (!this.hooks.sendCommand({ type: "pauseScreen", paused }))
+					throw new Error("The Cue window is not open.");
+				return { paused };
+			}
 			case "stop_screen_recording":
 				return this.stopScreenRecording();
 			case "rename_media":
@@ -1547,8 +1554,13 @@ export class Controller extends EventEmitter {
 								...DEFAULT_STUDIO,
 								...(input.wallpaper ? { wallpaper: input.wallpaper } : {}),
 								zoom: input.autoZoom,
+								cursor: input.smoothCursor,
+								cursorSize: input.cursorSize,
+								clickEffect: input.clickRipples,
 							}
 						: null,
+				cameraId: input.cameraId,
+				microphoneId: input.microphoneId,
 			});
 			await started;
 		} catch (error) {

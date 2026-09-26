@@ -4,6 +4,7 @@ import type { ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { cn, nameFieldKeys } from "../../lib/utils";
+import { sequenceCompare } from "../../lib/workspace";
 
 /** "Main · alt 2" is an alternative of "Main". */
 const isBranch = (name: string) => / · alt \d+$/.test(name);
@@ -20,7 +21,8 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 	const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 	const [renaming, setRenaming] = useState<string | null>(null);
 	// A/B compare lives in the editor only: the two sequences being compared.
-	const [compare, setCompare] = useState<[string, string] | null>(null);
+	const compare = sequenceCompare.use((c) => c.pair);
+	const setCompare = (pair: [string, string] | null) => sequenceCompare.set({ pair });
 	useEffect(() => {
 		if (!menu) return;
 		const close = () => setMenu(null);

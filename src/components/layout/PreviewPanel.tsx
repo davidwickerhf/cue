@@ -7,17 +7,12 @@ import { keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { showTimeline, source } from "../../lib/source";
-import { createStore, useApp, useProject } from "../../lib/state";
+import { useApp, useProject } from "../../lib/state";
+import { fittedRatio, MAX_ZOOM, MIN_ZOOM, viewerZoom, zoomViewer } from "../../lib/viewer";
 import { cn, formatSeconds } from "../../lib/utils";
 import { compareView, layout } from "../../lib/workspace";
 import { ClipStrip } from "./ClipStrip";
 import { MonitorHeader, SourceMonitor, SourcePane, ViewerTabs } from "./SourceMonitor";
-
-/** How far the viewer is zoomed in: a multiple of the size that fits (1 = Fit). */
-export const viewerZoom = createStore({ scale: 1 });
-
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 8;
 
 /** Zoom presets as shares of the canvas's real pixels (100% = one canvas pixel per screen pixel). */
 const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4];
@@ -50,6 +45,7 @@ export function PreviewPanel() {
 			const ah = el.clientHeight - 32;
 			const w = Math.max(100, Math.min(aw, ah * aspect));
 			setSize({ w, h: w / aspect });
+			viewerZoom.set({ fitWidth: w });
 		});
 		observer.observe(el);
 		return () => observer.disconnect();
@@ -96,7 +92,7 @@ export function PreviewPanel() {
 	}, []);
 
 	// After a zoom, scroll so the anchored point is back where it was (or keep the middle).
-	// biome-ignore lint/correctness/useExhaustiveDependencies: runs on each zoom change
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs when the zoom or the viewer's size changes
 	useLayoutEffect(() => {
 		const el = scroller.current;
 		const frame = stage.current?.getBoundingClientRect();
@@ -111,7 +107,7 @@ export function PreviewPanel() {
 		anchor.current = null;
 		el.scrollLeft += frame.left + a.u * frame.width - a.x;
 		el.scrollTop += frame.top + a.v * frame.height - a.y;
-	}, [zoom]);
+	}, [zoom, size.w, size.h]);
 
 	// Zoomed in, proxies look soft: play the originals.
 	useEffect(() => playback.setFullQuality(zoom > 1.2), [zoom]);
@@ -228,7 +224,7 @@ function Transport({ project }: { project: ProjectSnapshot }) {
 	const btn =
 		"flex size-8 items-center justify-center rounded-md text-foreground/80 hover:bg-default hover:text-foreground";
 	return (
-		<div className="grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-t border-separator bg-surface px-3">
+		<div className="@container grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-separator bg-surface px-3">
 			<span className="font-mono text-[13px] tabular text-foreground">
 				{timecode(tenth * frame, project.data.canvas.fps)}
 			</span>
@@ -291,10 +287,13 @@ function Transport({ project }: { project: ProjectSnapshot }) {
 					/>
 				</button>
 			</div>
-			<div className="flex items-center gap-3 justify-self-end">
+			{/* A narrow viewer (two-up) drops the meters, then the length, before anything overlaps. */}
+			<div className="flex min-w-0 items-center gap-3 justify-self-end">
 				<ZoomMenu canvasWidth={project.data.canvas.width} />
-				<Meters />
-				<span className="font-mono text-[12px] tabular text-muted">
+				<div className="hidden @[620px]:block">
+					<Meters />
+				</div>
+				<span className="hidden font-mono text-[12px] tabular text-muted @[500px]:inline">
 					{timecode(project.durationMs, project.data.canvas.fps)}
 				</span>
 			</div>
@@ -305,12 +304,8 @@ function Transport({ project }: { project: ProjectSnapshot }) {
 /** The viewer's zoom: Fit, or a share of the canvas's real pixels. */
 function ZoomMenu({ canvasWidth }: { canvasWidth: number }) {
 	const scale = viewerZoom.use((z) => z.scale);
-	// Screen pixels per canvas pixel when fitted (from the stage's current width).
-	const fitted = () => {
-		const frame = document.querySelector("[data-stage-frame]")?.getBoundingClientRect();
-		const width = frame ? frame.width / viewerZoom.get().scale : canvasWidth;
-		return (width * window.devicePixelRatio) / canvasWidth;
-	};
+	viewerZoom.use((z) => z.fitWidth);
+	const fitted = () => fittedRatio(canvasWidth);
 	const percent = Math.round(fitted() * scale * 100);
 	return (
 		<select
@@ -319,11 +314,7 @@ function ZoomMenu({ canvasWidth }: { canvasWidth: number }) {
 			value={scale === 1 ? "fit" : "custom"}
 			onChange={(e) => {
 				const v = e.target.value;
-				if (v === "fit") viewerZoom.set({ scale: 1 });
-				else if (v !== "custom")
-					viewerZoom.set({
-						scale: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(v) / fitted())),
-					});
+				if (v !== "custom") zoomViewer(v === "fit" ? "fit" : Number(v) * 100, canvasWidth);
 			}}
 			className="h-6 rounded-md border border-border bg-default px-1 font-mono text-[11px] text-muted"
 		>

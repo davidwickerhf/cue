@@ -635,6 +635,8 @@ export type EditorCommand =
 			bubble: boolean;
 			maxSeconds?: number;
 			studio?: import("./capture").StudioChoice | null;
+			cameraId?: string;
+			microphoneId?: string;
 	  }
 	| { type: "stopScreen" }
 	| { type: "listDevices"; requestId: string }
@@ -662,4 +664,9 @@ export type EditorCommand =
 			zoom?: number;
 			workspace?: string;
 			dock?: string;
-	  };
+			viewerZoom?: number | "fit";
+			overlays?: Partial<Record<"safeAreas" | "teleprompter" | "compare" | "sourceTwoUp" | "clipStrip", boolean>>;
+			beforeAfter?: { split: boolean; at?: number };
+			compareSequences?: [string, string] | null;
+	  }
+	| { type: "pauseScreen"; paused: boolean };

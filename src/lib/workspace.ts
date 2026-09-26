@@ -242,3 +242,6 @@ export function deleteWorkspace(name: string) {
  * UI state only, never saved with the project.
  */
 export const compareView = createStore<{ split: boolean; at: number }>({ split: false, at: 0.5 });
+
+/** A/B compare between two sequences (flip with the backquote key). UI state only. */
+export const sequenceCompare = createStore<{ pair: [string, string] | null }>({ pair: null });
