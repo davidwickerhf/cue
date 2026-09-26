@@ -181,6 +181,8 @@ export const opSchema = z.discriminatedUnion("type", [
 		type: z.literal("newSequence"),
 		name: z.string().min(1).max(120),
 		open: z.boolean().default(true),
+		/** Start without the default tracks (e.g. when rebuilding an imported timeline). */
+		empty: z.boolean().default(false),
 	}),
 	z.object({ type: z.literal("openSequence"), id: z.string() }),
 	z.object({ type: z.literal("renameSequence"), id: z.string(), name: z.string().min(1).max(120) }),
@@ -321,6 +323,8 @@ export type InternalOp =
 	| { type: "addAsset"; asset: Asset; placeOn?: { trackId: string; startMs: number } }
 	| { type: "addTake"; asset: Asset }
 	| { type: "setTranscript"; assetId: string; transcript: Asset["transcript"] }
+	/** A nested sequence got longer or shorter: clips showing all of it follow, in every timeline. */
+	| { type: "fitNested"; assetId: string; fromMs: number; toMs: number }
 	/** Change fields of a media item (e.g. a nested sequence's render). */
 	| { type: "updateAsset"; id: string; patch: Partial<Asset> }
 	/** New file locations for media that moved (path as stored in the project). */
@@ -631,6 +635,49 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			created = [c.id];
 		}
 		return { data: next, summary: `Added ${rawOp.asset.kind} "${rawOp.asset.name}"`, created };
+	}
+	if (rawOp.type === "fitNested") {
+		const fit = (clips: Clip[]): Clip[] => {
+			let next = clips;
+			for (const c of clips) {
+				if (c.type !== "media" || c.assetId !== rawOp.assetId) continue;
+				// Only clips that reached the old end of the sequence follow its new length.
+				if (c.inMs + c.durationMs * c.speed < rawOp.fromMs - 2) continue;
+				const length = Math.max(1, Math.round((rawOp.toMs - c.inMs) / c.speed));
+				const delta = length - c.durationMs;
+				if (!delta) continue;
+				const end = clipEnd(c);
+				// Clips cut straight after it move along, so nothing overlaps and no gap opens.
+				const followers = new Set(
+					next
+						.filter((x) => x.trackId === c.trackId && x.id !== c.id && x.startMs >= end - 2)
+						.sort((a, b) => a.startMs - b.startMs)
+						.reduce<{ ids: string[]; at: number }>(
+							(run, x) =>
+								Math.abs(x.startMs - run.at) <= 2
+									? { ids: [...run.ids, x.id], at: clipEnd(x) }
+									: run,
+							{ ids: [], at: end },
+						).ids,
+				);
+				next = next.map((x) =>
+					x.id === c.id
+						? { ...x, durationMs: length }
+						: followers.has(x.id)
+							? { ...x, startMs: Math.max(0, x.startMs + delta) }
+							: x,
+				);
+			}
+			return next;
+		};
+		return {
+			data: {
+				...data,
+				clips: fit(data.clips),
+				sequences: data.sequences?.map((q) => ({ ...q, clips: fit(q.clips) })),
+			},
+			summary: "Fitted nested clips to their sequence",
+		};
 	}
 	if (rawOp.type === "updateAsset") {
 		asset(data, rawOp.id);
@@ -975,7 +1022,13 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		}
 		case "newSequence": {
 			const id = newId("s");
-			const fresh = { id, name: op.name, tracks: defaultTracks(), clips: [], markers: [] };
+			const fresh = {
+				id,
+				name: op.name,
+				tracks: op.empty ? [] : defaultTracks(),
+				clips: [],
+				markers: [],
+			};
 			if (!op.open)
 				return {
 					data: { ...data, sequences: [...(data.sequences ?? []), fresh] },

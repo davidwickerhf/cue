@@ -76,9 +76,9 @@ File → Export Timeline (or the Export menu, or the `export` agent tool) writes
 
 | Format | Opens in | Carries |
 | --- | --- | --- |
-| OpenTimelineIO `.otio` | DaVinci Resolve, Premiere (plug-in), Kdenlive, Avid | Tracks, cuts, speed, titles as generators, markers, plus Cue's clip settings in metadata |
-| FCPXML 1.10 `.fcpxml` | Final Cut Pro, DaVinci Resolve | Tracks as lanes, cuts, speed, volume, Basic Title text, markers |
-| MLT XML `.mlt` | Shotcut | Tracks, cuts, speed, volume, text as dynamic text, mute and hide |
-| CMX3600 `.edl` | Almost anything | The main video track and two audio tracks |
+| OpenTimelineIO `.otio` | DaVinci Resolve, Premiere (plug-in), Kdenlive, Avid | Tracks, cuts, speed, titles as generators, markers, nested sequences as nested stacks, adjustment layers as generators, plus Cue's clip settings in metadata |
+| FCPXML 1.10 `.fcpxml` | Final Cut Pro, DaVinci Resolve | Tracks as lanes, cuts, speed, volume, Basic Title text, markers, nested sequences as compound clips (Final Cut has no adjustment layers) |
+| MLT XML `.mlt` | Shotcut | Tracks, cuts, speed, volume, text as dynamic text, mute and hide, nested sequences as nested tractors, adjustment layers as timeline colour filters |
+| CMX3600 `.edl` | Almost anything | The main video track and two audio tracks; nested sequences as their rendered file |
 
-File → Import Timeline brings an OpenTimelineIO file in as new tracks (one undo step). Crossfades export as straight cuts for now.
+File → Import Timeline brings an OpenTimelineIO file in as new tracks (one undo step), rebuilding nested stacks as nested sequences and Cue's adjustment layers. Crossfades export as straight cuts for now.

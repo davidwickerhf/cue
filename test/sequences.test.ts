@@ -127,6 +127,11 @@ describe("sequences", () => {
 		expect(await store.renderNested()).toBe(1);
 		expect(nestedAsset().path).not.toBe(firstRender);
 		expect(nestedAsset().durationMs).toBe(3000);
+		// The clip that showed the whole sequence follows its new length.
+		const stand = store.current.clips.find(
+			(c) => c.type === "media" && c.assetId === nestedAsset().id,
+		) as MediaClip;
+		expect(stand.durationMs).toBe(3000);
 
 		store.apply(
 			{ type: "updateExport", export: { hardware: false, videoQuality: "draft" } },

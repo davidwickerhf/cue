@@ -297,3 +297,92 @@ describe("relinking moved media", () => {
 		expect(store.offline()).toHaveLength(2);
 	}, 30000);
 });
+
+describe("interchange with nesting and adjustment layers", () => {
+	it("exports nested sequences and adjustment layers and brings them back from OTIO", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-nest-x-"));
+		const media = path.join(dir, "clip.mp4");
+		await ffmpeg([
+			"-f",
+			"lavfi",
+			"-i",
+			"testsrc=size=320x180:rate=30:duration=6",
+			"-f",
+			"lavfi",
+			"-i",
+			"sine=frequency=440:duration=6",
+			"-shortest",
+			"-c:v",
+			"libx264",
+			"-pix_fmt",
+			"yuv420p",
+			"-c:a",
+			"aac",
+			media,
+		]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: path.join(dir, "A") });
+		const [asset] = await store.importMedia([media], "user");
+		store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{ type: "media", trackId: "V1", assetId: asset.id, startMs: 0, durationMs: 2000 },
+					{
+						type: "media",
+						trackId: "V1",
+						assetId: asset.id,
+						startMs: 2000,
+						durationMs: 2000,
+						inMs: 3000,
+					},
+					{ type: "media", trackId: "V1", assetId: asset.id, startMs: 4000, durationMs: 1000 },
+				],
+			},
+			"user",
+		);
+		const [a, b] = store.current.clips;
+		store.apply({ type: "nestClips", ids: [a.id, b.id], name: "Intro" }, "user");
+		const adj = store.apply({ type: "addAdjustment", startMs: 500, durationMs: 1500 }, "user")
+			.created?.[0] as string;
+		store.apply({ type: "updateClip", id: adj, patch: { color: { saturation: 0.2 } } }, "user");
+
+		const otio = (await store.export("otio", "x.otio", "user")).outputs[0];
+		const fcp = (await store.export("fcpxml", "x.fcpxml", "user")).outputs[0];
+		const mlt = (await store.export("mlt", "x.mlt", "user")).outputs[0];
+		const fcpText = await fs.readFile(fcp, "utf8");
+		expect(fcpText).toMatch(/<media id="r\d+" name="Intro">/);
+		expect(fcpText).toContain("<ref-clip");
+		const mltText = await fs.readFile(mlt, "utf8");
+		expect(mltText).toContain("avfilter.eq");
+		// The nested tractor is defined before the entry that uses it.
+		expect(mltText.indexOf('<tractor id="seq1_tractor0"')).toBeLessThan(
+			mltText.indexOf('producer="seq1_tractor0"'),
+		);
+		for (const f of [fcp, mlt]) await run("xmllint", ["--noout", f]);
+
+		const other = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent2.json"),
+			autoProxies: () => false,
+		});
+		await other.create({ path: path.join(dir, "B") });
+		const result = await other.importTimeline(otio, "user");
+		expect(result.sequences).toBe(1);
+		const sequences = other.current.sequences ?? [];
+		expect(sequences.map((q) => q.name)).toEqual(["Intro"]);
+		expect(sequences[0].clips).toHaveLength(2);
+		const adjustment = other.current.clips.find(
+			(c) => c.type === "media" && c.assetId === "a_adjust",
+		) as MediaClip;
+		expect(adjustment.color?.saturation).toBeCloseTo(0.2);
+		const nestedClip = other.current.clips.find(
+			(c) => c.type === "media" && other.current.assets.find((x) => x.id === c.assetId)?.sequenceId,
+		);
+		expect(nestedClip?.durationMs).toBe(4000);
+	}, 60000);
+});

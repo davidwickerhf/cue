@@ -28,6 +28,7 @@ import {
 } from "./media";
 import {
 	fromOtio,
+	type ImportedStack,
 	INTERCHANGE_EXTENSIONS,
 	type InterchangeFormat,
 	toEdl,
@@ -64,6 +65,7 @@ import type {
 	ActivityEntry,
 	Actor,
 	Asset,
+	MediaClip,
 	ProjectData,
 	ProjectSnapshot,
 	RecentProject,
@@ -618,11 +620,19 @@ export class ProjectStore extends EventEmitter {
 		const stored = relativeToProject(this.projectDir, file);
 		if (asset.path !== stored || asset.durationMs !== length) {
 			// Pointing at a new render is housekeeping, not an edit: no undo step.
-			this.data = applyOp(this.current, {
+			let next = applyOp(this.current, {
 				type: "updateAsset",
 				id: asset.id,
 				patch: { path: stored, durationMs: length },
 			}).data;
+			if (asset.durationMs !== length && asset.durationMs > 0)
+				next = applyOp(next, {
+					type: "fitNested",
+					assetId: asset.id,
+					fromMs: asset.durationMs,
+					toMs: length,
+				}).data;
+			this.data = next;
 			this.touch();
 		}
 		return rendered;
@@ -883,30 +893,23 @@ export class ProjectStore extends EventEmitter {
 	async importTimeline(
 		file: string,
 		actor: Actor,
-	): Promise<{ tracks: number; clips: number; missing: string[] }> {
+	): Promise<{ tracks: number; clips: number; sequences: number; missing: string[] }> {
 		const source = path.resolve(file);
 		const timeline = fromOtio(JSON.parse(await fs.readFile(source, "utf8")), path.dirname(source));
-		const missing = [
-			...new Set(
-				timeline.tracks.flatMap((t) =>
-					t.clips.flatMap((c) => (c.type === "media" && !existsSync(c.file) ? [c.file] : [])),
+		const media = (stack: ImportedStack): string[] =>
+			stack.tracks.flatMap((t) =>
+				t.clips.flatMap((c) =>
+					c.type === "media" ? [c.file] : c.type === "nested" ? media(c.timeline) : [],
 				),
-			),
-		];
-		let clips = 0;
+			);
+		const all = [...new Set(media(timeline))];
+		const missing = all.filter((f) => !existsSync(f));
+		const counts = { clips: 0, sequences: 0 };
 		await this.transaction(actor, `Imported ${path.basename(source)}`, async () => {
 			const byPath = new Map(
 				this.current.assets.map((a) => [resolveInProject(this.projectDir, a.path), a.id]),
 			);
-			const files = [
-				...new Set(
-					timeline.tracks.flatMap((t) =>
-						t.clips.flatMap((c) =>
-							c.type === "media" && existsSync(c.file) && !byPath.has(c.file) ? [c.file] : [],
-						),
-					),
-				),
-			].filter((f) => kindOf(f));
+			const files = all.filter((f) => existsSync(f) && !byPath.has(f) && kindOf(f));
 			for (const asset of await this.importMedia(files, actor))
 				byPath.set(resolveInProject(this.projectDir, asset.path), asset.id);
 			if (this.current.clips.length === 0 && timeline.width && timeline.height)
@@ -914,70 +917,138 @@ export class ProjectStore extends EventEmitter {
 					{ type: "setCanvas", canvas: { width: timeline.width, height: timeline.height } },
 					actor,
 				);
-			let visualIndex = this.current.tracks.filter((t) => t.kind !== "audio").length;
-			for (const track of timeline.tracks) {
-				const trackId = this.apply(
-					{
-						type: "addTrack",
-						kind: track.kind,
-						name: track.name.slice(0, 80),
-						index: track.kind === "audio" ? undefined : visualIndex++,
-					},
+			this.importStack(timeline, byPath, actor, counts);
+		});
+		return {
+			tracks: timeline.tracks.length,
+			clips: counts.clips,
+			sequences: counts.sequences,
+			missing,
+		};
+	}
+
+	/** Adds an imported stack's tracks and clips to the open timeline; nested stacks become nested sequences. */
+	private importStack(
+		stack: ImportedStack,
+		byPath: Map<string, string>,
+		actor: Actor,
+		counts: { clips: number; sequences: number },
+	) {
+		let visualIndex = this.current.tracks.filter((t) => t.kind !== "audio").length;
+		for (const track of stack.tracks) {
+			const trackId = this.apply(
+				{
+					type: "addTrack",
+					kind: track.kind,
+					name: track.name.slice(0, 80),
+					index: track.kind === "audio" ? undefined : visualIndex++,
+				},
+				actor,
+			).created?.[0];
+			if (!trackId) continue;
+			if (track.muted || track.hidden)
+				this.apply(
+					{ type: "updateTrack", id: trackId, patch: { muted: track.muted, hidden: track.hidden } },
 					actor,
-				).created?.[0];
-				if (!trackId) continue;
-				if (track.muted || track.hidden)
-					this.apply(
-						{
-							type: "updateTrack",
-							id: trackId,
-							patch: { muted: track.muted, hidden: track.hidden },
-						},
+				);
+			const inputs: Extract<Op, { type: "addClips" }>["clips"] = [];
+			const extras: { index: number; extra?: Partial<MediaClip> }[] = [];
+			for (const c of track.clips) {
+				if (c.type === "text") {
+					inputs.push({
+						type: "text",
+						trackId,
+						startMs: c.startMs,
+						durationMs: c.durationMs,
+						text: c.text.slice(0, 4000),
+						style: c.extra?.style,
+						animationIn: c.extra?.animationIn,
+						animationOut: c.extra?.animationOut,
+					});
+				} else if (c.type === "adjustment") {
+					const id = this.apply(
+						{ type: "addAdjustment", trackId, startMs: c.startMs, durationMs: c.durationMs },
 						actor,
-					);
-				const inputs = track.clips.flatMap((c): Extract<Op, { type: "addClips" }>["clips"] => {
-					if (c.type === "text")
-						return [
-							{
-								type: "text",
-								trackId,
-								startMs: c.startMs,
-								durationMs: c.durationMs,
-								text: c.text.slice(0, 4000),
-								style: c.extra?.style,
-								animationIn: c.extra?.animationIn,
-								animationOut: c.extra?.animationOut,
-							},
-						];
+					).created?.[0];
+					const patch = {
+						...(c.extra?.color ? { color: c.extra.color } : {}),
+						...(c.extra?.mask ? { mask: c.extra.mask } : {}),
+					};
+					if (id && Object.keys(patch).length) this.apply({ type: "updateClip", id, patch }, actor);
+					counts.clips++;
+				} else if (c.type === "nested") {
+					// Build the nested sequence, come back, and place a clip that stands for it.
+					const parent = activeSequence(this.current).id;
+					const seqId = this.apply(
+						{ type: "newSequence", name: c.name.slice(0, 120), open: true, empty: true },
+						actor,
+					).created?.[0];
+					if (!seqId) continue;
+					this.importStack(c.timeline, byPath, actor, counts);
+					this.apply({ type: "openSequence", id: parent }, actor);
+					const asset: Asset = {
+						id: newId("a"),
+						kind: "video",
+						name: c.name.slice(0, 120),
+						path: "",
+						sequenceId: seqId,
+						durationMs: Math.max(c.timeline.durationMs, c.inMs + c.durationMs),
+						width: this.current.canvas.width,
+						height: this.current.canvas.height,
+						hasAudio: c.timeline.tracks.some((t) => t.kind === "audio" && t.clips.length > 0),
+						origin: "import",
+						createdAt: new Date().toISOString(),
+						actor,
+					};
+					this.apply({ type: "addAsset", asset }, actor);
+					inputs.push({
+						type: "media",
+						trackId,
+						assetId: asset.id,
+						startMs: c.startMs,
+						durationMs: c.durationMs,
+						inMs: c.inMs,
+						name: asset.name,
+					});
+					counts.sequences++;
+				} else {
 					const assetId = byPath.get(c.file);
-					if (!assetId) return [];
-					return [
-						{
-							type: "media",
-							trackId,
-							assetId,
-							startMs: c.startMs,
-							durationMs: c.durationMs,
-							inMs: c.inMs,
-							speed: c.speed,
-							volume: c.volume,
-							fadeInMs: c.extra?.fadeInMs,
-							fadeOutMs: c.extra?.fadeOutMs,
-							transform: c.extra?.transform,
-							denoise: c.extra?.denoise,
-							name: c.name?.slice(0, 120),
-						},
-					];
-				});
-				if (inputs.length) {
-					this.apply({ type: "addClips", clips: inputs }, actor);
-					clips += inputs.length;
+					if (!assetId) continue;
+					extras.push({ index: inputs.length, extra: c.extra });
+					inputs.push({
+						type: "media",
+						trackId,
+						assetId,
+						startMs: c.startMs,
+						durationMs: c.durationMs,
+						inMs: c.inMs,
+						speed: c.speed,
+						volume: c.volume,
+						fadeInMs: c.extra?.fadeInMs,
+						fadeOutMs: c.extra?.fadeOutMs,
+						transform: c.extra?.transform,
+						denoise: c.extra?.denoise,
+						name: c.name?.slice(0, 120),
+					});
 				}
 			}
-			for (const m of timeline.markers)
-				this.apply({ type: "addMarker", atMs: m.atMs, label: m.label.slice(0, 120) }, actor);
-		});
-		return { tracks: timeline.tracks.length, clips, missing };
+			if (inputs.length) {
+				const created = this.apply({ type: "addClips", clips: inputs }, actor).created ?? [];
+				counts.clips += inputs.length;
+				// Colour, masks and keys round-trip through Cue's own OTIO metadata.
+				for (const { index, extra } of extras) {
+					const id = created[index];
+					const patch = {
+						...(extra?.color ? { color: extra.color } : {}),
+						...(extra?.mask ? { mask: extra.mask } : {}),
+						...(extra?.key ? { key: extra.key } : {}),
+					};
+					if (id && Object.keys(patch).length) this.apply({ type: "updateClip", id, patch }, actor);
+				}
+			}
+		}
+		for (const m of stack.markers)
+			this.apply({ type: "addMarker", atMs: m.atMs, label: m.label.slice(0, 120) }, actor);
 	}
 
 	async flush(): Promise<void> {
@@ -1599,6 +1670,7 @@ export class ProjectStore extends EventEmitter {
 		renderText?: TextRenderer,
 		range?: { startMs: number; endMs: number },
 	): Promise<ExportReport> {
+		if (kind === "edl") await this.renderNested(renderText);
 		if (kind === "otio" || kind === "fcpxml" || kind === "mlt" || kind === "edl")
 			return this.exportTimeline(kind, out, actor);
 		// Nested sequences must be up to date before they are used in an export.

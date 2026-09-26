@@ -60,7 +60,7 @@ void main(){
 
 export interface Keyer {
 	canvas: HTMLCanvasElement;
-	draw(video: HTMLVideoElement, key: ChromaKey): void;
+	draw(source: HTMLVideoElement | HTMLImageElement, key: ChromaKey): void;
 }
 
 /** A canvas that shows a video frame with one colour keyed out. */
@@ -96,11 +96,14 @@ export function createKeyer(): Keyer | null {
 	const uBlend = gl.getUniformLocation(program, "blend");
 	return {
 		canvas,
-		draw(video, key) {
-			if (video.readyState < 2 || !video.videoWidth) return;
-			if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-				canvas.width = video.videoWidth;
-				canvas.height = video.videoHeight;
+		draw(source, key) {
+			const isVideo = source instanceof HTMLVideoElement;
+			const w = isVideo ? source.videoWidth : source.naturalWidth;
+			const h = isVideo ? source.videoHeight : source.naturalHeight;
+			if ((isVideo ? source.readyState < 2 : !source.complete) || !w) return;
+			if (canvas.width !== w || canvas.height !== h) {
+				canvas.width = w;
+				canvas.height = h;
 				gl.viewport(0, 0, canvas.width, canvas.height);
 			}
 			const n = Number.parseInt(key.color.slice(1), 16);
@@ -112,7 +115,7 @@ export function createKeyer(): Keyer | null {
 			);
 			gl.uniform1f(uSim, key.similarity);
 			gl.uniform1f(uBlend, key.blend);
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
 			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		},
 	};

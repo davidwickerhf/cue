@@ -354,8 +354,13 @@ class PlaybackEngine {
 			video.crossOrigin = "anonymous";
 			video.className = "absolute inset-0 size-full object-fill";
 			const image = document.createElement("img");
+			image.crossOrigin = "anonymous";
 			image.className = "absolute inset-0 size-full object-fill";
 			image.draggable = false;
+			image.addEventListener("load", () => {
+				if (slot.keyer && slot.keyedClip?.key && slot.image.style.display !== "none")
+					slot.keyer.draw(slot.image, slot.keyedClip.key);
+			});
 			image.decoding = "async";
 			frame.append(video, image);
 			root.append(frame);
@@ -368,7 +373,8 @@ class PlaybackEngine {
 			});
 			// Keyed clips redraw whenever a new frame is decoded (playing or after a seek).
 			const redraw = () => {
-				if (slot.keyer && slot.keyedClip?.key) slot.keyer.draw(video, slot.keyedClip.key);
+				if (slot.keyer && slot.keyedClip?.key && video.style.display !== "none")
+					slot.keyer.draw(video, slot.keyedClip.key);
 				video.requestVideoFrameCallback(redraw);
 				// A paused video only has its frame once a seek or load finishes.
 				const redrawOnce = () => {
@@ -476,6 +482,28 @@ class PlaybackEngine {
 		element.style.transformOrigin = `${z.x * 100}% ${z.y * 100}%`;
 		element.style.transform = z.scale !== 1 ? `scale(${z.scale})` : "none";
 		element.style.filter = cssFilter(clip.color);
+		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
+		if (clip.key) {
+			if (slot.keyer === undefined) {
+				slot.keyer = createKeyer();
+				if (slot.keyer) slot.frame.append(slot.keyer.canvas);
+			}
+			if (slot.keyer) {
+				slot.keyedClip = clip;
+				element.style.opacity = "0";
+				const k = slot.keyer.canvas.style;
+				k.display = "";
+				k.transform = element.style.transform;
+				k.transformOrigin = element.style.transformOrigin;
+				k.filter = element.style.filter;
+				slot.keyer.draw(element, clip.key);
+			}
+		} else if (slot.keyedClip) {
+			slot.keyedClip = null;
+			slot.video.style.opacity = "";
+			slot.image.style.opacity = "";
+			if (slot.keyer) slot.keyer.canvas.style.display = "none";
+		}
 		slot.clipId = clip.id;
 		if (isImage) {
 			if (slot.src !== url) {
@@ -486,27 +514,6 @@ class PlaybackEngine {
 			return;
 		}
 		const video = slot.video;
-		// Chroma key: the video keeps decoding underneath while a WebGL canvas shows it keyed.
-		if (clip.key) {
-			if (slot.keyer === undefined) {
-				slot.keyer = createKeyer();
-				if (slot.keyer) slot.frame.append(slot.keyer.canvas);
-			}
-			if (slot.keyer) {
-				slot.keyedClip = clip;
-				video.style.opacity = "0";
-				const k = slot.keyer.canvas.style;
-				k.display = "";
-				k.transform = video.style.transform;
-				k.transformOrigin = video.style.transformOrigin;
-				k.filter = video.style.filter;
-				slot.keyer.draw(video, clip.key);
-			}
-		} else if (slot.keyedClip) {
-			slot.keyedClip = null;
-			video.style.opacity = "";
-			if (slot.keyer) slot.keyer.canvas.style.display = "none";
-		}
 		if (slot.src !== url) {
 			video.src = url;
 			slot.src = url;
