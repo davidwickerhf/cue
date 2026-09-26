@@ -15,7 +15,12 @@ import {
 	NO_CROP,
 	newId,
 	CLIP_LABELS,
+	DEFAULT_KEY,
+	defaultTracks,
+	DEFAULT_MASK,
 	groupTracks,
+	keySchema,
+	maskSchema,
 	normaliseLine,
 	settingsSchema,
 	sortLines,
@@ -33,7 +38,7 @@ import type { Asset, Clip, MediaClip, ProjectData, Track } from "./types";
  * and the activity feed behave the same whoever makes the change.
  */
 const ms = z.number();
-const animation = z.enum(["none", "fade", "pop", "slide-up", "typewriter"]);
+const animation = z.enum(["none", "fade", "pop", "slide-up", "slide-left", "zoom", "typewriter"]);
 
 export const mediaClipInput = z.object({
 	type: z.literal("media"),
@@ -87,6 +92,8 @@ export const clipPatch = z
 		name: z.string().max(120),
 		disabled: z.boolean(),
 		label: z.enum(CLIP_LABELS).nullable(),
+		mask: maskSchema.partial().nullable(),
+		key: keySchema.partial().nullable(),
 	})
 	.partial();
 
@@ -163,6 +170,39 @@ export const opSchema = z.discriminatedUnion("type", [
 		trackIds: z.array(z.string()).optional(),
 	}),
 	z.object({ type: z.literal("detachAudio"), id: z.string(), trackId: z.string().optional() }),
+	z.object({
+		type: z.literal("addAdjustment"),
+		trackId: z.string().optional(),
+		startMs: ms.min(0),
+		durationMs: ms.min(100).default(5000),
+	}),
+	// Sequences (several timelines per project) and nesting
+	z.object({
+		type: z.literal("newSequence"),
+		name: z.string().min(1).max(120),
+		open: z.boolean().default(true),
+	}),
+	z.object({ type: z.literal("openSequence"), id: z.string() }),
+	z.object({ type: z.literal("renameSequence"), id: z.string(), name: z.string().min(1).max(120) }),
+	z.object({ type: z.literal("duplicateSequence"), id: z.string() }),
+	z.object({ type: z.literal("deleteSequence"), id: z.string() }),
+	z.object({
+		type: z.literal("nestClips"),
+		ids: z.array(z.string()).min(1),
+		name: z.string().min(1).max(120).optional(),
+	}),
+	// Speed ramps: a stretch of a clip re-timed in short steps that ease between speeds
+	z.object({
+		type: z.literal("speedRamp"),
+		clipId: z.string(),
+		shape: z.enum(["up", "down", "inOut", "outIn"]),
+		/** The fastest (or slowest) speed the ramp reaches. */
+		peak: z.number().min(0.1).max(8),
+		/** Part of the clip to ramp, in clip time (default: all of it). */
+		fromMs: ms.min(0).optional(),
+		toMs: ms.min(0).optional(),
+		steps: z.number().int().min(3).max(24).default(10),
+	}),
 	// Three-point editing (Premiere: , insert and . overwrite; ; lift)
 	z.object({
 		type: z.literal("liftRange"),
@@ -281,6 +321,8 @@ export type InternalOp =
 	| { type: "addAsset"; asset: Asset; placeOn?: { trackId: string; startMs: number } }
 	| { type: "addTake"; asset: Asset }
 	| { type: "setTranscript"; assetId: string; transcript: Asset["transcript"] }
+	/** Change fields of a media item (e.g. a nested sequence's render). */
+	| { type: "updateAsset"; id: string; patch: Partial<Asset> }
 	/** New file locations for media that moved (path as stored in the project). */
 	| { type: "relinkAssets"; paths: Record<string, { path: string; relPath: string }> };
 
@@ -323,6 +365,56 @@ function unlocked(data: ProjectData, trackId: string): Track {
 }
 
 /** Checks a clip against its track kind and the length of its source. */
+/** The open timeline's id and name. */
+export function activeSequence(data: ProjectData) {
+	return data.sequence ?? { id: "main", name: "Main" };
+}
+
+/** Every timeline, open one included. */
+export function allSequences(data: ProjectData) {
+	const open = activeSequence(data);
+	return [
+		{ ...open, tracks: data.tracks, clips: data.clips, markers: data.markers },
+		...(data.sequences ?? []),
+	];
+}
+
+/** Puts the open timeline away with the others. */
+function stash(data: ProjectData): ProjectData {
+	const open = activeSequence(data);
+	return {
+		...data,
+		sequences: [
+			...(data.sequences ?? []),
+			{ ...open, tracks: data.tracks, clips: data.clips, markers: data.markers },
+		],
+	};
+}
+
+/** Opens a stored timeline. */
+function swapIn(
+	data: ProjectData,
+	target: {
+		id: string;
+		name: string;
+		tracks: Track[];
+		clips: Clip[];
+		markers: ProjectData["markers"];
+	},
+): ProjectData {
+	return {
+		...data,
+		sequence: { id: target.id, name: target.name },
+		sequences: (data.sequences ?? []).filter((q) => q.id !== target.id),
+		tracks: target.tracks,
+		clips: target.clips,
+		markers: target.markers,
+	};
+}
+
+/** The one built-in media item behind every adjustment layer clip. */
+export const ADJUSTMENT_ASSET = "a_adjust";
+
 function validateClip(data: ProjectData, c: Clip): Clip {
 	const t = unlocked(data, c.trackId);
 	if (c.type === "text") {
@@ -335,9 +427,11 @@ function validateClip(data: ProjectData, c: Clip): Clip {
 		throw new Error(`Audio "${a.name}" cannot go on video track "${t.name}".`);
 	if (t.kind === "audio" && a.kind === "image")
 		throw new Error(`Image "${a.name}" cannot go on audio track "${t.name}".`);
+	if (t.kind !== "video" && a.kind === "adjustment")
+		throw new Error("Adjustment layers go on video tracks.");
 	if (t.kind === "audio" && !a.hasAudio && a.kind === "video")
 		throw new Error(`"${a.name}" has no audio.`);
-	if (a.kind !== "image") {
+	if (a.kind !== "image" && a.kind !== "adjustment") {
 		const available = a.durationMs - c.inMs;
 		if (available <= 0) throw new Error(`In-point is past the end of "${a.name}".`);
 		const maxDuration = available / c.speed;
@@ -370,7 +464,8 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 	const a = asset(data, input.assetId);
 	const inMs = Math.round(input.inMs ?? 0);
 	const speed = input.speed ?? 1;
-	const natural = a.kind === "image" ? 5000 : (a.durationMs - inMs) / speed;
+	const natural =
+		a.kind === "image" || a.kind === "adjustment" ? 5000 : (a.durationMs - inMs) / speed;
 	return validateClip(data, {
 		id: input.id ?? newId("c"),
 		type: "media",
@@ -537,6 +632,16 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		}
 		return { data: next, summary: `Added ${rawOp.asset.kind} "${rawOp.asset.name}"`, created };
 	}
+	if (rawOp.type === "updateAsset") {
+		asset(data, rawOp.id);
+		return {
+			data: {
+				...data,
+				assets: data.assets.map((a) => (a.id === rawOp.id ? { ...a, ...rawOp.patch } : a)),
+			},
+			summary: `Updated ${asset(data, rawOp.id).name}`,
+		};
+	}
 	if (rawOp.type === "relinkAssets") {
 		const count = Object.keys(rawOp.paths).length;
 		return {
@@ -662,9 +767,28 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "updateClip": {
 			const current = clip(data, op.id);
 			unlocked(data, current.trackId);
-			const { transform, style, color, label, ...patch } = op.patch;
-			// A null label clears it.
-			const rest = { ...patch, ...(label === undefined ? {} : { label: label ?? undefined }) };
+			const { transform, style, color, label, mask, key, ...patch } = op.patch;
+			// null clears a label, mask or key; a partial mask or key merges with what is there.
+			const rest = {
+				...patch,
+				...(label === undefined ? {} : { label: label ?? undefined }),
+				...(mask === undefined || current.type !== "media"
+					? {}
+					: {
+							mask:
+								mask === null
+									? undefined
+									: maskSchema.parse({ ...DEFAULT_MASK, ...current.mask, ...mask }),
+						}),
+				...(key === undefined || current.type !== "media"
+					? {}
+					: {
+							key:
+								key === null
+									? undefined
+									: keySchema.parse({ ...DEFAULT_KEY, ...current.key, ...key }),
+						}),
+			};
 			const merged =
 				current.type === "media"
 					? {
@@ -848,6 +972,264 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				removed += width;
 			}
 			return { data: next, summary: `Removed ${merged.length} range(s), ${sec(removed)} in total` };
+		}
+		case "newSequence": {
+			const id = newId("s");
+			const fresh = { id, name: op.name, tracks: defaultTracks(), clips: [], markers: [] };
+			if (!op.open)
+				return {
+					data: { ...data, sequences: [...(data.sequences ?? []), fresh] },
+					summary: `Added sequence "${op.name}"`,
+					created: [id],
+				};
+			return {
+				data: swapIn(stash(data), fresh),
+				summary: `New sequence "${op.name}"`,
+				created: [id],
+			};
+		}
+		case "openSequence": {
+			if (activeSequence(data).id === op.id) return { data, summary: "Already open" };
+			const target = (data.sequences ?? []).find((q) => q.id === op.id);
+			if (!target) throw new Error(`No sequence "${op.id}".`);
+			return { data: swapIn(stash(data), target), summary: `Opened sequence "${target.name}"` };
+		}
+		case "renameSequence": {
+			if (activeSequence(data).id === op.id)
+				return {
+					data: { ...data, sequence: { id: op.id, name: op.name } },
+					summary: `Renamed the sequence to "${op.name}"`,
+				};
+			if (!(data.sequences ?? []).some((q) => q.id === op.id))
+				throw new Error(`No sequence "${op.id}".`);
+			return {
+				data: {
+					...data,
+					sequences: (data.sequences ?? []).map((q) =>
+						q.id === op.id ? { ...q, name: op.name } : q,
+					),
+					assets: data.assets.map((a) => (a.sequenceId === op.id ? { ...a, name: op.name } : a)),
+				},
+				summary: `Renamed the sequence to "${op.name}"`,
+			};
+		}
+		case "duplicateSequence": {
+			const all = allSequences(data);
+			const source = all.find((q) => q.id === op.id);
+			if (!source) throw new Error(`No sequence "${op.id}".`);
+			const copy = {
+				id: newId("s"),
+				name: `${source.name} copy`,
+				tracks: source.tracks,
+				clips: source.clips.map((c) => ({ ...c, id: newId("c") })),
+				markers: source.markers.map((m) => ({ ...m, id: newId("m") })),
+			};
+			return {
+				data: { ...data, sequences: [...(data.sequences ?? []), copy] },
+				summary: `Duplicated "${source.name}"`,
+				created: [copy.id],
+			};
+		}
+		case "deleteSequence": {
+			if (activeSequence(data).id === op.id)
+				throw new Error("Open another sequence before deleting this one.");
+			const used = allSequences(data).some((q) =>
+				q.clips.some(
+					(c) =>
+						c.type === "media" && data.assets.find((a) => a.id === c.assetId)?.sequenceId === op.id,
+				),
+			);
+			if (used)
+				throw new Error("This sequence is nested in another one. Delete those clips first.");
+			return {
+				data: {
+					...data,
+					sequences: (data.sequences ?? []).filter((q) => q.id !== op.id),
+					assets: data.assets.filter((a) => a.sequenceId !== op.id),
+				},
+				summary: "Deleted a sequence",
+			};
+		}
+		case "nestClips": {
+			// Like Premiere's Nest: the clips move into a new sequence, which takes their place as one clip.
+			const ids = withGroups(data, op.ids);
+			const chosen = data.clips.filter((c) => ids.includes(c.id));
+			if (!chosen.length) throw new Error("Select the clips to nest.");
+			for (const c of chosen) unlocked(data, c.trackId);
+			const start = Math.min(...chosen.map((c) => c.startMs));
+			const end = Math.max(...chosen.map(clipEnd));
+			const usedTracks = data.tracks.filter((t) => chosen.some((c) => c.trackId === t.id));
+			const id = newId("s");
+			const name = op.name ?? `Nested ${(data.sequences?.length ?? 0) + 1}`;
+			const nested = {
+				id,
+				name,
+				tracks: usedTracks.map((t) => ({ ...t, solo: false })),
+				clips: chosen.map((c) => ({ ...c, startMs: c.startMs - start })),
+				markers: [],
+			};
+			const assetId = newId("a");
+			const place =
+				usedTracks.find((t) => t.kind === "video")?.id ??
+				data.tracks.filter((t) => t.kind === "video" && !t.locked).at(-1)?.id;
+			if (!place) throw new Error("Nesting needs a video track to hold the new clip.");
+			const withAsset: ProjectData = {
+				...data,
+				clips: data.clips.filter((c) => !ids.includes(c.id)),
+				sequences: [...(data.sequences ?? []), nested],
+				assets: [
+					...data.assets,
+					{
+						id: assetId,
+						kind: "video",
+						name,
+						path: "",
+						sequenceId: id,
+						durationMs: end - start,
+						width: data.canvas.width,
+						height: data.canvas.height,
+						hasAudio: chosen.some(
+							(c) => c.type === "media" && data.assets.find((a) => a.id === c.assetId)?.hasAudio,
+						),
+						origin: "import",
+						createdAt: new Date().toISOString(),
+						actor: "user",
+					},
+				],
+			};
+			const clip = buildClip(withAsset, {
+				type: "media",
+				assetId,
+				trackId: place,
+				startMs: start,
+				durationMs: end - start,
+				name,
+			});
+			return {
+				data: { ...withAsset, clips: [...withAsset.clips, clip] },
+				summary: `Nested ${chosen.length} clip(s) into "${name}"`,
+				created: [clip.id, id],
+			};
+		}
+		case "addAdjustment": {
+			let next = data;
+			if (!next.assets.some((a) => a.id === ADJUSTMENT_ASSET))
+				next = {
+					...next,
+					assets: [
+						...next.assets,
+						{
+							id: ADJUSTMENT_ASSET,
+							kind: "adjustment",
+							name: "Adjustment layer",
+							path: "",
+							durationMs: 0,
+							width: next.canvas.width,
+							height: next.canvas.height,
+							hasAudio: false,
+							origin: "import",
+							createdAt: new Date().toISOString(),
+							actor: "user",
+						},
+					],
+				};
+			let trackId = op.trackId;
+			if (!trackId) {
+				// An adjustment layer affects the tracks below it, so it goes on a new top video track.
+				const added = applyOp(next, {
+					type: "addTrack",
+					kind: "video",
+					name: "Adjustment",
+					index: 0,
+				});
+				next = added.data;
+				trackId = added.created?.[0];
+			}
+			if (!trackId) throw new Error("No track for the adjustment layer.");
+			const c = buildClip(next, {
+				type: "media",
+				assetId: ADJUSTMENT_ASSET,
+				trackId,
+				startMs: op.startMs,
+				durationMs: op.durationMs,
+				name: "Adjustment",
+			});
+			return {
+				data: { ...next, clips: [...next.clips, { ...c, color: { ...NEUTRAL_COLOR } } as Clip] },
+				summary: "Added an adjustment layer",
+				created: [c.id],
+			};
+		}
+		case "speedRamp": {
+			const c = media(data, op.clipId);
+			unlocked(data, c.trackId);
+			const a = Math.max(0, Math.round(op.fromMs ?? 0));
+			const b = Math.min(c.durationMs, Math.round(op.toMs ?? c.durationMs));
+			if (b - a < 200) throw new Error("Ramp at least a fifth of a second.");
+			const base = c.speed;
+			const span = (b - a) * base;
+			// How far towards the peak each step goes: 0 = the clip's speed, 1 = the peak.
+			const weight = (u: number) =>
+				op.shape === "up"
+					? (1 - Math.cos(Math.PI * u)) / 2
+					: op.shape === "down"
+						? (1 + Math.cos(Math.PI * u)) / 2
+						: Math.sin(Math.PI * u);
+			const pieces: MediaClip[] = [];
+			let at = c.startMs + a;
+			let source = c.inMs + a * base;
+			for (let i = 0; i < op.steps; i++) {
+				const w = weight((i + 0.5) / op.steps);
+				const speed = Math.min(8, Math.max(0.1, base * (op.peak / base) ** w));
+				const length = Math.max(1, Math.round(span / op.steps / speed));
+				pieces.push({
+					...c,
+					id: newId("c"),
+					startMs: Math.round(at),
+					durationMs: length,
+					inMs: Math.round(source),
+					speed: Math.round(speed * 1000) / 1000,
+					fadeInMs: 0,
+					fadeOutMs: 0,
+					transitionIn: undefined,
+					keyframes: undefined,
+					zooms: undefined,
+				});
+				at += length;
+				source += span / op.steps;
+			}
+			const head: MediaClip[] = a > 0 ? [{ ...c, durationMs: a, fadeOutMs: 0 }] : [];
+			const tail: MediaClip[] =
+				b < c.durationMs
+					? [
+							{
+								...c,
+								id: newId("c"),
+								startMs: Math.round(at),
+								durationMs: c.durationMs - b,
+								inMs: Math.round(c.inMs + b * base),
+								fadeInMs: 0,
+								transitionIn: undefined,
+							},
+						]
+					: [];
+			if (head.length) head[0].fadeInMs = c.fadeInMs;
+			(tail.at(0) ?? (pieces.at(-1) as MediaClip)).fadeOutMs = c.fadeOutMs;
+			// Later clips on the track move by however much longer or shorter the clip became.
+			const delta = Math.round(at - (c.startMs + b));
+			const end = clipEnd(c);
+			const others = data.clips
+				.filter((x) => x.id !== c.id)
+				.map((x) =>
+					x.trackId === c.trackId && x.startMs >= end - 1
+						? { ...x, startMs: Math.max(0, x.startMs + delta) }
+						: x,
+				);
+			return {
+				data: { ...data, clips: [...others, ...head, ...pieces, ...tail] },
+				summary: `Speed ramp on ${c.name ?? c.id}: ${base}× → ${op.peak}× (${op.shape})`,
+				created: pieces.map((p) => p.id),
+			};
 		}
 		case "liftRange": {
 			if (op.endMs - op.startMs < 2) throw new Error("Mark an in and an out point first.");

@@ -115,6 +115,7 @@ export type SidebarPanel =
 	| "transcript"
 	| "text"
 	| "mixer"
+	| "history"
 	| "generate"
 	| "agent"
 	| "settings";

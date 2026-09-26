@@ -14,7 +14,16 @@ import {
 	trackAudible,
 	voiceoverTrack,
 } from "./project";
-import type { Asset, Clip, MediaClip, ProjectData, TextClip, Track } from "./types";
+import type {
+	Asset,
+	Clip,
+	ColorGrade,
+	Mask,
+	MediaClip,
+	ProjectData,
+	TextClip,
+	Track,
+} from "./types";
 
 /** A text clip rendered by the editor window: one still, or a frame sequence for animated text. */
 export type TextRender =
@@ -434,6 +443,18 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			continue;
 		}
 		const a = assetOf(data, clip.assetId);
+		if (a.kind === "adjustment") {
+			// An adjustment layer grades everything composited so far, for as long as it lasts.
+			const filters = gradeFilters(clip.color).map(
+				(f) => `${f}:enable='between(t,${start},${end})'`,
+			);
+			if (filters.length) {
+				const out = `adj${n++}`;
+				chains.push(`[${current}]${filters.join(",")},format=yuva420p[${out}]`);
+				current = out;
+			}
+			continue;
+		}
 		const file = resolveInProject(ctx.dir, a.path);
 		const t = clip.transform;
 		const c = t.crop;
@@ -449,20 +470,12 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const zoomChain = zoom
 			? `,scale=w='trunc(iw*${zoom.scale}/2)*2':h='trunc(ih*${zoom.scale}/2)*2':eval=frame:flags=bicubic,crop=w=${sw}:h=${sh}:x='max(0,min(iw-${sw},${zoom.x}*iw-${sw}/2))':y='max(0,min(ih-${sh},${zoom.y}*ih-${sh}/2))'`
 			: "";
-		const grade = clip.color;
-		const colorChain = grade
-			? [
-					grade.brightness !== 0 || grade.contrast !== 1 || grade.saturation !== 1
-						? `eq=brightness=${grade.brightness.toFixed(3)}:contrast=${grade.contrast.toFixed(3)}:saturation=${grade.saturation.toFixed(3)}`
-						: "",
-					grade.temperature !== 0
-						? `colortemperature=temperature=${Math.round(6500 - grade.temperature * 2500)}`
-						: "",
-					grade.lut ? `lut3d=file='${grade.lut.replace(/'/g, "\\'")}'` : "",
-				]
-					.filter(Boolean)
-					.map((f) => `,${f}`)
-					.join("")
+		const colorChain = gradeFilters(clip.color)
+			.map((f) => `,${f}`)
+			.join("");
+		// Chroma key removes the screen colour before anything is composited.
+		const keyChain = clip.key
+			? `,format=yuva420p,chromakey=color=0x${clip.key.color.slice(1)}:similarity=${clip.key.similarity.toFixed(3)}:blend=${clip.key.blend.toFixed(3)}`
 			: "";
 		const crop =
 			c.left || c.top || c.right || c.bottom
@@ -498,9 +511,32 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			index = addInput(["-i", file]);
 			source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
 		} else continue;
-		chains.push(
-			`${source}${zoomChain}${colorChain}${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`,
-		);
+		const finish = `${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`;
+		if (clip.mask) {
+			// The mask is drawn once at the picture's size and becomes its alpha, before cropping and scaling.
+			// With a chroma key too, the key's alpha and the mask are multiplied so both apply.
+			const maskFile = await maskImage(ctx.dir, clip.mask, sw, sh);
+			const m = addInput([
+				"-loop",
+				"1",
+				"-framerate",
+				String(fps),
+				"-t",
+				s(clip.durationMs + 1000),
+				"-i",
+				maskFile,
+			]);
+			chains.push(`${source}${zoomChain}${colorChain}${keyChain},format=yuva420p[pre${label}]`);
+			chains.push(`[${m}:v]format=gray,scale=${sw}:${sh}[mask${label}]`);
+			if (clip.key) {
+				chains.push(`[pre${label}]split[pic${label}][alp${label}]`);
+				chains.push(`[alp${label}]alphaextract[ka${label}]`);
+				chains.push(`[ka${label}][mask${label}]blend=all_mode=multiply[ma${label}]`);
+				chains.push(`[pic${label}][ma${label}]alphamerge${finish}`);
+			} else chains.push(`[pre${label}][mask${label}]alphamerge${finish}`);
+		} else {
+			chains.push(`${source}${zoomChain}${colorChain}${keyChain}${finish}`);
+		}
 		// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
 		const local = `(t-${start})*1000`;
 		const X = kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x);
@@ -555,4 +591,57 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	}
 	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
 	return { kind: "video", outputs: [out], missing: [], durationMs: exported };
+}
+
+/** Colour-correction filters for a grade (shared by clips and adjustment layers). */
+function gradeFilters(grade: ColorGrade | undefined): string[] {
+	if (!grade) return [];
+	return [
+		grade.brightness !== 0 || grade.contrast !== 1 || grade.saturation !== 1
+			? `eq=brightness=${grade.brightness.toFixed(3)}:contrast=${grade.contrast.toFixed(3)}:saturation=${grade.saturation.toFixed(3)}`
+			: "",
+		grade.temperature !== 0
+			? `colortemperature=temperature=${Math.round(6500 - grade.temperature * 2500)}`
+			: "",
+		grade.lut ? `lut3d=file='${grade.lut.replace(/'/g, "\\'")}'` : "",
+	].filter(Boolean);
+}
+
+/**
+ * A grey mask image (white shows, black hides) for a clip, drawn once with
+ * ffmpeg's geq and cached. Same formula as the preview's mask.
+ */
+async function maskImage(dir: string, mask: Mask, w: number, h: number): Promise<string> {
+	const key = JSON.stringify([mask, w, h]);
+	let hash = 0;
+	for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+	const file = path.join(dir, ".cue-cache", "masks", `${(hash >>> 0).toString(36)}.png`);
+	try {
+		await fs.access(file);
+		return file;
+	} catch {}
+	await fs.mkdir(path.dirname(file), { recursive: true });
+	const cx = (mask.x * w).toFixed(2);
+	const cy = (mask.y * h).toFixed(2);
+	const rx = Math.max(1, (mask.width / 2) * w).toFixed(2);
+	const ry = Math.max(1, (mask.height / 2) * h).toFixed(2);
+	const d =
+		mask.shape === "ellipse"
+			? `hypot((X-${cx})/${rx}\\,(Y-${cy})/${ry})`
+			: `max(abs(X-${cx})/${rx}\\,abs(Y-${cy})/${ry})`;
+	const fe = Math.max(0.002, mask.feather).toFixed(4);
+	const v = `clip((1-${d})/${fe}\\,0\\,1)`;
+	const lum = `255*${mask.invert ? `(1-${v})` : v}`;
+	await ffmpeg([
+		"-f",
+		"lavfi",
+		"-i",
+		`color=black:s=${w}x${h}:d=1`,
+		"-vf",
+		`format=gray,geq=lum='${lum}'`,
+		"-frames:v",
+		"1",
+		file,
+	]);
+	return file;
 }

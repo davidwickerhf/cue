@@ -62,6 +62,10 @@ A project is a `.cueproj` file: plain JSON, so it diffs and versions well, and d
 
 If media moves, Cue looks for it when the project opens: first where it would be if the project folder moved together with it, then for a file with the same name and size near the project. Anything still missing shows as offline with a Relink option; locating one file also finds the others in the same folder.
 
+## History
+
+Every change to a project is kept, with who made it (you, an agent, or Cue) and when, in a hidden `.cue-history` folder next to the project (ignored by git). The History panel lists it all, across sessions; clicking a step brings the project back to that point, as a new step you can undo.
+
 ## Agent chat
 
 The Agent panel chats with Claude Code, Codex or Gemini CLI, whichever is installed, signed in with your own account. Each run gets only Cue's tools (no shell, files or web), knows the playhead and selection, and keeps its session between messages. Outside agents can still connect over MCP (Agent → Connect & activity).

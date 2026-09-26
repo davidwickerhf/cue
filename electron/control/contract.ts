@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TITLE_IDS } from "../core/titles";
 import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
@@ -172,19 +173,19 @@ export const contract = {
 	},
 	add_text: {
 		description:
-			"Add a text overlay quickly. preset: title (large, centred), lower-third, caption (bottom) or label. Uses the first text track unless trackId is given.",
+			"Add a title from a template (preset): title, headline, outline, gradient, lower-third, caption, subtitle (yellow outlined), minimal, quote, label or big-number. Style and animations can be changed after with update_clip. Uses the first text track unless trackId is given.",
 		input: {
 			text: z.string().min(1),
 			startMs: z.number().min(0),
 			durationMs: z.number().min(100).default(3000),
-			preset: z.enum(["title", "lower-third", "caption", "label"]).default("title"),
+			preset: z.enum(TITLE_IDS).default("title"),
 			trackId: z.string().optional(),
 			style: textStyleSchema.partial().optional(),
 		},
 	},
 	update_clip: {
 		description:
-			"Change a clip: timing, in-point, speed, volume, fades, denoise, color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+			"Change a clip: timing, in-point, speed, volume, fades, denoise, color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: {
@@ -218,6 +219,71 @@ export const contract = {
 		input: {
 			ranges: z.array(z.object({ startMs: z.number().min(0), endMs: z.number().min(0) })).min(1),
 			trackIds: z.array(z.string()).optional(),
+		},
+	},
+	get_history: {
+		description:
+			"The project's complete history, newest first: every change with its step number, who made it (user, agent or system), when, and on which timeline. It persists across sessions.",
+		input: {
+			limit: z.number().int().min(1).max(2000).default(100),
+			before: z.number().int().optional().describe("only steps before this number (paging)"),
+		},
+	},
+	restore_history: {
+		description:
+			"Bring the project back to how it was right after a history step. This is a new step itself, so it can be undone.",
+		input: { n: z.number().int().min(1) },
+	},
+	list_sequences: {
+		description:
+			"Every timeline (sequence) in the project, which one is open, and which appear nested inside others.",
+		input: {},
+	},
+	new_sequence: {
+		description:
+			"Create a timeline (sequence) and open it (open: false keeps the current one open).",
+		input: { name: z.string().min(1).max(120), open: z.boolean().default(true) },
+	},
+	open_sequence: {
+		description: "Open another timeline. Editing tools always work on the open one.",
+		input: { id: z.string() },
+	},
+	rename_sequence: {
+		description: "Rename a timeline.",
+		input: { id: z.string(), name: z.string().min(1).max(120) },
+	},
+	duplicate_sequence: {
+		description: "Copy a timeline (e.g. to try a different cut).",
+		input: { id: z.string() },
+	},
+	delete_sequence: {
+		description: "Delete a timeline that is not open and not nested anywhere.",
+		input: { id: z.string() },
+	},
+	nest_clips: {
+		description:
+			"Nest clips (Premiere's Nest): move them into a new sequence that takes their place as one clip. Open the new sequence to edit inside it; the nested clip updates when you come back.",
+		input: { ids: z.array(z.string()).min(1), name: z.string().min(1).max(120).optional() },
+	},
+	add_adjustment_layer: {
+		description:
+			"Add an adjustment layer: a clip on a video track whose colour grade (update_clip color) and mask apply to everything on the tracks below it for as long as it lasts. Without trackId it goes on a new top track.",
+		input: {
+			startMs: z.number().min(0),
+			durationMs: z.number().min(100).default(5000),
+			trackId: z.string().optional(),
+		},
+	},
+	speed_ramp: {
+		description:
+			"Speed ramp part of a media clip (fromMs–toMs in clip time, default all of it): up = ease to peak speed, down = ease from peak back to normal, inOut = fast in the middle (montage), outIn with peak < 1 = slow-motion hit. Later clips on the track move to make room.",
+		input: {
+			clipId: z.string(),
+			shape: z.enum(["up", "down", "inOut", "outIn"]),
+			peak: z.number().min(0.1).max(8),
+			fromMs: z.number().min(0).optional(),
+			toMs: z.number().min(0).optional(),
+			steps: z.number().int().min(3).max(24).default(10),
 		},
 	},
 	lift_range: {
@@ -648,14 +714,25 @@ export const contract = {
 	},
 	set_view: {
 		description:
-			"Show the user something: open a sidebar panel, fit the whole timeline in view, zoom the timeline (px per second), or open a media item in the source monitor.",
+			"Show the user something: switch workspace (window layout), open a sidebar panel, fit the whole timeline in view, zoom the timeline (px per second), or open a media item in the source monitor.",
 		input: {
 			panel: z
-				.enum(["media", "script", "transcript", "text", "mixer", "generate", "agent", "settings"])
+				.enum([
+					"media",
+					"script",
+					"transcript",
+					"text",
+					"mixer",
+					"generate",
+					"history",
+					"agent",
+					"settings",
+				])
 				.optional(),
 			fitTimeline: z.boolean().optional(),
 			zoom: z.number().min(4).max(600).optional(),
 			openSource: z.string().optional().describe("asset id"),
+			workspace: z.enum(["editing", "audio", "colour", "voiceover", "titles", "agent"]).optional(),
 		},
 	},
 	get_app_settings: {

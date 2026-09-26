@@ -7,7 +7,9 @@ import type { TextRender } from "./core/exporter";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
 import type { AiRuntime } from "./core/runtime";
 import { scanProjects, summarise } from "./core/library";
+import { activeSequence, allSequences } from "./core/ops";
 import { parseSrt } from "./core/srt";
+import { TITLE_TEMPLATES } from "./core/titles";
 import type { ProjectStore } from "./core/store";
 import type {
 	Actor,
@@ -21,7 +23,6 @@ import type {
 	RecentProject,
 	RecorderStatus,
 	TextClip,
-	TextStyle,
 } from "./core/types";
 
 interface PendingRecording {
@@ -45,30 +46,6 @@ export interface ControllerHooks {
 	/** The folder new projects go in (app setting). */
 	projectsDir?: () => string;
 }
-
-const TEXT_PRESETS: Record<"title" | "lower-third" | "caption" | "label", Partial<TextStyle>> = {
-	title: { fontSize: 96, fontWeight: 800, y: 0.45, width: 0.8, background: null, shadow: true },
-	"lower-third": {
-		fontSize: 44,
-		fontWeight: 700,
-		x: 0.3,
-		y: 0.82,
-		width: 0.5,
-		align: "left",
-		background: "rgba(15, 23, 42, 0.78)",
-	},
-	caption: { fontSize: 46, fontWeight: 600, y: 0.9, width: 0.86, padding: 14, radius: 10 },
-	label: {
-		fontSize: 32,
-		fontWeight: 600,
-		x: 0.84,
-		y: 0.1,
-		width: 0.28,
-		background: "rgba(37, 99, 235, 0.9)",
-		radius: 999,
-		padding: 12,
-	},
-};
 
 /**
  * Where editor state lives and every action is implemented. The editor window
@@ -305,7 +282,8 @@ export class Controller extends EventEmitter {
 					this.store.current.tracks.find((t) => t.kind === "text")?.id ??
 					this.store.apply({ type: "addTrack", kind: "text", index: 0 }, actor).created?.[0];
 				if (!trackId) throw new Error("No text track.");
-				const style = { ...DEFAULT_TEXT_STYLE, ...TEXT_PRESETS[input.preset], ...input.style };
+				const template = TITLE_TEMPLATES[input.preset];
+				const style = { ...DEFAULT_TEXT_STYLE, ...template.style, ...input.style };
 				return this.store.apply(
 					{
 						type: "addClips",
@@ -317,7 +295,9 @@ export class Controller extends EventEmitter {
 								durationMs: input.durationMs,
 								text: input.text,
 								style,
-								name: input.preset,
+								animationIn: template.animationIn,
+								animationOut: template.animationOut,
+								name: template.label,
 							},
 						],
 					},
@@ -348,6 +328,60 @@ export class Controller extends EventEmitter {
 					{ type: "detachAudio", ...parseInput("detach_audio", params) },
 					actor,
 				);
+			case "get_history": {
+				const { limit, before } = parseInput("get_history", params);
+				return this.store.historyEntries(limit, before);
+			}
+			case "restore_history":
+				return this.afterSequence(
+					await this.store.restoreHistory(parseInput("restore_history", params).n, actor),
+				);
+			case "list_sequences": {
+				const data = this.store.current;
+				const open = activeSequence(data);
+				return allSequences(data).map((q) => ({
+					id: q.id,
+					name: q.name,
+					open: q.id === open.id,
+					durationMs: q.clips.reduce((end, c) => Math.max(end, c.startMs + c.durationMs), 0),
+					clips: q.clips.length,
+					nestedAs: data.assets.find((a) => a.sequenceId === q.id)?.id ?? null,
+				}));
+			}
+			case "new_sequence":
+				return this.afterSequence(
+					this.store.apply({ type: "newSequence", ...parseInput("new_sequence", params) }, actor),
+				);
+			case "open_sequence":
+				return this.afterSequence(
+					this.store.apply({ type: "openSequence", ...parseInput("open_sequence", params) }, actor),
+				);
+			case "rename_sequence":
+				return this.store.apply(
+					{ type: "renameSequence", ...parseInput("rename_sequence", params) },
+					actor,
+				);
+			case "duplicate_sequence":
+				return this.store.apply(
+					{ type: "duplicateSequence", ...parseInput("duplicate_sequence", params) },
+					actor,
+				);
+			case "delete_sequence":
+				return this.store.apply(
+					{ type: "deleteSequence", ...parseInput("delete_sequence", params) },
+					actor,
+				);
+			case "nest_clips":
+				return this.afterSequence(
+					this.store.apply({ type: "nestClips", ...parseInput("nest_clips", params) }, actor),
+				);
+			case "add_adjustment_layer":
+				return this.store.apply(
+					{ type: "addAdjustment", ...parseInput("add_adjustment_layer", params) },
+					actor,
+				);
+			case "speed_ramp":
+				return this.store.apply({ type: "speedRamp", ...parseInput("speed_ramp", params) }, actor);
 			case "lift_range":
 				return this.store.apply({ type: "liftRange", ...parseInput("lift_range", params) }, actor);
 			case "insert_edit":
@@ -728,8 +762,10 @@ export class Controller extends EventEmitter {
 					actor,
 				);
 			case "undo":
+				this.afterSequence(null);
 				return { undone: this.store.undo(actor) };
 			case "redo":
+				this.afterSequence(null);
 				return { redone: this.store.redo(actor) };
 			case "export": {
 				const { kind, out, range } = parseInput("export", params);
@@ -761,6 +797,21 @@ export class Controller extends EventEmitter {
 	async refreshRecentAndNotify(): Promise<void> {
 		await this.refreshRecent();
 		this.changed();
+	}
+
+	private nestedTimer: NodeJS.Timeout | null = null;
+
+	/** Nested clips show a render of their sequence; refresh those renders in the background. */
+	private afterSequence<T>(result: T): T {
+		if (this.nestedTimer) clearTimeout(this.nestedTimer);
+		this.nestedTimer = setTimeout(() => {
+			this.nestedTimer = null;
+			if (!this.store.isOpen || !this.store.current.assets.some((a) => a.sequenceId)) return;
+			void this.job("Rendering nested sequences", () =>
+				this.store.renderNested(this.hooks.renderText),
+			).catch(() => {});
+		}, 250);
+		return result;
 	}
 
 	/** Recent projects plus those found in the projects folder, newest change first. */
@@ -908,6 +959,8 @@ export class Controller extends EventEmitter {
 			project: {
 				path: snapshot.path,
 				name: data.name,
+				openSequence: activeSequence(data),
+				otherSequences: (data.sequences ?? []).map((q) => ({ id: q.id, name: q.name })),
 				durationMs: snapshot.durationMs,
 				canvas: data.canvas,
 				tracks: data.tracks.map((t) => ({

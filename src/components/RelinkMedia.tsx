@@ -11,6 +11,7 @@ const EXTENSIONS: Record<Asset["kind"], string[]> = {
 	video: ["mp4", "mov", "m4v", "webm", "mkv"],
 	audio: ["wav", "mp3", "m4a", "aac", "flac", "ogg"],
 	image: ["png", "jpg", "jpeg", "webp", "gif"],
+	adjustment: [],
 };
 
 type Result = { relinked: string[]; stillOffline: number };

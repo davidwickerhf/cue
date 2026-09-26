@@ -8,11 +8,13 @@ import {
 	TextAlignRight,
 	Trash,
 } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
 import { valueAt } from "../../../electron/core/anim";
 import type { MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
-import { useApp, useProject } from "../../lib/state";
+import { editor, useApp, useProject } from "../../lib/state";
+import { layout } from "../../lib/workspace";
 import { cn, formatTime } from "../../lib/utils";
 import {
 	ColorInput,
@@ -41,19 +43,43 @@ const ANIMATIONS = [
 	{ value: "none", label: "None" },
 	{ value: "fade", label: "Fade" },
 	{ value: "pop", label: "Pop" },
-	{ value: "slide-up", label: "Slide" },
-	{ value: "typewriter", label: "Type" },
+	{ value: "zoom", label: "Zoom" },
+	{ value: "slide-up", label: "Slide up" },
+	{ value: "slide-left", label: "Slide from right" },
+	{ value: "typewriter", label: "Typewriter" },
 ] as const;
+
+let installedFonts: Promise<string[]> | null = null;
+/** Every font family on this Mac (Chromium's Local Font Access), falling back to a short list. */
+function useFonts(): string[] {
+	const [fonts, setFonts] = useState<string[]>(FONTS);
+	useEffect(() => {
+		const query = (window as unknown as { queryLocalFonts?: () => Promise<{ family: string }[]> })
+			.queryLocalFonts;
+		if (!query) return;
+		installedFonts ??= query()
+			.then((list) =>
+				[...new Set([...FONTS, ...list.map((f) => f.family)])].sort((a, b) => a.localeCompare(b)),
+			)
+			.catch(() => FONTS);
+		void installedFonts.then(setFonts);
+	}, []);
+	return fonts;
+}
 
 export function Inspector() {
 	const project = useProject();
 	const selected = useApp((s) => s.selectedClipIds) ?? [];
+	const inspectorWidth = layout.use((s) => s.inspectorWidth);
 	if (!project) return null;
 	const clips = project.data.clips.filter((c) => selected.includes(c.id));
 	const clip = clips.length === 1 ? clips[0] : null;
 
 	return (
-		<aside className="flex w-[288px] shrink-0 flex-col border-l border-separator bg-surface">
+		<aside
+			className="flex shrink-0 flex-col border-l border-separator bg-surface"
+			style={{ width: inspectorWidth }}
+		>
 			<header className="flex h-10 shrink-0 items-center justify-between border-b border-separator pr-2 pl-4">
 				<h2 className="truncate text-[12px] font-semibold">
 					{clip
@@ -281,7 +307,9 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 		else if (prop === "volume") patch({ volume: value });
 		else patch({ transform: { [prop]: value } });
 	};
-	const visual = track?.kind === "video";
+	const adjustment = asset?.kind === "adjustment";
+	// Adjustment layers only have timing, colour and a mask.
+	const visual = track?.kind === "video" && !adjustment;
 	const audible = asset?.hasAudio && asset.kind !== "image";
 	return (
 		<>
@@ -292,7 +320,17 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 				</p>
 			</Section>
 			<Timing clip={clip} />
-			{asset?.kind !== "image" && (
+			{adjustment && (
+				<Section>
+					<p className="text-[12px] leading-relaxed text-muted">
+						Grades every track below it while it lasts. Fade it in and out with the colour controls
+						and opacity.
+					</p>
+				</Section>
+			)}
+			{adjustment && <ColorSection clip={clip} />}
+			{adjustment && <MaskSection clip={clip} />}
+			{asset?.kind !== "image" && !adjustment && (
 				<Section title="Source">
 					<div className="grid grid-cols-2 gap-2">
 						<Field label="In point">
@@ -330,6 +368,9 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 						<ArrowsOutLineHorizontal className="size-3.5" /> Extend to the end of the source
 					</Button>
 				</Section>
+			)}
+			{asset && asset.kind !== "image" && asset.kind !== "adjustment" && (
+				<RampSection clip={clip} />
 			)}
 			{audible && (
 				<Section title="Audio">
@@ -493,6 +534,8 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 			)}
 			{visual && <ZoomSection clip={clip} local={local} />}
 			{visual && <ColorSection clip={clip} />}
+			{visual && <MaskSection clip={clip} />}
+			{visual && asset?.kind === "video" && <KeySection clip={clip} />}
 			{clip.transitionIn && (
 				<Section title="Transition in">
 					<div className="flex items-center justify-between gap-2">
@@ -761,6 +804,7 @@ function TextInspector({ clip }: { clip: TextClip }) {
 	const s = clip.style;
 	const patch = (p: Record<string, unknown>) => void run("update_clip", { id: clip.id, patch: p });
 	const style = (p: Partial<typeof s>) => patch({ style: p });
+	const fonts = useFonts();
 	return (
 		<>
 			<Section title="Text">
@@ -775,7 +819,7 @@ function TextInspector({ clip }: { clip: TextClip }) {
 						className="h-8 rounded-lg border border-border bg-field px-2 text-[13px] outline-none focus:border-accent"
 						style={{ fontFamily: s.fontFamily }}
 					>
-						{FONTS.map((f) => (
+						{(fonts.includes(s.fontFamily) ? fonts : [s.fontFamily, ...fonts]).map((f) => (
 							<option key={f} value={f} style={{ fontFamily: f }}>
 								{f.replace(" Variable", "")}
 							</option>
@@ -834,9 +878,80 @@ function TextInspector({ clip }: { clip: TextClip }) {
 							/>{" "}
 							Caps
 						</label>
+						<label className="flex items-center gap-1.5 text-[12px] italic">
+							<input
+								type="checkbox"
+								checked={!!s.italic}
+								onChange={(e) => style({ italic: e.target.checked })}
+								className="accent-[var(--accent)]"
+							/>{" "}
+							Italic
+						</label>
 					</div>
 				</div>
 				<Toggle label="Shadow" checked={s.shadow} onChange={(shadow) => style({ shadow })} />
+				<div className="grid grid-cols-2 gap-2">
+					<Field label="Gradient to">
+						<ColorInput
+							value={s.gradientTo ?? null}
+							allowNone
+							onCommit={(gradientTo) => style({ gradientTo })}
+						/>
+					</Field>
+					<Field label="Outline">
+						<ColorInput
+							value={s.strokeColor ?? null}
+							allowNone
+							onCommit={(strokeColor) =>
+								style({ strokeColor, strokeWidth: strokeColor ? s.strokeWidth || 4 : 0 })
+							}
+						/>
+					</Field>
+				</div>
+				{s.strokeColor && (
+					<Field label="Outline width">
+						<Range
+							value={s.strokeWidth ?? 4}
+							min={0}
+							max={24}
+							step={1}
+							format={(v) => `${v}px`}
+							onCommit={(strokeWidth) => style({ strokeWidth })}
+						/>
+					</Field>
+				)}
+				<div className="grid grid-cols-2 gap-2">
+					<Field label="Letter spacing">
+						<NumberInput
+							value={s.letterSpacing}
+							min={-10}
+							max={50}
+							step={1}
+							suffix="px"
+							onCommit={(letterSpacing) => style({ letterSpacing })}
+						/>
+					</Field>
+					<Field label="Line height">
+						<NumberInput
+							value={s.lineHeight}
+							min={0.6}
+							max={3}
+							step={0.05}
+							digits={2}
+							onCommit={(lineHeight) => style({ lineHeight })}
+						/>
+					</Field>
+				</div>
+				<Field label="Rotation">
+					<Range
+						value={s.rotation ?? 0}
+						min={-45}
+						max={45}
+						step={1}
+						format={(v) => `${v}°`}
+						onCommit={(rotation) => style({ rotation })}
+					/>
+				</Field>
 			</Section>
 			<Section title="Layout">
 				<div className="grid grid-cols-3 gap-2">
@@ -902,22 +1017,34 @@ function TextInspector({ clip }: { clip: TextClip }) {
 				<p className="text-[11px] text-muted">Drag the box in the preview to move it.</p>
 			</Section>
 			<Section title="Animation">
-				<Field label="In">
-					<Segmented
-						size="xs"
-						value={clip.animationIn}
-						onChange={(animationIn) => patch({ animationIn })}
-						options={[...ANIMATIONS]}
-					/>
-				</Field>
-				<Field label="Out">
-					<Segmented
-						size="xs"
-						value={clip.animationOut}
-						onChange={(animationOut) => patch({ animationOut })}
-						options={ANIMATIONS.filter((a) => a.value !== "typewriter")}
-					/>
-				</Field>
+				<div className="grid grid-cols-2 gap-2">
+					<Field label="In">
+						<select
+							value={clip.animationIn}
+							onChange={(e) => patch({ animationIn: e.target.value as TextClip["animationIn"] })}
+							className="h-8 rounded-lg border border-border bg-field px-2 text-[12px] outline-none focus:border-accent"
+						>
+							{ANIMATIONS.map((a) => (
+								<option key={a.value} value={a.value}>
+									{a.label}
+								</option>
+							))}
+						</select>
+					</Field>
+					<Field label="Out">
+						<select
+							value={clip.animationOut}
+							onChange={(e) => patch({ animationOut: e.target.value as TextClip["animationOut"] })}
+							className="h-8 rounded-lg border border-border bg-field px-2 text-[12px] outline-none focus:border-accent"
+						>
+							{ANIMATIONS.filter((a) => a.value !== "typewriter").map((a) => (
+								<option key={a.value} value={a.value}>
+									{a.label}
+								</option>
+							))}
+						</select>
+					</Field>
+				</div>
 			</Section>
 		</>
 	);
@@ -998,6 +1125,221 @@ function MarkerList({ markers }: { markers: ProjectSnapshot["data"]["markers"] }
 					))}
 				</ul>
 			)}
+		</Section>
+	);
+}
+
+const RAMPS = [
+	{ label: "Speed up", shape: "up", peak: 3 },
+	{ label: "Slow down", shape: "down", peak: 3 },
+	{ label: "Montage", shape: "inOut", peak: 4 },
+	{ label: "Slow-mo hit", shape: "outIn", peak: 0.3 },
+] as const;
+
+/** Speed ramps in one click: over the in–out range if it falls inside the clip, else the whole clip. */
+function RampSection({ clip }: { clip: MediaClip }) {
+	const inPoint = editor.use((s) => s.inPoint);
+	const outPoint = editor.use((s) => s.outPoint);
+	const inside =
+		inPoint !== null &&
+		outPoint !== null &&
+		inPoint >= clip.startMs &&
+		outPoint <= clip.startMs + clip.durationMs &&
+		outPoint - inPoint > 200;
+	return (
+		<Section title="Speed ramp">
+			<div className="grid grid-cols-2 gap-1.5">
+				{RAMPS.map((r) => (
+					<Button
+						key={r.label}
+						size="sm"
+						variant="secondary"
+						className="h-7 text-[12px]"
+						onPress={() =>
+							void run("speed_ramp", {
+								clipId: clip.id,
+								shape: r.shape,
+								peak: r.peak,
+								...(inside
+									? {
+											fromMs: (inPoint as number) - clip.startMs,
+											toMs: (outPoint as number) - clip.startMs,
+										}
+									: {}),
+							})
+						}
+					>
+						{r.label}
+					</Button>
+				))}
+			</div>
+			<p className="text-[11px] text-muted">
+				{inside
+					? "Applies between the in and out points."
+					: "Applies to the whole clip. Mark in and out inside it to ramp just a part."}
+			</p>
+		</Section>
+	);
+}
+
+/** A rectangle or ellipse that limits what shows of the clip, with a soft edge. */
+function MaskSection({ clip }: { clip: MediaClip }) {
+	const set = (mask: Record<string, unknown> | null) =>
+		void run("update_clip", { id: clip.id, patch: { mask } });
+	const m = clip.mask;
+	if (!m)
+		return (
+			<Section title="Mask">
+				<div className="flex gap-1.5">
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						onPress={() => set({ shape: "ellipse" })}
+					>
+						Ellipse
+					</Button>
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						onPress={() => set({ shape: "rectangle", feather: 0.02 })}
+					>
+						Rectangle
+					</Button>
+				</div>
+			</Section>
+		);
+	const pct = (v: number) => `${Math.round(v * 100)}%`;
+	return (
+		<Section
+			title={`Mask · ${m.shape}`}
+			action={
+				<Button size="sm" variant="ghost" className="h-6 text-[11px]" onPress={() => set(null)}>
+					Remove
+				</Button>
+			}
+		>
+			<div className="grid grid-cols-2 gap-x-3 gap-y-1">
+				<Field label="Centre X">
+					<Range value={m.x} min={0} max={1} format={pct} onCommit={(x) => set({ x })} />
+				</Field>
+				<Field label="Centre Y">
+					<Range value={m.y} min={0} max={1} format={pct} onCommit={(y) => set({ y })} />
+				</Field>
+				<Field label="Width">
+					<Range
+						value={m.width}
+						min={0.02}
+						max={1.5}
+						format={pct}
+						onCommit={(width) => set({ width })}
+					/>
+				</Field>
+				<Field label="Height">
+					<Range
+						value={m.height}
+						min={0.02}
+						max={1.5}
+						format={pct}
+						onCommit={(height) => set({ height })}
+					/>
+				</Field>
+			</div>
+			<Field label="Feather">
+				<Range
+					value={m.feather}
+					min={0}
+					max={1}
+					format={pct}
+					onCommit={(feather) => set({ feather })}
+				/>
+			</Field>
+			<Toggle
+				label="Invert (show outside the shape)"
+				checked={m.invert}
+				onChange={(invert) => set({ invert })}
+			/>
+		</Section>
+	);
+}
+
+/** Green or blue screen: pick the screen colour (the eyedropper samples the screen) and tune the edge. */
+function KeySection({ clip }: { clip: MediaClip }) {
+	const set = (key: Record<string, unknown> | null) =>
+		void run("update_clip", { id: clip.id, patch: { key } });
+	const k = clip.key;
+	const pick = async () => {
+		const Dropper = (
+			window as unknown as { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }
+		).EyeDropper;
+		if (!Dropper) return;
+		try {
+			const { sRGBHex } = await new Dropper().open();
+			set({ color: sRGBHex.length === 7 ? sRGBHex : "#00ff00" });
+		} catch {}
+	};
+	if (!k)
+		return (
+			<Section title="Chroma key">
+				<div className="flex gap-1.5">
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						onPress={() => set({ color: "#00ff00" })}
+					>
+						Green screen
+					</Button>
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						onPress={() => set({ color: "#0000ff" })}
+					>
+						Blue screen
+					</Button>
+				</div>
+			</Section>
+		);
+	return (
+		<Section
+			title="Chroma key"
+			action={
+				<Button size="sm" variant="ghost" className="h-6 text-[11px]" onPress={() => set(null)}>
+					Remove
+				</Button>
+			}
+		>
+			<div className="flex items-center gap-2">
+				<ColorInput value={k.color} onCommit={(color) => color && set({ color })} />
+				<Button
+					size="sm"
+					variant="secondary"
+					className="h-7 text-[12px]"
+					onPress={() => void pick()}
+				>
+					Pick from screen
+				</Button>
+			</div>
+			<Field label="Similarity">
+				<Range
+					value={k.similarity}
+					min={0.01}
+					max={0.6}
+					format={(v) => `${Math.round(v * 100)}`}
+					onCommit={(similarity) => set({ similarity })}
+				/>
+			</Field>
+			<Field label="Edge softness">
+				<Range
+					value={k.blend}
+					min={0}
+					max={0.5}
+					format={(v) => `${Math.round(v * 100)}`}
+					onCommit={(blend) => set({ blend })}
+				/>
+			</Field>
 		</Section>
 	);
 }

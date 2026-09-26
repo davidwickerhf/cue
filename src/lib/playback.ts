@@ -8,6 +8,7 @@ import type {
 	TextClip,
 	Track,
 } from "../../electron/core/types";
+import { createKeyer, type Keyer, maskUrl } from "./compositing";
 import { createStore } from "./state";
 import { drawTextClip, textFrame } from "./textDraw";
 
@@ -22,6 +23,9 @@ interface Slot {
 	src: string;
 	/** Latest seek wanted while a seek is still running. */
 	pendingSeek: number | null;
+	/** WebGL canvas for chroma-keyed clips, made on first use. */
+	keyer?: Keyer | null;
+	keyedClip?: MediaClip | null;
 }
 
 interface VideoLayer {
@@ -346,6 +350,8 @@ class PlaybackEngine {
 			video.playsInline = true;
 			video.preload = "auto";
 			video.disablePictureInPicture = true;
+			// CORS mode, so the chroma keyer may read its pixels into WebGL.
+			video.crossOrigin = "anonymous";
 			video.className = "absolute inset-0 size-full object-fill";
 			const image = document.createElement("img");
 			image.className = "absolute inset-0 size-full object-fill";
@@ -360,6 +366,18 @@ class PlaybackEngine {
 				slot.pendingSeek = null;
 				if (Math.abs(video.currentTime - next) > 0.015) video.currentTime = next;
 			});
+			// Keyed clips redraw whenever a new frame is decoded (playing or after a seek).
+			const redraw = () => {
+				if (slot.keyer && slot.keyedClip?.key) slot.keyer.draw(video, slot.keyedClip.key);
+				video.requestVideoFrameCallback(redraw);
+				// A paused video only has its frame once a seek or load finishes.
+				const redrawOnce = () => {
+					if (slot.keyer && slot.keyedClip?.key) slot.keyer.draw(video, slot.keyedClip.key);
+				};
+				video.addEventListener("seeked", redrawOnce);
+				video.addEventListener("loadeddata", redrawOnce);
+			};
+			video.requestVideoFrameCallback(redraw);
 			return slot;
 		};
 		for (const track of [...project.data.tracks].reverse()) {
@@ -412,6 +430,8 @@ class PlaybackEngine {
 			return;
 		}
 		const asset = index.assets.get(clip.assetId);
+		if (asset?.kind === "adjustment") return this.renderAdjustment(slot, clip, ms, root);
+		if (slot.frame.style.backdropFilter) slot.frame.style.backdropFilter = "";
 		const isImage = asset?.kind === "image";
 		const url = isImage
 			? project.assetUrls[clip.assetId]
@@ -443,6 +463,11 @@ class PlaybackEngine {
 			c.left || c.top || c.right || c.bottom
 				? `inset(${c.top * 100}% ${c.right * 100}% ${c.bottom * 100}% ${c.left * 100}%)`
 				: "none";
+		const mask = clip.mask ? `url(${maskUrl(clip.mask, ar)})` : "none";
+		if (frame.maskImage !== mask) {
+			frame.maskImage = mask;
+			frame.maskSize = "100% 100%";
+		}
 		const element = isImage ? slot.image : slot.video;
 		const other = isImage ? slot.video : slot.image;
 		if (other.style.display !== "none") other.style.display = "none";
@@ -461,6 +486,27 @@ class PlaybackEngine {
 			return;
 		}
 		const video = slot.video;
+		// Chroma key: the video keeps decoding underneath while a WebGL canvas shows it keyed.
+		if (clip.key) {
+			if (slot.keyer === undefined) {
+				slot.keyer = createKeyer();
+				if (slot.keyer) slot.frame.append(slot.keyer.canvas);
+			}
+			if (slot.keyer) {
+				slot.keyedClip = clip;
+				video.style.opacity = "0";
+				const k = slot.keyer.canvas.style;
+				k.display = "";
+				k.transform = video.style.transform;
+				k.transformOrigin = video.style.transformOrigin;
+				k.filter = video.style.filter;
+				slot.keyer.draw(video, clip.key);
+			}
+		} else if (slot.keyedClip) {
+			slot.keyedClip = null;
+			video.style.opacity = "";
+			if (slot.keyer) slot.keyer.canvas.style.display = "none";
+		}
 		if (slot.src !== url) {
 			video.src = url;
 			slot.src = url;
@@ -479,6 +525,32 @@ class PlaybackEngine {
 			if (!video.paused) video.pause();
 			if (Math.abs(video.currentTime - target) > 0.015) this.seekVideo(slot, target);
 		}
+	}
+
+	/** An adjustment layer: a full-frame backdrop filter grading everything drawn below it. */
+	private renderAdjustment(slot: Slot, clip: MediaClip, ms: number, root: HTMLDivElement) {
+		const frame = slot.frame.style;
+		const local = ms - clip.startMs;
+		let opacity = clip.transform.opacity;
+		if (clip.fadeInMs > 0 && local < clip.fadeInMs) opacity *= local / clip.fadeInMs;
+		if (clip.fadeOutMs > 0 && local > clip.durationMs - clip.fadeOutMs)
+			opacity *= (clip.durationMs - local) / clip.fadeOutMs;
+		frame.display = "";
+		frame.width = `${root.clientWidth}px`;
+		frame.height = `${root.clientHeight}px`;
+		frame.transform = "none";
+		frame.opacity = String(Math.max(0, Math.min(1, opacity)));
+		frame.clipPath = "none";
+		frame.maskImage = clip.mask
+			? `url(${maskUrl(clip.mask, root.clientWidth / Math.max(1, root.clientHeight))})`
+			: "none";
+		frame.maskSize = "100% 100%";
+		frame.backdropFilter = cssFilter(clip.color) === "none" ? "" : cssFilter(clip.color);
+		slot.video.style.display = "none";
+		slot.image.style.display = "none";
+		if (slot.keyer) slot.keyer.canvas.style.display = "none";
+		if (!slot.video.paused) slot.video.pause();
+		slot.clipId = clip.id;
 	}
 
 	/** At most one seek in flight per picture; newer requests replace the queued one. */

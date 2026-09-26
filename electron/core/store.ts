@@ -42,9 +42,10 @@ import {
 	sourceToTimeline,
 	transcriptForPrompt,
 } from "./intelligence";
+import { type HistoryEntry, ProjectHistory } from "./history";
 import { makePoster } from "./library";
 import { findMoved, isOffline } from "./relink";
-import { applyOp, type InternalOp, type Op } from "./ops";
+import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
 	DEFAULT_TEXT_STYLE,
@@ -169,6 +170,41 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	private offlineCache: { revision: number; ids: string[] } | null = null;
+	private history: ProjectHistory | null = null;
+	/** Inside a transaction, steps are recorded once at the end. */
+	private batching = 0;
+
+	private record(actor: Actor, summary: string, kind: HistoryEntry["kind"]) {
+		if (!this.history || !this.data || this.batching) return;
+		this.history.record(
+			{ actor, summary, kind, sequence: activeSequence(this.data).name },
+			this.data,
+		);
+		this.emit("history");
+	}
+
+	/** The project's history, newest first. */
+	historyEntries(limit = 200, before?: number): HistoryEntry[] {
+		const all = this.history?.entries ?? [];
+		const upto = before === undefined ? all : all.filter((e) => e.n < before);
+		return upto.slice(-limit).reverse();
+	}
+
+	/** Brings the project back to how it was after a step. This is itself a step, so it can be undone. */
+	async restoreHistory(n: number, actor: Actor): Promise<{ summary: string }> {
+		if (!this.history) throw new Error("No project is open.");
+		const entry = this.history.entries.find((e) => e.n === n);
+		if (!entry) throw new Error(`No step ${n} in the history.`);
+		const snapshot = parseProject(await this.history.snapshot(n));
+		this.past = [...this.past, this.current].slice(-HISTORY_LIMIT);
+		this.future = [];
+		this.data = snapshot;
+		this.touch();
+		const summary = `Went back to step ${n}: ${entry.summary}`;
+		this.log(actor, summary);
+		this.record(actor, summary, "restore");
+		return { summary };
+	}
 
 	/** Media whose file is missing (checked once per change). */
 	offline(): string[] {
@@ -444,6 +480,13 @@ export class ProjectStore extends EventEmitter {
 							durationMs: item.durationMs,
 							fadeInMs: 250,
 							fadeOutMs: 250,
+							// Cutaways fill the frame (centre crop) rather than letterboxing.
+							transform: {
+								scale: cover(
+									asset.width / asset.height,
+									this.current.canvas.width / this.current.canvas.height,
+								),
+							},
 						},
 					],
 				},
@@ -482,6 +525,107 @@ export class ProjectStore extends EventEmitter {
 			}
 			return { width, height, reframedClips: changed };
 		});
+	}
+
+	// -------------------------------------------------------------------------
+	// Nested sequences
+	// -------------------------------------------------------------------------
+
+	private nestedRenders = new Map<string, Promise<void>>();
+
+	/**
+	 * Renders every nested sequence that changed since its last render (inner
+	 * ones first) and points its clips at the new file. Renders are cached by
+	 * content, so unchanged sequences cost nothing.
+	 */
+	async renderNested(renderText?: TextRenderer): Promise<number> {
+		const ids = [
+			...new Set(this.current.assets.flatMap((a) => (a.sequenceId ? [a.sequenceId] : []))),
+		];
+		let rendered = 0;
+		for (const id of ids) rendered += await this.renderSequence(id, renderText, new Set());
+		return rendered;
+	}
+
+	private async renderSequence(
+		id: string,
+		renderText: TextRenderer | undefined,
+		visiting: Set<string>,
+	): Promise<number> {
+		if (visiting.has(id)) throw new Error("A sequence cannot contain itself.");
+		visiting.add(id);
+		let rendered = 0;
+		const sequence = () => allSequences(this.current).find((q) => q.id === id);
+		const first = sequence();
+		if (!first) return 0;
+		// Inner sequences first, so this render uses their latest version.
+		for (const c of first.clips) {
+			const inner =
+				c.type === "media"
+					? this.current.assets.find((a) => a.id === c.assetId)?.sequenceId
+					: undefined;
+			if (inner) rendered += await this.renderSequence(inner, renderText, new Set(visiting));
+		}
+		const seq = sequence();
+		const asset = this.current.assets.find((a) => a.sequenceId === id);
+		if (!seq || !asset) return rendered;
+		const data: ProjectData = {
+			...this.current,
+			tracks: seq.tracks,
+			clips: seq.clips,
+			markers: seq.markers,
+		};
+		const length = projectDuration(data);
+		if (length <= 0) return rendered;
+		const used = new Set(seq.clips.flatMap((c) => (c.type === "media" ? [c.assetId] : [])));
+		const key = JSON.stringify([
+			seq.tracks,
+			seq.clips,
+			this.current.canvas,
+			this.current.assets.filter((a) => used.has(a.id)).map((a) => [a.id, a.path]),
+		]);
+		let hash = 0;
+		for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+		const file = path.join(
+			this.projectDir,
+			CACHE_DIR,
+			"sequences",
+			`${id}-${(hash >>> 0).toString(36)}.mp4`,
+		);
+		if (!existsSync(file)) {
+			const job =
+				this.nestedRenders.get(file) ??
+				(async () => {
+					await fs.mkdir(path.dirname(file), { recursive: true });
+					const tmp = `${file}.part.mp4`;
+					await exportVideo(
+						{
+							dir: this.projectDir,
+							data: {
+								...data,
+								export: { ...data.export, codec: "h264", videoQuality: "high", scale: 1 },
+							},
+							renderText,
+						},
+						tmp,
+					);
+					await fs.rename(tmp, file);
+				})().finally(() => this.nestedRenders.delete(file));
+			this.nestedRenders.set(file, job);
+			await job;
+			rendered++;
+		}
+		const stored = relativeToProject(this.projectDir, file);
+		if (asset.path !== stored || asset.durationMs !== length) {
+			// Pointing at a new render is housekeeping, not an edit: no undo step.
+			this.data = applyOp(this.current, {
+				type: "updateAsset",
+				id: asset.id,
+				patch: { path: stored, durationMs: length },
+			}).data;
+			this.touch();
+		}
+		return rendered;
 	}
 
 	/** Searches for offline media (near the project and in `folders`) and relinks what it finds. */
@@ -569,6 +713,7 @@ export class ProjectStore extends EventEmitter {
 		const target = stat.isDirectory() ? await this.findProjectIn(resolved) : resolved;
 		const data = parseProject(JSON.parse(await fs.readFile(target, "utf8")));
 		await this.flush();
+		await this.history?.flush();
 		this.refreshPoster();
 		this.file = target;
 		this.data = data;
@@ -583,6 +728,10 @@ export class ProjectStore extends EventEmitter {
 		await this.remember();
 		this.log(actor, `Opened ${path.basename(target)}`);
 		this.emit("change");
+		this.history = new ProjectHistory(target);
+		await this.history.load();
+		// A project opened for the first time starts its history with how it is now.
+		if (!this.history.last) this.record(actor, "Started the history", "start");
 		await this.autoRelink();
 		this.autoBuildProxies();
 		this.refreshPoster();
@@ -592,6 +741,8 @@ export class ProjectStore extends EventEmitter {
 	async close(actor: Actor = "user"): Promise<void> {
 		if (!this.data) return;
 		await this.flush();
+		await this.history?.flush();
+		this.history = null;
 		this.refreshPoster();
 		this.log(actor, `Closed ${this.data.name}`);
 		this.file = null;
@@ -830,6 +981,7 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	async flush(): Promise<void> {
+		void this.history?.flush();
 		if (this.saveTimer) {
 			clearTimeout(this.saveTimer);
 			this.saveTimer = null;
@@ -865,6 +1017,7 @@ export class ProjectStore extends EventEmitter {
 		this.data = data;
 		this.touch();
 		this.log(actor, summary);
+		this.record(actor, summary, "edit");
 		return { summary, created };
 	}
 
@@ -872,13 +1025,17 @@ export class ProjectStore extends EventEmitter {
 	async transaction<T>(actor: Actor, summary: string, fn: () => Promise<T> | T): Promise<T> {
 		const before = this.current;
 		const past = this.past;
+		this.batching++;
 		try {
 			const result = await fn();
 			this.past = [...past, before].slice(-HISTORY_LIMIT);
 			this.future = [];
 			this.log(actor, summary);
+			this.batching--;
+			this.record(actor, summary, "edit");
 			return result;
 		} catch (error) {
+			this.batching--;
 			this.data = before;
 			this.past = past;
 			this.touch();
@@ -894,6 +1051,7 @@ export class ProjectStore extends EventEmitter {
 		this.data = previous;
 		this.touch();
 		this.log(actor, "Undo");
+		this.record(actor, "Undo", "undo");
 		return true;
 	}
 
@@ -905,6 +1063,7 @@ export class ProjectStore extends EventEmitter {
 		this.data = next;
 		this.touch();
 		this.log(actor, "Redo");
+		this.record(actor, "Redo", "redo");
 		return true;
 	}
 
@@ -1442,6 +1601,8 @@ export class ProjectStore extends EventEmitter {
 	): Promise<ExportReport> {
 		if (kind === "otio" || kind === "fcpxml" || kind === "mlt" || kind === "edl")
 			return this.exportTimeline(kind, out, actor);
+		// Nested sequences must be up to date before they are used in an export.
+		if (kind === "video" || kind === "audio") await this.renderNested(renderText);
 		const ctx = { ...this.exportContext(renderText), range };
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
@@ -1529,6 +1690,11 @@ export class ProjectStore extends EventEmitter {
 		await fs.mkdir(path.dirname(this.options.recentFile), { recursive: true });
 		await fs.writeFile(this.options.recentFile, JSON.stringify(list, null, 2));
 	}
+}
+
+/** Scale that makes a picture of one aspect ratio fill a frame of another. */
+function cover(picture: number, frame: number): number {
+	return Math.round(Math.max(picture / frame, frame / picture) * 1000) / 1000;
 }
 
 function slug(name: string): string {

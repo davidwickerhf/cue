@@ -9,6 +9,7 @@ export interface TextFrame {
 	offsetY: number;
 	/** Characters revealed (typewriter), or Infinity. */
 	reveal: number;
+	offsetX?: number;
 }
 
 /** Animation state for a text clip `localMs` after it starts. */
@@ -27,6 +28,14 @@ export function textFrame(clip: TextClip, localMs: number, canvasHeight: number)
 		if (kind === "slide-up") {
 			frame.alpha *= e;
 			frame.offsetY += (1 - e) * canvasHeight * 0.03;
+		}
+		if (kind === "slide-left") {
+			frame.alpha *= e;
+			frame.offsetX = (frame.offsetX ?? 0) + (1 - e) * canvasHeight * 0.08;
+		}
+		if (kind === "zoom") {
+			frame.alpha *= e;
+			frame.scale *= 1.25 - 0.25 * e;
 		}
 	};
 	if (clip.animationIn === "typewriter") {
@@ -84,7 +93,7 @@ export function drawTextClip(
 	const raw = style.uppercase ? clip.text.toUpperCase() : clip.text;
 	const text = Number.isFinite(f.reveal) ? raw.slice(0, Math.max(0, f.reveal)) : raw;
 	ctx.save();
-	ctx.font = `${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", "DM Sans Variable", system-ui, sans-serif`;
+	ctx.font = `${style.italic ? "italic " : ""}${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", "DM Sans Variable", system-ui, sans-serif`;
 	ctx.letterSpacing = `${style.letterSpacing}px`;
 	ctx.textBaseline = "middle";
 	const maxText = Math.max(10, style.width * width - style.padding * 2);
@@ -94,10 +103,11 @@ export function drawTextClip(
 	const textWidth = Math.max(...measureLines.map((line) => ctx.measureText(line).width), 1);
 	const boxW = Math.min(style.width * width, textWidth + style.padding * 2);
 	const boxH = measureLines.length * lineHeight + style.padding * 2;
-	const cx = style.x * width;
+	const cx = style.x * width + (f.offsetX ?? 0);
 	const cy = style.y * height + f.offsetY;
 	ctx.globalAlpha = f.alpha;
 	ctx.translate(cx, cy);
+	if (style.rotation) ctx.rotate((style.rotation * Math.PI) / 180);
 	ctx.scale(f.scale, f.scale);
 	const left = -boxW / 2;
 	const top = -boxH / 2;
@@ -116,7 +126,17 @@ export function drawTextClip(
 		ctx.shadowBlur = style.fontSize * 0.18;
 		ctx.shadowOffsetY = style.fontSize * 0.05;
 	}
-	ctx.fillStyle = style.color;
+	if (style.gradientTo) {
+		const gradient = ctx.createLinearGradient(
+			0,
+			top + style.padding,
+			0,
+			top + boxH - style.padding,
+		);
+		gradient.addColorStop(0, style.color);
+		gradient.addColorStop(1, style.gradientTo);
+		ctx.fillStyle = gradient;
+	} else ctx.fillStyle = style.color;
 	ctx.textAlign = style.align;
 	const x =
 		style.align === "left"
@@ -124,8 +144,19 @@ export function drawTextClip(
 			: style.align === "right"
 				? left + boxW - style.padding
 				: 0;
+	const outline = style.strokeColor && (style.strokeWidth ?? 0) > 0;
 	lines.forEach((line, i) => {
-		ctx.fillText(line, x, top + style.padding + lineHeight * (i + 0.5));
+		const y = top + style.padding + lineHeight * (i + 0.5);
+		if (outline) {
+			// Outline first, then the fill on top, so the stroke sits outside the letters.
+			ctx.save();
+			ctx.strokeStyle = style.strokeColor as string;
+			ctx.lineWidth = (style.strokeWidth ?? 0) * 2;
+			ctx.lineJoin = "round";
+			ctx.strokeText(line, x, y);
+			ctx.restore();
+		}
+		ctx.fillText(line, x, y);
 	});
 	ctx.restore();
 }

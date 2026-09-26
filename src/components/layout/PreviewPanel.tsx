@@ -204,6 +204,7 @@ function SelectionOverlay({
 }) {
 	const selectedIds = useApp((s) => s.selectedClipIds) ?? [];
 	const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null);
+	const [editing, setEditing] = useState<string | null>(null);
 	const start = useRef<{ x: number; y: number } | null>(null);
 	const clip = project.data.clips.find((c) => selectedIds.length === 1 && c.id === selectedIds[0]);
 	// Only re-render when the playhead enters or leaves the clip, not every frame.
@@ -217,10 +218,52 @@ function SelectionOverlay({
 	if (!box) return null;
 	const dx = drag?.dx ?? 0;
 	const dy = drag?.dy ?? 0;
+	if (editing !== null && clip.type === "text") {
+		// Type straight into the title, sized like the real text.
+		const s = clip.style;
+		const scale = width / project.data.canvas.width;
+		const commit = (value: string | null) => {
+			setEditing(null);
+			if (value !== null && value.trim() && value !== clip.text)
+				void run("update_clip", { id: clip.id, patch: { text: value } });
+		};
+		return (
+			<textarea
+				// biome-ignore lint/a11y/noAutofocus: editing starts on double-click, as in every editor
+				autoFocus
+				value={editing}
+				onChange={(e) => setEditing(e.target.value)}
+				onFocus={(e) => e.target.select()}
+				onBlur={() => commit(editing)}
+				onKeyDown={(e) => {
+					e.stopPropagation();
+					if (e.key === "Escape") commit(null);
+					if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit(editing);
+				}}
+				className="absolute z-30 resize-none rounded-md bg-black/70 text-white outline outline-2 outline-accent"
+				style={{
+					left: Math.max(0, box.left - 6),
+					top: Math.max(0, box.top - 6),
+					width: Math.max(160, box.width + 12),
+					height: Math.max(40, box.height + 12),
+					fontFamily: `"${s.fontFamily}", system-ui`,
+					fontWeight: s.fontWeight,
+					fontStyle: s.italic ? "italic" : "normal",
+					fontSize: Math.max(11, s.fontSize * scale),
+					lineHeight: s.lineHeight,
+					textAlign: s.align,
+					padding: s.padding * scale,
+					textTransform: s.uppercase ? "uppercase" : "none",
+				}}
+			/>
+		);
+	}
 	return (
 		<div
 			className="absolute z-20 cursor-move outline outline-1 outline-accent"
 			style={{ left: box.left + dx, top: box.top + dy, width: box.width, height: box.height }}
+			title={clip.type === "text" ? "Drag to move · double-click to edit the text" : undefined}
+			onDoubleClick={() => clip.type === "text" && setEditing(clip.text)}
 			onPointerDown={(e) => {
 				e.stopPropagation();
 				start.current = { x: e.clientX, y: e.clientY };
@@ -259,7 +302,8 @@ function boxOf(clip: Clip, project: ProjectSnapshot, width: number, height: numb
 		const s = (clip as TextClip).style;
 		const ctx = document.createElement("canvas").getContext("2d");
 		if (!ctx) return null;
-		ctx.font = `${s.fontWeight} ${s.fontSize}px "${s.fontFamily}"`;
+		ctx.font = `${s.italic ? "italic " : ""}${s.fontWeight} ${s.fontSize}px "${s.fontFamily}"`;
+		ctx.letterSpacing = `${s.letterSpacing}px`;
 		const words = clip.text.split(/\s+/);
 		const maxW = s.width * project.data.canvas.width - s.padding * 2;
 		let lines = 1;

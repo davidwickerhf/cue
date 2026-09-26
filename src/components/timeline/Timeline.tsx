@@ -27,6 +27,7 @@ import {
 	Trash,
 	Waveform as WaveIcon,
 	DotsSixVertical,
+	Stack,
 	EyeSlash as EyeOff,
 	Pause,
 	Robot,
@@ -52,6 +53,7 @@ import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { agentDraft } from "../../lib/chat";
+import { SequenceTabs } from "./SequenceTabs";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime } from "../../lib/utils";
 import { ASSET_MIME } from "../panels/MediaPanel";
@@ -550,6 +552,7 @@ export function Timeline() {
 
 	return (
 		<section className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+			<SequenceTabs project={project} />
 			<Toolbar
 				project={project}
 				viewWidth={viewWidth}
@@ -1338,6 +1341,8 @@ export const LABEL_COLORS: Record<string, string> = {
 };
 
 const CLIP_TONE: Record<string, string> = {
+	adjustment:
+		"bg-[repeating-linear-gradient(135deg,rgb(139_92_246/0.55)_0_6px,rgb(139_92_246/0.35)_6px_12px)]",
 	video: "bg-track-video",
 	image: "bg-track-image",
 	audio: "bg-track-audio",
@@ -1385,13 +1390,15 @@ function ClipView({
 	const tone =
 		clip.type === "text"
 			? "text"
-			: asset?.kind === "image"
-				? "image"
-				: track?.kind === "video"
-					? "video"
-					: track?.voiceover
-						? "voice"
-						: "audio";
+			: asset?.kind === "adjustment"
+				? "adjustment"
+				: asset?.kind === "image"
+					? "image"
+					: track?.kind === "video"
+						? "video"
+						: track?.voiceover
+							? "voice"
+							: "audio";
 	const line =
 		clip.type === "media" && clip.lineId
 			? project.lines.find((l) => l.id === clip.lineId)
@@ -1425,6 +1432,10 @@ function ClipView({
 			data-clip
 			onPointerDown={onDown}
 			onContextMenu={onContext}
+			onDoubleClick={() => {
+				const inner = nestedSequence(project, clip);
+				if (inner) void run("open_sequence", { id: inner });
+			}}
 			className={cn(
 				"group absolute top-[3px] overflow-hidden rounded-[4px] text-white",
 				CLIP_TONE[tone],
@@ -1545,6 +1556,13 @@ function ClipView({
 			)}
 		</div>
 	);
+}
+
+/** The sequence a nested clip stands for, if it is one. */
+function nestedSequence(project: ProjectSnapshot, clip: Clip): string | undefined {
+	return clip.type === "media"
+		? project.data.assets.find((a) => a.id === clip.assetId)?.sequenceId
+		: undefined;
 }
 
 /** Opens the agent chat with the selected clips as the subject. */
@@ -1700,6 +1718,15 @@ function ClipMenu({
 					},
 				]
 			: []),
+		{
+			label: nestedSequence(project, menu.clip) ? "Open nested sequence" : "Nest…",
+			icon: <Stack className="size-3.5" />,
+			action: () => {
+				const inner = nestedSequence(project, menu.clip);
+				if (inner) void run("open_sequence", { id: inner });
+				else void run("nest_clips", { ids });
+			},
+		},
 		{
 			label: menu.clip.disabled ? "Enable" : "Disable",
 			icon: <EyeOff className="size-3.5" />,

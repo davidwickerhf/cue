@@ -5,7 +5,8 @@ export type Actor = "user" | "agent" | "system";
 // Media library
 // ---------------------------------------------------------------------------
 
-export type AssetKind = "video" | "audio" | "image";
+/** "adjustment" is Cue's built-in adjustment layer: no file, it grades whatever is below it. */
+export type AssetKind = "video" | "audio" | "image" | "adjustment";
 export type AssetOrigin = "import" | "recording" | "tts" | "generated";
 
 export interface Asset {
@@ -34,6 +35,8 @@ export interface Asset {
 	peakDb?: number | null;
 	/** Prompt, voice or model for generated media. */
 	generation?: { provider: string; model: string; prompt: string; voice?: string };
+	/** Set for nested sequences: this media is a render of that sequence. */
+	sequenceId?: string;
 	/** Word-level transcript of the speech in this media (source time). */
 	transcript?: Transcript;
 	actor: Actor;
@@ -123,6 +126,31 @@ export interface Zoom {
 	easeMs: number;
 }
 
+/** A shape that limits which part of a clip is visible, in shares of the (uncropped) picture. */
+export interface Mask {
+	shape: "rectangle" | "ellipse";
+	/** Centre, 0–1. */
+	x: number;
+	y: number;
+	/** Size, 0–1 of the picture. */
+	width: number;
+	height: number;
+	/** Soft edge, 0–1 of the shape's size. */
+	feather: number;
+	/** Show everything except the shape. */
+	invert: boolean;
+}
+
+/** Chroma key: makes one colour (a green or blue screen) transparent. */
+export interface ChromaKey {
+	/** Hex colour, e.g. #00ff00. */
+	color: string;
+	/** How close a colour must be to be removed, 0.01–0.6. */
+	similarity: number;
+	/** Softness of the edge, 0–0.5. */
+	blend: number;
+}
+
 export interface ColorGrade {
 	/** -1–1, 0 is neutral. */
 	brightness: number;
@@ -162,6 +190,8 @@ export interface MediaClip {
 	keyframes?: Partial<Record<KeyframeProp, Keyframe[]>>;
 	zooms?: Zoom[];
 	color?: ColorGrade;
+	mask?: Mask;
+	key?: ChromaKey;
 	/** How this clip enters from the clip before it on the same track. */
 	transitionIn?: Transition;
 	/** Clips with the same group move and delete together (e.g. linked picture and sound). */
@@ -174,7 +204,14 @@ export interface MediaClip {
 	name?: string;
 }
 
-export type TextAnimation = "none" | "fade" | "pop" | "slide-up" | "typewriter";
+export type TextAnimation =
+	| "none"
+	| "fade"
+	| "pop"
+	| "slide-up"
+	| "slide-left"
+	| "zoom"
+	| "typewriter";
 
 export interface TextStyle {
 	fontFamily: string;
@@ -196,6 +233,14 @@ export interface TextStyle {
 	uppercase: boolean;
 	letterSpacing: number;
 	lineHeight: number;
+	italic?: boolean;
+	/** Outline around the letters. */
+	strokeColor?: string | null;
+	strokeWidth?: number;
+	/** Second colour for a top-to-bottom gradient fill. */
+	gradientTo?: string | null;
+	/** Degrees, clockwise. */
+	rotation?: number;
 }
 
 export interface TextClip {
@@ -290,11 +335,21 @@ export interface AiSettings {
 	imageModel: string;
 }
 
+/** A timeline that is not open right now (the open one lives in ProjectData.tracks/clips/markers). */
+export interface Sequence {
+	id: string;
+	name: string;
+	tracks: Track[];
+	clips: Clip[];
+	markers: Marker[];
+}
+
 export interface ProjectData {
 	version: 2;
 	name: string;
 	canvas: Canvas;
 	assets: Asset[];
+	/** The open timeline. */
 	tracks: Track[];
 	clips: Clip[];
 	lines: ScriptLine[];
@@ -302,6 +357,10 @@ export interface ProjectData {
 	settings: RecordingSettings;
 	export: ExportSettings;
 	ai: AiSettings;
+	/** Which timeline is open ("main" unless another sequence was opened). */
+	sequence?: { id: string; name: string };
+	/** The other timelines in the project. */
+	sequences?: Sequence[];
 }
 
 // ---------------------------------------------------------------------------
@@ -431,7 +490,14 @@ export type EditorCommand =
 	| { type: "pause" }
 	| { type: "seek"; ms: number }
 	| { type: "previewAsset"; assetId: string }
-	| { type: "renderText"; requestId: string; clipIds: string[]; fps: number }
+	| { type: "renderText"; requestId: string; clipIds: string[]; clips?: TextClip[]; fps: number }
 	| { type: "captureFrame"; requestId: string; atMs: number }
 	| { type: "setInOut"; inMs?: number | null; outMs?: number | null }
-	| { type: "setView"; panel?: string; fitTimeline?: boolean; openSource?: string; zoom?: number };
+	| {
+			type: "setView";
+			panel?: string;
+			fitTimeline?: boolean;
+			openSource?: string;
+			zoom?: number;
+			workspace?: string;
+	  };

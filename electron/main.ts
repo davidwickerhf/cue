@@ -97,7 +97,8 @@ function askWindow<T>(
 async function renderText(clips: TextClip[]): Promise<Record<string, TextRender>> {
 	const fps = store.current.canvas.fps;
 	const images = await askWindow<Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }>>(
-		(requestId) => ({ type: "renderText", requestId, clipIds: clips.map((c) => c.id), fps }),
+		// The clips travel with the request: they may belong to a sequence that is not open.
+		(requestId) => ({ type: "renderText", requestId, clipIds: clips.map((c) => c.id), clips, fps }),
 		300000,
 	);
 	const root = path.join(store.cacheDir(), "text");
@@ -864,9 +865,16 @@ else {
 		await loadAppSettings();
 		protocol.handle(MEDIA_SCHEME, serveMedia);
 		session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
-			callback(permission === "media" || permission === "clipboard-sanitized-write"),
+			callback(
+				permission === "media" ||
+					permission === "clipboard-sanitized-write" ||
+					// Lists installed fonts for the title editor.
+					(permission as string) === "local-fonts",
+			),
 		);
-		session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
+		session.defaultSession.setPermissionCheckHandler(
+			(_wc, permission) => permission === "media" || (permission as string) === "local-fonts",
+		);
 		registerIpc();
 		buildMenu();
 		const control = await startControlServer(

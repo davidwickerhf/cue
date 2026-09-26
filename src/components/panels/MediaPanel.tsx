@@ -39,9 +39,15 @@ export function MediaPanel() {
 	const project = useProject();
 	const [filter, setFilter] = useState<Filter>("all");
 	if (!project) return null;
-	const assets = project.data.assets.filter((a) =>
-		filter === "all" ? !a.lineId : filter === "takes" ? !!a.lineId : a.kind === filter && !a.lineId,
-	);
+	const assets = project.data.assets
+		.filter((a) => a.kind !== "adjustment")
+		.filter((a) =>
+			filter === "all"
+				? !a.lineId
+				: filter === "takes"
+					? !!a.lineId
+					: a.kind === filter && !a.lineId,
+		);
 
 	return (
 		<div className="flex flex-col">
@@ -52,6 +58,16 @@ export function MediaPanel() {
 					onPress={() => void window.cue.importDialog()}
 				>
 					<UploadSimple className="size-4" /> Import media
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-7 w-full text-[12px]"
+					onPress={() =>
+						void run("add_adjustment_layer", { startMs: Math.round(playback.currentMs) })
+					}
+				>
+					New adjustment layer at the playhead
 				</Button>
 				<Segmented
 					value={filter}

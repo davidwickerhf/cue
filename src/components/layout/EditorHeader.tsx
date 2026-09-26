@@ -8,6 +8,7 @@ import {
 import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { exportDialog } from "../ExportDialog";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { IconButton } from "../ui/controls";
@@ -89,6 +90,7 @@ export function EditorHeader() {
 						{failed.label} failed
 					</span>
 				) : null}
+				<WorkspaceMenu />
 				<button
 					type="button"
 					onClick={() => editor.set({ panel: "agent" })}

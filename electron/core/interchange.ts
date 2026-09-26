@@ -57,6 +57,8 @@ function layout(data: ProjectData, dir: string): Layout {
 		const out: Span[] = [];
 		let cursor = 0;
 		for (const clip of clipsOn(trackId)) {
+			// Adjustment layers have no equivalent in these formats.
+			if (clip.type === "media" && assets.get(clip.assetId)?.kind === "adjustment") continue;
 			let start = frames(clip.startMs);
 			const end = frames(clip.startMs + clip.durationMs);
 			let inFrames = clip.type === "media" ? frames(clip.inMs) : 0;

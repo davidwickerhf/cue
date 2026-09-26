@@ -1,5 +1,6 @@
 import { Tooltip } from "@heroui/react";
 import {
+	ClockCounterClockwise,
 	Faders,
 	Gear,
 	Images,
@@ -12,8 +13,10 @@ import {
 import type { ReactNode } from "react";
 import { editor, type SidebarPanel, useApp } from "../../lib/state";
 import { cn } from "../../lib/utils";
+import { layout } from "../../lib/workspace";
 import { AgentPanel } from "../panels/AgentPanel";
 import { GeneratePanel } from "../panels/GeneratePanel";
+import { HistoryPanel } from "../panels/HistoryPanel";
 import { MediaPanel } from "../panels/MediaPanel";
 import { MixerPanel } from "../panels/MixerPanel";
 import { ScriptPanel } from "../panels/ScriptPanel";
@@ -28,6 +31,7 @@ const ITEMS: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
 	{ id: "text", label: "Text", icon: <TextT className="size-[18px]" /> },
 	{ id: "mixer", label: "Mixer", icon: <Faders className="size-[18px]" /> },
 	{ id: "generate", label: "Generate", icon: <Sparkle className="size-[18px]" /> },
+	{ id: "history", label: "History", icon: <ClockCounterClockwise className="size-[18px]" /> },
 	{ id: "agent", label: "Agent", icon: <Robot className="size-[18px]" /> },
 ];
 
@@ -38,12 +42,14 @@ const TITLES: Record<SidebarPanel, string> = {
 	text: "Text",
 	mixer: "Mixer",
 	generate: "Generate",
+	history: "History",
 	agent: "Agent",
 	settings: "Project",
 };
 
 export function EditorSidebar() {
 	const panel = editor.use((s) => s.panel);
+	const sidebarWidth = layout.use((s) => s.sidebarWidth);
 	const agentSeen = useApp((s) => s.agent.lastSeenAt);
 	return (
 		<div className="flex min-h-0 shrink-0 border-r border-separator bg-surface">
@@ -72,7 +78,7 @@ export function EditorSidebar() {
 					</RailButton>
 				</div>
 			</nav>
-			<div className="flex w-[300px] min-h-0 flex-col">
+			<div className="flex min-h-0 flex-col" style={{ width: sidebarWidth }}>
 				<header className="flex h-10 shrink-0 items-center border-b border-separator px-4">
 					<h2 className="text-[12px] font-semibold">{TITLES[panel]}</h2>
 				</header>
@@ -83,6 +89,7 @@ export function EditorSidebar() {
 					{panel === "text" && <TextPanel />}
 					{panel === "mixer" && <MixerPanel />}
 					{panel === "generate" && <GeneratePanel />}
+					{panel === "history" && <HistoryPanel />}
 					{panel === "agent" && <AgentPanel />}
 					{panel === "settings" && <SettingsPanel />}
 				</div>

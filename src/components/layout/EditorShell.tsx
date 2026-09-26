@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { useEditorCommands } from "../../hooks/useEditorCommands";
 import { useShortcuts } from "../../hooks/useShortcuts";
 import { editor } from "../../lib/state";
+import { clampLayout, layout } from "../../lib/workspace";
 import { ExportDialog } from "../ExportDialog";
 import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
@@ -15,7 +16,7 @@ export function EditorShell() {
 	useEditorCommands();
 	useShortcuts();
 	const inspectorOpen = editor.use((s) => s.inspectorOpen);
-	const [timelineHeight, setTimelineHeight] = useState(320);
+	const timelineHeight = layout.use((s) => s.timelineHeight);
 	const dragStart = useRef<{ y: number; h: number } | null>(null);
 
 	return (
@@ -24,7 +25,9 @@ export function EditorShell() {
 			<OfflineBanner />
 			<div className="flex min-h-0 flex-1">
 				<EditorSidebar />
+				<Splitter edge="sidebarWidth" />
 				<PreviewPanel />
+				{inspectorOpen && <Splitter edge="inspectorWidth" invert />}
 				{inspectorOpen && <Inspector />}
 			</div>
 			<div
@@ -37,8 +40,10 @@ export function EditorShell() {
 				}}
 				onPointerMove={(e) => {
 					if (!dragStart.current) return;
-					setTimelineHeight(
-						Math.min(640, Math.max(180, dragStart.current.h - (e.clientY - dragStart.current.y))),
+					layout.set(
+						clampLayout({
+							timelineHeight: dragStart.current.h - (e.clientY - dragStart.current.y),
+						}),
 					);
 				}}
 				onPointerUp={() => {
@@ -51,5 +56,29 @@ export function EditorShell() {
 			<RelinkDialog />
 			<ExportDialog />
 		</div>
+	);
+}
+
+/** Drag handle between side-by-side panes. */
+function Splitter({ edge, invert }: { edge: "sidebarWidth" | "inspectorWidth"; invert?: boolean }) {
+	const start = useRef<{ x: number; w: number } | null>(null);
+	return (
+		<div
+			role="separator"
+			aria-orientation="vertical"
+			className="relative z-10 -mx-[3px] w-[6px] shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-transparent hover:after:bg-accent"
+			onPointerDown={(e) => {
+				start.current = { x: e.clientX, w: layout.get()[edge] };
+				(e.target as HTMLElement).setPointerCapture(e.pointerId);
+			}}
+			onPointerMove={(e) => {
+				if (!start.current) return;
+				const delta = (e.clientX - start.current.x) * (invert ? -1 : 1);
+				layout.set(clampLayout({ [edge]: start.current.w + delta }));
+			}}
+			onPointerUp={() => {
+				start.current = null;
+			}}
+		/>
 	);
 }

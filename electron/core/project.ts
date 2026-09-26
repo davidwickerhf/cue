@@ -128,9 +128,14 @@ export const textStyleSchema = z.object({
 	uppercase: z.boolean(),
 	letterSpacing: z.number().min(-10).max(50),
 	lineHeight: z.number().min(0.6).max(3),
+	italic: z.boolean().optional(),
+	strokeColor: z.string().max(60).nullable().optional(),
+	strokeWidth: z.number().min(0).max(40).optional(),
+	gradientTo: z.string().max(60).nullable().optional(),
+	rotation: z.number().min(-180).max(180).optional(),
 });
 
-const animation = z.enum(["none", "fade", "pop", "slide-up", "typewriter"]);
+const animation = z.enum(["none", "fade", "pop", "slide-up", "slide-left", "zoom", "typewriter"]);
 
 export const settingsSchema = z.object({
 	prerollMs: z.number().min(0).max(10000),
@@ -163,6 +168,30 @@ export const colorSchema = z.object({
 	temperature: z.number().min(-1).max(1),
 	lut: z.string().optional(),
 });
+export const maskSchema = z.object({
+	shape: z.enum(["rectangle", "ellipse"]),
+	x: z.number().min(-0.5).max(1.5),
+	y: z.number().min(-0.5).max(1.5),
+	width: z.number().min(0.01).max(2),
+	height: z.number().min(0.01).max(2),
+	feather: z.number().min(0).max(1),
+	invert: z.boolean(),
+});
+export const DEFAULT_MASK = {
+	shape: "ellipse" as const,
+	x: 0.5,
+	y: 0.5,
+	width: 0.6,
+	height: 0.6,
+	feather: 0.15,
+	invert: false,
+};
+export const keySchema = z.object({
+	color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+	similarity: z.number().min(0.01).max(0.6),
+	blend: z.number().min(0).max(0.5),
+});
+export const DEFAULT_KEY = { color: "#00ff00", similarity: 0.15, blend: 0.08 };
 export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temperature: 0 };
 export const transitionSchema = z.object({
 	kind: z.enum(["crossfade", "dip"]),
@@ -192,11 +221,12 @@ export const aiSchema = z.object({
 
 const assetSchema = z.object({
 	id,
-	kind: z.enum(["video", "audio", "image"]),
+	kind: z.enum(["video", "audio", "image", "adjustment"]),
 	name: z.string(),
 	path: z.string(),
 	relPath: z.string().optional(),
 	size: z.number().optional(),
+	sequenceId: z.string().optional(),
 	durationMs: ms,
 	width: z.number().default(0),
 	height: z.number().default(0),
@@ -257,6 +287,8 @@ const mediaClipSchema = z.object({
 	keyframes: z.record(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema)).optional(),
 	zooms: z.array(zoomSchema).optional(),
 	color: colorSchema.optional(),
+	mask: maskSchema.optional(),
+	key: keySchema.optional(),
 	transitionIn: transitionSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),
@@ -284,8 +316,27 @@ const textClipSchema = z.object({
 
 export const clipSchema = z.discriminatedUnion("type", [mediaClipSchema, textClipSchema]);
 
+const markerSchema = z.object({
+	id,
+	atMs: ms,
+	label: z.string().max(200),
+	color: z.enum(["accent", "success", "warning", "danger"]),
+});
+
 const projectSchema = z.object({
 	version: z.literal(2),
+	sequence: z.object({ id: z.string(), name: z.string().max(120) }).optional(),
+	sequences: z
+		.array(
+			z.object({
+				id: z.string(),
+				name: z.string().max(120),
+				tracks: z.array(z.lazy(() => trackSchema)),
+				clips: z.array(z.lazy(() => clipSchema)),
+				markers: z.array(markerSchema).default([]),
+			}),
+		)
+		.optional(),
 	name: z.string().min(1).max(200),
 	canvas: z
 		.object({
@@ -441,6 +492,16 @@ export function parseProject(raw: unknown): ProjectData {
 		settings: pick(DEFAULT_SETTINGS, parsed.settings),
 		export: pick(DEFAULT_EXPORT, parsed.export),
 		ai: pick(DEFAULT_AI, parsed.ai),
+		...(parsed.sequence ? { sequence: parsed.sequence } : {}),
+		...(parsed.sequences?.length
+			? {
+					sequences: parsed.sequences.map((q) => ({
+						...q,
+						tracks: groupTracks(q.tracks as Track[]),
+						clips: q.clips as Clip[],
+					})),
+				}
+			: {}),
 	};
 }
 

@@ -15,6 +15,8 @@ const SKIP = new Set(["node_modules", ".git", ".cue-cache", "Library", ".Trash"]
 const MAX_ENTRIES = 25000;
 
 export function isOffline(dir: string, asset: Asset): boolean {
+	// Built-in adjustment layers and nested-sequence renders are not files the user can move.
+	if (asset.kind === "adjustment" || asset.sequenceId) return false;
 	return !existsSync(resolveInProject(dir, asset.path));
 }
 

@@ -3,6 +3,7 @@ import type { TextClip } from "../../electron/core/types";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
+import { applyWorkspace, BUILT_IN } from "../lib/workspace";
 import { app, editor, findLine, type SidebarPanel } from "../lib/state";
 import { rasterise } from "../lib/textDraw";
 
@@ -31,6 +32,8 @@ export function useEditorCommands() {
 					});
 					break;
 				case "setView":
+					if (command.workspace && BUILT_IN[command.workspace])
+						applyWorkspace(BUILT_IN[command.workspace].layout);
 					if (command.panel) editor.set({ panel: command.panel as SidebarPanel });
 					if (command.zoom) editor.set({ zoom: command.zoom });
 					if (command.fitTimeline) window.dispatchEvent(new CustomEvent("cue:fit"));
@@ -61,9 +64,9 @@ export function useEditorCommands() {
 						const { width, height } = project.data.canvas;
 						const images: Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }> = {};
 						for (const id of command.clipIds) {
-							const clip = project.data.clips.find(
-								(c): c is TextClip => c.id === id && c.type === "text",
-							);
+							const clip =
+								command.clips?.find((c) => c.id === id) ??
+								project.data.clips.find((c): c is TextClip => c.id === id && c.type === "text");
 							if (clip) images[id] = await rasterise(clip, width, height, command.fps);
 						}
 						window.cue.reply(command.requestId, null, images);
