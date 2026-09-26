@@ -391,6 +391,15 @@ export const contract = {
 			trackId: z.string().optional(),
 		},
 	},
+	copy_grade: {
+		description:
+			"Copy one clip's colour grade (color, including its LUT) to other video or picture clips, e.g. to match shots from the same scene. effects (default true) copies the picture effects (blur, sharpen, vignette, glow, stabilize) too. The whole look is copied: an ungraded source clears the targets' grade. Text clips in toClipIds are skipped.",
+		input: {
+			fromClipId: z.string(),
+			toClipIds: ids,
+			effects: z.boolean().default(true),
+		},
+	},
 	speed_ramp: {
 		description:
 			"Speed ramp part of a media clip (fromMs–toMs in clip time, default all of it): up = ease to peak speed, down = ease from peak back to normal, inOut = fast in the middle (montage), outIn with peak < 1 = slow-motion hit. Later clips on the track move to make room.",
