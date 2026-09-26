@@ -89,19 +89,21 @@ export function WorkspaceMenu() {
 					<div className="my-1 h-px bg-separator" />
 					<p className="px-2 pt-1 pb-1 text-[11px] text-muted">Beside the viewer</p>
 					<div className="flex flex-wrap gap-1 px-2 pb-1">
-						{(["none", "mixer", "scopes", "markers", "history", "agent"] as const).map((d) => (
-							<button
-								key={d}
-								type="button"
-								onClick={() => layout.set({ dock: d })}
-								className={cn(
-									"h-6 rounded-md px-2 text-[11px] capitalize",
-									dock === d ? "bg-default text-foreground" : "text-muted hover:text-foreground",
-								)}
-							>
-								{d === "none" ? "Nothing" : d}
-							</button>
-						))}
+						{(["none", "mixer", "scopes", "notes", "markers", "history", "agent"] as const).map(
+							(d) => (
+								<button
+									key={d}
+									type="button"
+									onClick={() => layout.set({ dock: d })}
+									className={cn(
+										"h-6 rounded-md px-2 text-[11px] capitalize",
+										dock === d ? "bg-default text-foreground" : "text-muted hover:text-foreground",
+									)}
+								>
+									{d === "none" ? "Nothing" : d}
+								</button>
+							),
+						)}
 					</div>
 					<p className="px-2 pt-1 pb-1 text-[11px] text-muted">On the viewer</p>
 					{(

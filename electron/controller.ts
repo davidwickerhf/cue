@@ -5,8 +5,19 @@ import { type MethodInput, type MethodName, parseInput } from "./control/contrac
 import { AGENT_GUIDE } from "./control/guide";
 import type { TextRender } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
+import { reviewEdit } from "./core/notes";
 import { activeSequence, allSequences } from "./core/ops";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
+import {
+	BUILT_IN_RECIPES,
+	loadRecipes,
+	type Recipe,
+	recipeContext,
+	recipeId,
+	recipeSchema,
+	resolveRecipe,
+	saveRecipes,
+} from "./core/recipes";
 import type { AiRuntime } from "./core/runtime";
 import { parseSrt } from "./core/srt";
 import type { ProjectStore } from "./core/store";
@@ -27,7 +38,7 @@ import type {
 
 /** Calls that only read, so they never wait for a transaction. */
 const READ_ONLY =
-	/^(get_|list_|render_frame$|search_|find_moments$|focus_window$|pause$|seek$|play$)/;
+	/^(get_|list_|render_frame$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
 
 /** File types each kind of output may have, for paths chosen by an agent. */
 const OUTPUT_TYPES: Record<string, string[]> = {
@@ -93,6 +104,8 @@ export interface ControllerHooks {
 	appSettings?: { get: () => unknown; set: (patch: Record<string, unknown>) => Promise<unknown> };
 	/** The folder new projects go in (app setting). */
 	projectsDir?: () => string;
+	/** Where user recipes are kept (app data). Without it only built-in recipes exist. */
+	recipesFile?: string;
 }
 
 /**
@@ -817,6 +830,51 @@ export class Controller extends EventEmitter {
 				);
 				return { lines: count };
 			}
+			case "review_edit": {
+				const { measureAudio } = parseInput("review_edit", params);
+				const loudness = measureAudio
+					? await this.job("Measuring loudness", () =>
+							this.store.measureLoudness(this.hooks.renderText),
+						)
+					: undefined;
+				return {
+					notes: reviewEdit(this.store.current, { offline: this.store.offline(), loudness }),
+				};
+			}
+			case "list_recipes":
+				return this.recipes();
+			case "run_recipe": {
+				const { id, dryRun } = parseInput("run_recipe", params);
+				return this.runRecipe(id, dryRun, actor);
+			}
+			case "save_recipe": {
+				const input = parseInput("save_recipe", params);
+				const file = this.hooks.recipesFile;
+				if (!file) throw new Error("Recipes can't be saved here.");
+				const mine = await loadRecipes(file);
+				const same = mine.find((r) => r.name.toLowerCase() === input.name.toLowerCase());
+				const taken = [...BUILT_IN_RECIPES, ...mine].map((r) => r.id);
+				const recipe = recipeSchema.parse({
+					...input,
+					id: same?.id ?? recipeId(input.name, taken),
+				});
+				await saveRecipes(file, [...mine.filter((r) => r.id !== recipe.id), recipe]);
+				this.store.log(actor, `Saved the recipe "${recipe.name}"`);
+				return recipe;
+			}
+			case "delete_recipe": {
+				const { id } = parseInput("delete_recipe", params);
+				if (BUILT_IN_RECIPES.some((r) => r.id === id))
+					throw new Error("Built-in recipes can't be deleted.");
+				const file = this.hooks.recipesFile;
+				const mine = await loadRecipes(file);
+				if (!file || !mine.some((r) => r.id === id)) throw new Error(`No recipe "${id}".`);
+				await saveRecipes(
+					file,
+					mine.filter((r) => r.id !== id),
+				);
+				return { deleted: id };
+			}
 			case "generate_image": {
 				const { prompt, orientation, trackId, startMs } = parseInput("generate_image", params);
 				const creds = await this.requireCredentials();
@@ -902,6 +960,53 @@ export class Controller extends EventEmitter {
 				this.hooks.focusWindow();
 				return { focused: true };
 		}
+	}
+
+	/** Built-in recipes, then the user's. */
+	async recipes(): Promise<Recipe[]> {
+		return [...BUILT_IN_RECIPES, ...(await loadRecipes(this.hooks.recipesFile))];
+	}
+
+	/**
+	 * Runs a recipe's calls one after another as `actor`. Each call is its own
+	 * edit (and undo step); nothing here holds a transaction, since `call()`
+	 * waits for running ones and would wait forever on its own.
+	 */
+	private async runRecipe(id: string, dryRun: boolean, actor: Actor) {
+		const recipe = (await this.recipes()).find((r) => r.id === id);
+		if (!recipe) throw new Error(`No recipe "${id}". list_recipes shows them.`);
+		const context = () =>
+			recipeContext(this.store.current, {
+				playheadMs: this.recorder.currentMs,
+				selectedClipIds: this.selectedClipIds,
+			});
+		if (dryRun) return { recipe: recipe.name, steps: resolveRecipe(recipe, context()) };
+		const done: { step: number; tool: string; label: string; skipped?: string }[] = [];
+		for (let index = 0; index < recipe.steps.length; index++) {
+			// Resolve each step against the project as the earlier steps left it.
+			const calls = resolveRecipe(recipe, context()).filter((s) => s.index === index);
+			for (const call of calls) {
+				try {
+					if (call.problem) throw new Error(call.problem);
+					await this.call(call.tool, call.params, actor);
+					done.push({ step: index + 1, tool: call.tool, label: call.label });
+				} catch (error) {
+					const message = (error as Error).message;
+					if (call.optional) {
+						done.push({ step: index + 1, tool: call.tool, label: call.label, skipped: message });
+						continue;
+					}
+					return {
+						recipe: recipe.name,
+						ok: false,
+						done,
+						failed: { step: index + 1, tool: call.tool, label: call.label, error: message },
+					};
+				}
+			}
+		}
+		this.store.log(actor, `Ran the recipe "${recipe.name}"`);
+		return { recipe: recipe.name, ok: true, done };
 	}
 
 	async refreshRecentAndNotify(): Promise<void> {

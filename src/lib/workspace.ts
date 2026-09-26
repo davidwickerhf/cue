@@ -8,7 +8,7 @@ import { createStore, editor, type SidebarPanel } from "./state";
  */
 
 /** A pane docked between the viewer and the inspector. */
-export type Dock = "none" | "mixer" | "scopes" | "agent" | "history" | "markers";
+export type Dock = "none" | "mixer" | "scopes" | "agent" | "history" | "markers" | "notes";
 
 export interface Layout {
 	/** The workspace this layout came from (built-in id or saved name). */
@@ -98,8 +98,8 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		sidebarOpen: false,
 		inspectorOpen: false,
 		timelineHeight: 200,
-		dock: "markers",
-		dockWidth: 300,
+		dock: "notes",
+		dockWidth: 320,
 		tracks: { video: 34, audio: 28, text: 24 },
 	}),
 };

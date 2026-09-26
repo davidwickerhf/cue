@@ -4,6 +4,7 @@ import { type Dock as DockKind, layout } from "../../lib/workspace";
 import { AgentPanel } from "../panels/AgentPanel";
 import { HistoryPanel } from "../panels/HistoryPanel";
 import { MixerPanel } from "../panels/MixerPanel";
+import { NotesPanel } from "../panels/NotesPanel";
 import { MarkerList } from "./Inspector";
 import { Scopes } from "./Scopes";
 
@@ -13,6 +14,7 @@ const TITLES: Record<Exclude<DockKind, "none">, string> = {
 	agent: "Agent",
 	history: "History",
 	markers: "Markers",
+	notes: "Director's notes",
 };
 
 /** The pane a workspace docks beside the viewer (mixer, scopes, markers…). */
@@ -43,6 +45,7 @@ export function Dock() {
 				{dock === "agent" && <AgentPanel />}
 				{dock === "history" && <HistoryPanel />}
 				{dock === "markers" && <MarkerList markers={project.data.markers} />}
+				{dock === "notes" && <NotesPanel />}
 			</div>
 		</aside>
 	);

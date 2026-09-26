@@ -42,12 +42,14 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 - Shape: set_canvas, reframe (e.g. 1080×1920 for vertical; then adjust transform.x per clip to follow the subject).
 - Markers: add_marker, update_marker, remove_marker, clear_markers.
 - Media problems: get_state.offlineMedia lists missing files; relink_media or find_offline_media fix them.
+- Review: review_edit returns director's notes on the open timeline (flash frames, jump cuts, static shots, rushed or tiny titles, abrupt music, long pauses, missing captions, offline media), each with an optional fix {tool, params}. Run it when you finish an edit and apply the fixes that make sense by calling fix.tool with fix.params.
+- Recipes: list_recipes shows reusable edits (Social clip, Podcast polish, Punchy intro, Clean up and the user's own); run_recipe runs one (dryRun first to see the resolved calls); save_recipe stores a sequence of tool calls, with placeholders such as {playheadMs}, {selectedClipIds} or {musicAssetId}, so it can be repeated on other projects; delete_recipe removes one.
 
 ## Sequences (several timelines)
 A project can hold several timelines. list_sequences shows them; the open one is what every editing tool changes. new_sequence, open_sequence, rename_sequence, duplicate_sequence, delete_sequence. nest_clips turns selected clips into one clip backed by a new sequence (like Premiere's Nest); open_sequence on it to edit inside, then open "main" again. Nested clips play a render of their sequence that refreshes automatically.
 
 ## Showing the user
-select_clips highlights clips; seek moves the playhead; play/pause; set_in_out marks a range; set_view switches workspace (editing; audio with the mixer and tall audio tracks; colour with scopes and before/after; voiceover with the script prompter; titles with safe areas; agent; review with markers), opens a panel, fits or zooms the timeline, or opens media in the source monitor. Use these to point at what you mean.
+select_clips highlights clips; seek moves the playhead; play/pause; set_in_out marks a range; set_view switches workspace (editing; audio with the mixer and tall audio tracks; colour with scopes and before/after; voiceover with the script prompter; titles with safe areas; agent; review with director's notes), docks a pane beside the viewer (dock: notes, markers, mixer…), opens a panel, fits or zooms the timeline, or opens media in the source monitor. Use these to point at what you mean.
 
 ## Output
 export kinds: video (optional range {startMs,endMs}), audio, voiceover, stems (one WAV per script line), captions (SRT+VTT), and otio/fcpxml/mlt/edl for other editors. export_frame saves a still. make_variants exports other shapes (9:16, 1:1, 4:5, 16:9) and shorter cuts of the edit in one go; for short cuts, choose the stretches to keep yourself (find_moments, get_transcript) and pass them as keep. update_export sets codec (h264/hevc/prores), quality and size. Without an out path, files go to the project's export folder. You may create new files elsewhere (with the right file type), but you can only overwrite files in the export folder; pick a new name otherwise.

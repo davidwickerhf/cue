@@ -13,6 +13,7 @@ import { appSettings, openSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { Field, Section, Segmented, TextInput } from "../ui/controls";
 import { BeatTools, BrollTools, ChapterTools, ReframeTools } from "./AiTools";
+import { RecipesSection } from "./RecipesSection";
 
 const VOICES = [
 	"cedar",
@@ -73,6 +74,7 @@ export function GeneratePanel() {
 					))}
 				</ul>
 			</Section>
+			<RecipesSection busy={busy} />
 			<Section title="Voice">
 				{!tts?.ready && <Problem text={tts?.problem} />}
 				{openaiVoice ? (

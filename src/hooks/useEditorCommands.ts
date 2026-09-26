@@ -5,7 +5,7 @@ import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
 import { app, editor, findLine, type SidebarPanel } from "../lib/state";
 import { rasterise } from "../lib/textDraw";
-import { switchWorkspace } from "../lib/workspace";
+import { type Dock, layout, switchWorkspace } from "../lib/workspace";
 
 /** Carries out commands from the main process (and therefore from agents). */
 export function useEditorCommands() {
@@ -34,6 +34,7 @@ export function useEditorCommands() {
 				case "setView":
 					if (command.workspace) switchWorkspace(command.workspace);
 					if (command.panel) editor.set({ panel: command.panel as SidebarPanel });
+					if (command.dock) layout.set({ dock: command.dock as Dock });
 					if (command.zoom) editor.set({ zoom: command.zoom });
 					if (command.fitTimeline) window.dispatchEvent(new CustomEvent("cue:fit"));
 					if (command.openSource) openSource(command.openSource);
