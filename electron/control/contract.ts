@@ -2,6 +2,7 @@ import { z } from "zod";
 import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
+	curveSchema,
 	exportSchema,
 	lineInputSchema,
 	settingsSchema,
@@ -488,13 +489,34 @@ export const contract = {
 	},
 	set_keyframe: {
 		description:
-			"Animate a media clip: set x or y (0–1, centre on canvas), scale (1 = fit) or volume (0–2) at a clip-local time. ease: linear, ease or hold.",
+			"Animate a media clip: set x or y (0–1, centre on canvas), scale (1 = fit) or volume (0–2) at a clip-local time. ease is how the value travels to the next keyframe: linear, ease (slow in and out), ease-in (starts slow), ease-out (ends slow), hold (jumps at the next keyframe) or bezier with curve [x1, y1, x2, y2] like CSS cubic-bezier (x 0–1; y below 0 or above 1 overshoots, e.g. [0.34, 1.56, 0.64, 1] for a bounce back).",
 		input: {
 			clipId: z.string(),
 			prop: z.enum(["x", "y", "scale", "volume"]),
 			atMs: z.number().min(0),
 			value: z.number(),
-			ease: z.enum(["linear", "ease", "hold"]).default("ease"),
+			ease: z.enum(["linear", "ease", "ease-in", "ease-out", "hold", "bezier"]).default("ease"),
+			curve: curveSchema.optional().describe("Bezier handles [x1, y1, x2, y2] for ease bezier."),
+		},
+	},
+	edit_keyframes: {
+		description:
+			"Change several keyframes of one clip in one undoable step. Each edit picks a keyframe by prop and its clip-local atMs, then moves it (toMs), changes its value, ease or curve, or removes it (remove: true).",
+		input: {
+			clipId: z.string(),
+			edits: z
+				.array(
+					z.object({
+						prop: z.enum(["x", "y", "scale", "volume"]),
+						atMs: z.number().min(0),
+						toMs: z.number().min(0).optional(),
+						value: z.number().optional(),
+						ease: z.enum(["linear", "ease", "ease-in", "ease-out", "hold", "bezier"]).optional(),
+						curve: curveSchema.optional(),
+						remove: z.boolean().optional(),
+					}),
+				)
+				.min(1),
 		},
 	},
 	remove_keyframe: {

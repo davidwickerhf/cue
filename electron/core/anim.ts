@@ -1,4 +1,4 @@
-import type { Keyframe, Zoom } from "./types";
+import type { Curve, Ease, Keyframe, Zoom } from "./types";
 
 /**
  * Animation maths shared by the preview (browser) and the exporter (ffmpeg
@@ -6,6 +6,79 @@ import type { Keyframe, Zoom } from "./types";
  */
 
 export const smooth = (t: number) => t * t * (3 - 2 * t);
+
+/**
+ * Every named ease as the cubic bezier it equals exactly (smoothstep, cubic
+ * in and out), so the curve editor can start from one and splits stay exact.
+ */
+export const EASE_CURVES: Record<Exclude<Ease, "hold" | "bezier">, Curve> = {
+	linear: [1 / 3, 1 / 3, 2 / 3, 2 / 3],
+	ease: [1 / 3, 0, 2 / 3, 1],
+	"ease-in": [1 / 3, 0, 2 / 3, 0],
+	"ease-out": [1 / 3, 1, 2 / 3, 1],
+};
+
+/** A custom curve without handles yet: CSS's `ease`. */
+export const DEFAULT_CURVE: Curve = [0.25, 0.1, 0.25, 1];
+
+/** The bezier a segment follows, or undefined for hold. */
+export function curveOf(k: Keyframe): Curve | undefined {
+	if (k.ease === "hold") return undefined;
+	if (k.ease === "bezier") return k.curve ?? DEFAULT_CURVE;
+	return EASE_CURVES[k.ease] ?? EASE_CURVES.ease;
+}
+
+/** Polynomial coefficients [a, b, c] of one bezier axis: ((a·s + b)·s + c)·s. */
+function coeffs(p1: number, p2: number): [number, number, number] {
+	const c = 3 * p1;
+	const b = 3 * (p2 - p1) - c;
+	return [1 - c - b, b, c];
+}
+
+// The bezier is solved for x by halving a bracket BISECT times and then
+// interpolating inside it. It is a fixed number of steps so the ffmpeg
+// expression below can do exactly the same arithmetic as the preview.
+const BISECT = 7;
+
+/** The curve parameter s where the bezier's x equals `p` (0–1). */
+function solveBezier(curve: Curve, p: number): number {
+	const [a, b, c] = coeffs(curve[0], curve[2]);
+	const X = (s: number) => ((a * s + b) * s + c) * s;
+	const q = Math.min(1, Math.max(0, p));
+	let lo = 0;
+	for (let i = 1; i <= BISECT; i++) {
+		const mid = lo + 2 ** -i;
+		if (X(mid) < q) lo = mid;
+	}
+	const w = 2 ** -BISECT;
+	const x0 = X(lo);
+	return lo + ((q - x0) / Math.max(0.000001, X(lo + w) - x0)) * w;
+}
+
+/** How far along (0–1, may overshoot) a bezier ease is at time share `p`. */
+export function bezierAt(curve: Curve, p: number): number {
+	const [a, b, c] = coeffs(curve[1], curve[3]);
+	const s = solveBezier(curve, p);
+	return ((a * s + b) * s + c) * s;
+}
+
+/** How far from one keyframe to the next the value is at time share `p` (0–1). */
+export function easeAt(k: Keyframe, p: number): number {
+	switch (k.ease) {
+		case "hold":
+			return 0;
+		case "linear":
+			return p;
+		case "ease-in":
+			return p * p * p;
+		case "ease-out":
+			return 1 - (1 - p) ** 3;
+		case "bezier":
+			return bezierAt(k.curve ?? DEFAULT_CURVE, p);
+		default:
+			return smooth(p);
+	}
+}
 
 /** Value of a keyframed property at clip-local time `t`, or `fallback` without keyframes. */
 export function valueAt(keyframes: Keyframe[] | undefined, t: number, fallback: number): number {
@@ -20,7 +93,7 @@ export function valueAt(keyframes: Keyframe[] | undefined, t: number, fallback: 
 		if (t < a.atMs || t > b.atMs) continue;
 		if (a.ease === "hold") return a.value;
 		const p = (t - a.atMs) / Math.max(1, b.atMs - a.atMs);
-		return a.value + (b.value - a.value) * (a.ease === "ease" ? smooth(p) : p);
+		return a.value + (b.value - a.value) * easeAt(a, p);
 	}
 	return last.value;
 }
@@ -65,12 +138,62 @@ export function splitKeyframes(
 	if (!list || list.length === 0) return [list, list];
 	const value = valueAt(list, atMs, list[0].value);
 	// The ease of the segment the cut falls in carries on across it.
-	const ease = [...list].reverse().find((k) => k.atMs <= atMs)?.ease ?? list[0].ease;
+	const i = list.findLastIndex((k) => k.atMs <= atMs);
+	const from = list[Math.max(0, i)];
+	const carry: Pick<Keyframe, "ease" | "curve"> = from.curve
+		? { ease: from.ease, curve: from.curve }
+		: { ease: from.ease };
 	const left = list.filter((k) => k.atMs < atMs - 10);
 	const right = list.filter((k) => k.atMs > atMs + 10).map((k) => ({ ...k, atMs: k.atMs - atMs }));
+	let rightEase = carry;
+	// A curved segment is cut into two beziers that together trace the same path.
+	const to = list[i + 1];
+	const curve = i >= 0 && to && from.ease !== "linear" ? curveOf(from) : undefined;
+	if (curve && to) {
+		const halves = splitCurve(curve, (atMs - from.atMs) / Math.max(1, to.atMs - from.atMs));
+		if (halves) {
+			const at = left.indexOf(from);
+			if (at >= 0) left[at] = { ...from, ease: "bezier", curve: halves[0] };
+			rightEase = { ease: "bezier", curve: halves[1] };
+		}
+	}
 	return [
-		[...left, { atMs: Math.round(atMs), value, ease }],
-		[{ atMs: 0, value, ease }, ...right],
+		[...left, { atMs: Math.round(atMs), value, ...carry }],
+		[{ atMs: 0, value, ...rightEase }, ...right],
+	];
+}
+
+/**
+ * The two halves of a bezier ease cut at time share `p`, each rescaled to
+ * run 0–1 again (de Casteljau). Undefined when a half has no change in value
+ * to scale by.
+ */
+export function splitCurve(curve: Curve, p: number): [Curve, Curve] | undefined {
+	if (p <= 0 || p >= 1) return undefined;
+	const s = solveBezier(curve, p);
+	const lerp = (a: number[], b: number[]) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
+	const p0 = [0, 0];
+	const p1 = [curve[0], curve[1]];
+	const p2 = [curve[2], curve[3]];
+	const p3 = [1, 1];
+	const p01 = lerp(p0, p1);
+	const p12 = lerp(p1, p2);
+	const p23 = lerp(p2, p3);
+	const p012 = lerp(p01, p12);
+	const p123 = lerp(p12, p23);
+	const m = lerp(p012, p123);
+	if (Math.abs(m[1]) < 1e-4 || Math.abs(1 - m[1]) < 1e-4 || m[0] <= 0 || m[0] >= 1)
+		return undefined;
+	const x = (v: number) => Math.min(1, Math.max(0, v));
+	const r = (v: number) => Math.round(v * 1e5) / 1e5;
+	return [
+		[r(x(p01[0] / m[0])), r(p01[1] / m[1]), r(x(p012[0] / m[0])), r(p012[1] / m[1])],
+		[
+			r(x((p123[0] - m[0]) / (1 - m[0]))),
+			r((p123[1] - m[1]) / (1 - m[1])),
+			r(x((p23[0] - m[0]) / (1 - m[0]))),
+			r((p23[1] - m[1]) / (1 - m[1])),
+		],
 	];
 }
 
@@ -99,6 +222,53 @@ export function splitZooms(
 // ---------------------------------------------------------------------------
 
 const n = (v: number) => (Number.isFinite(v) ? Number(v.toFixed(5)).toString() : "0");
+/** A number that is safe to put after an operator (negatives in brackets). */
+const num = (v: number) => (v < 0 ? `(${n(v)})` : n(v));
+
+/**
+ * `bezierAt` as an ffmpeg expression of progress `p`: the same bisection,
+ * unrolled, with registers st()/ld() holding the bracket (0: low end, 1 and
+ * 2: scratch, 3: p). `;` runs the steps in order and yields the last value.
+ */
+function bezierExpr(curve: Curve, p: string): string {
+	const [ax, bx, cx] = coeffs(curve[0], curve[2]);
+	const [ay, by, cy] = coeffs(curve[1], curve[3]);
+	const poly = (a: number, b: number, c: number, s: string) =>
+		`((${num(a)}*${s}+${num(b)})*${s}+${num(c)})*${s}`;
+	const steps = [`st(3,clip(${p},0,1))`, "st(0,0)"];
+	for (let i = 1; i <= BISECT; i++)
+		steps.push(
+			// Powers of two print exactly, so the bracket matches the preview's.
+			`st(1,ld(0)+${2 ** -i})`,
+			`if(lt(${poly(ax, bx, cx, "ld(1)")},ld(3)),st(0,ld(1)),0)`,
+		);
+	const w = String(2 ** -BISECT);
+	steps.push(
+		`st(1,${poly(ax, bx, cx, "ld(0)")})`,
+		`st(2,${poly(ax, bx, cx, `(ld(0)+${w})`)})`,
+		`st(2,ld(0)+(ld(3)-ld(1))/max(0.000001,ld(2)-ld(1))*${w})`,
+		poly(ay, by, cy, "ld(2)"),
+	);
+	return `(${steps.join(";")})`;
+}
+
+/** The ease of a segment as an expression of its progress `p` (0–1). */
+function easeExpr(k: Keyframe, p: string): string {
+	switch (k.ease) {
+		case "hold":
+			return "0";
+		case "linear":
+			return p;
+		case "ease-in":
+			return `(${p})*(${p})*(${p})`;
+		case "ease-out":
+			return `(1-(1-(${p}))*(1-(${p}))*(1-(${p})))`;
+		case "bezier":
+			return bezierExpr(k.curve ?? DEFAULT_CURVE, p);
+		default:
+			return `(${p})*(${p})*(3-2*(${p}))`;
+	}
+}
 
 /** Piecewise expression equal to `valueAt` for keyframes given in ms, over variable `T` in seconds. */
 export function keyframeExpr(
@@ -113,7 +283,7 @@ export function keyframeExpr(
 		const a = pts[i];
 		const b = pts[i + 1];
 		const p = `((${T})-${n(a.s)})/${n(Math.max(0.001, b.s - a.s))}`;
-		const eased = a.ease === "hold" ? "0" : a.ease === "ease" ? `(${p})*(${p})*(3-2*(${p}))` : p;
+		const eased = easeExpr(a, p);
 		const segment = `${n(a.value)}+(${n(b.value - a.value)})*(${eased})`;
 		expr = `if(lt(${T},${n(b.s)}),${segment},${expr})`;
 	}

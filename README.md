@@ -56,7 +56,7 @@ A fast, open-source video editor for macOS. Edit by hand with the shortcuts you 
 | **Timeline** | Video, text and audio tracks (picture above sound), drag to reorder, mute, solo, lock and hide. Selection, blade, slip, roll and slide tools; ripple delete, lift and extract, ripple trim, snapping, markers, clip labels, enable and disable. |
 | **Editing** | Source monitor with three-point insert and overwrite, J/K/L shuttle, in and out points, frame holds, speed and speed ramps, crossfades and dips, copy and paste, grouping and linked audio. |
 | **Sequences** | Several timelines per project, nesting clips into their own sequence, sequence tabs. |
-| **Look and motion** | Keyframes for position, scale and volume, push-in zooms, crop, colour grading and LUTs, adjustment layers, masks, chroma key. |
+| **Look and motion** | Keyframes for position, scale and volume on timeline lanes with eases and a curve editor, push-in zooms, crop, colour grading and LUTs, adjustment layers, masks, chroma key. |
 | **Titles** | Templates, all installed fonts, outline, gradient, spacing, rotation, in and out animations, on-viewer editing. |
 | **Audio** | Waveforms, mixer with level, pan, solo, meters, three-band EQ and a compressor per track, auto-mix and a LUFS readout, ducking under the voiceover, denoise (a light FFT filter or the RNNoise voice model, heard in the preview too), loudness normalisation, beat detection and cut-to-the-beat. |
 | **Speech** | Word-level transcripts, text-based editing, filler-word removal, search by meaning, chapters, captions (SRT and VTT). |

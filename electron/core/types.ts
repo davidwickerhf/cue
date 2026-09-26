@@ -155,7 +155,10 @@ export interface Transform {
 	crop: Crop;
 }
 
-export type Ease = "linear" | "ease" | "hold";
+export type Ease = "linear" | "ease" | "ease-in" | "ease-out" | "hold" | "bezier";
+
+/** Cubic bezier handles [x1, y1, x2, y2], as in CSS cubic-bezier(); x stays within 0–1. */
+export type Curve = [number, number, number, number];
 
 export interface Keyframe {
 	/** Clip-local time. */
@@ -163,6 +166,8 @@ export interface Keyframe {
 	value: number;
 	/** How the value travels to the next keyframe. */
 	ease: Ease;
+	/** The custom curve used when `ease` is "bezier". */
+	curve?: Curve;
 }
 
 export type KeyframeProp = "x" | "y" | "scale" | "volume";

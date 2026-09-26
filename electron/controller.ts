@@ -752,12 +752,17 @@ export class Controller extends EventEmitter {
 					actor,
 				);
 			case "set_keyframe": {
-				const { clipId, prop, atMs, value, ease } = parseInput("set_keyframe", params);
+				const { clipId, prop, atMs, value, ease, curve } = parseInput("set_keyframe", params);
 				return this.store.apply(
-					{ type: "setKeyframe", clipId, prop, keyframe: { atMs, value, ease } },
+					{ type: "setKeyframe", clipId, prop, keyframe: { atMs, value, ease, curve } },
 					actor,
 				);
 			}
+			case "edit_keyframes":
+				return this.store.apply(
+					{ type: "editKeyframes", ...parseInput("edit_keyframes", params) },
+					actor,
+				);
 			case "remove_keyframe":
 				return this.store.apply(
 					{ type: "removeKeyframe", ...parseInput("remove_keyframe", params) },

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { splitKeyframes, splitZooms, withKeyframe } from "./anim";
+import { DEFAULT_CURVE, splitKeyframes, splitZooms, withKeyframe } from "./anim";
 import { binPath } from "./bins";
 import {
 	aiSchema,
@@ -9,6 +9,7 @@ import {
 	clipEnd,
 	colorSchema,
 	cropSchema,
+	curveSchema,
 	DEFAULT_KEY,
 	DEFAULT_MASK,
 	DEFAULT_SHAPE,
@@ -16,6 +17,7 @@ import {
 	DEFAULT_TRANSFORM,
 	defaultTracks,
 	denoiseSchema,
+	EASES,
 	effectsSchema,
 	exportSchema,
 	groupTracks,
@@ -46,6 +48,8 @@ import type {
 	Bin,
 	CaptionWord,
 	Clip,
+	Keyframe,
+	KeyframeProp,
 	MediaClip,
 	MediaInfo,
 	ProjectData,
@@ -311,6 +315,25 @@ export const opSchema = z.discriminatedUnion("type", [
 		clipId: z.string(),
 		prop: z.enum(["x", "y", "scale", "volume"]),
 		atMs: ms,
+	}),
+	// Several keyframes of one clip changed at once (a drag, a delete, an ease), one undo step.
+	z.object({
+		type: z.literal("editKeyframes"),
+		clipId: z.string(),
+		edits: z
+			.array(
+				z.object({
+					prop: z.enum(["x", "y", "scale", "volume"]),
+					/** Which keyframe: the one within 10 ms of this clip-local time. */
+					atMs: ms,
+					toMs: ms.min(0).optional(),
+					value: z.number().optional(),
+					ease: z.enum(EASES).optional(),
+					curve: curveSchema.optional(),
+					remove: z.boolean().optional(),
+				}),
+			)
+			.min(1),
 	}),
 	z.object({
 		type: z.literal("clearKeyframes"),
@@ -883,6 +906,18 @@ function placeTake(data: ProjectData, a: Asset): ProjectData {
 // ---------------------------------------------------------------------------
 // Apply
 // ---------------------------------------------------------------------------
+
+/** A keyframe inside its clip, with a curve only when it uses one. */
+function tidyKeyframe(k: z.input<typeof keyframeSchema>, durationMs: number): Keyframe {
+	const ease = k.ease ?? "ease";
+	const out: Keyframe = {
+		atMs: Math.round(Math.min(Math.max(0, k.atMs), durationMs)),
+		value: k.value,
+		ease,
+	};
+	if (ease === "bezier") out.curve = k.curve ?? DEFAULT_CURVE;
+	return out;
+}
 
 export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 	if (rawOp.type === "addAsset") {
@@ -1970,10 +2005,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "setKeyframe": {
 			const c = media(data, op.clipId);
 			unlocked(data, c.trackId);
-			const keyframe = {
-				...op.keyframe,
-				atMs: Math.round(Math.min(Math.max(0, op.keyframe.atMs), c.durationMs)),
-			};
+			const keyframe = tidyKeyframe(op.keyframe, c.durationMs);
 			const keyframes = {
 				...c.keyframes,
 				[op.prop]: withKeyframe(c.keyframes?.[op.prop], keyframe),
@@ -1991,6 +2023,47 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			return {
 				data: replaceClip(data, { ...c, keyframes }),
 				summary: `Removed a ${op.prop} keyframe`,
+			};
+		}
+		case "editKeyframes": {
+			const c = media(data, op.clipId);
+			unlocked(data, c.trackId);
+			const lists: Partial<Record<KeyframeProp, Keyframe[]>> = { ...c.keyframes };
+			const placed: [KeyframeProp, Keyframe][] = [];
+			// Every edited keyframe is lifted out first, so selections can move past each other.
+			for (const e of op.edits) {
+				const list = lists[e.prop] ?? [];
+				const k = list.find((x) => Math.abs(x.atMs - e.atMs) <= 10);
+				if (!k) throw new Error(`No ${e.prop} keyframe at ${sec(e.atMs)} on ${c.name ?? c.id}.`);
+				lists[e.prop] = list.filter((x) => x !== k);
+				if (e.remove) continue;
+				// A new named ease drops the old custom curve.
+				const curve = e.curve ?? (e.ease && e.ease !== k.ease ? undefined : k.curve);
+				placed.push([
+					e.prop,
+					tidyKeyframe(
+						{
+							atMs: e.toMs ?? k.atMs,
+							value: e.value ?? k.value,
+							ease: e.ease ?? k.ease,
+							...(curve ? { curve } : {}),
+						},
+						c.durationMs,
+					),
+				]);
+			}
+			for (const [prop, k] of placed) lists[prop] = withKeyframe(lists[prop], k);
+			for (const prop of Object.keys(lists) as KeyframeProp[])
+				if (!lists[prop]?.length) delete lists[prop];
+			const count = `${op.edits.length} keyframe${op.edits.length === 1 ? "" : "s"}`;
+			const verb = op.edits.every((e) => e.remove)
+				? "Removed"
+				: op.edits.some((e) => e.toMs !== undefined || e.value !== undefined)
+					? "Moved"
+					: "Changed the ease of";
+			return {
+				data: replaceClip(data, { ...c, keyframes: lists }),
+				summary: `${verb} ${count} on ${c.name ?? c.id}`,
 			};
 		}
 		case "clearKeyframes": {
