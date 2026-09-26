@@ -96,7 +96,7 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [ ] Director's notes with one-click fixes
 - [ ] Voice editing
 - [ ] Smart reframe that follows faces
-- [ ] One-click variants (lengths and aspect ratios)
+- [x] One-click variants (lengths and aspect ratios)
 - [x] Animated word-by-word captions
 - [ ] Recipes: reusable edit templates for people and agents
 - [ ] Music-driven montage

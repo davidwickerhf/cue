@@ -79,6 +79,10 @@ export function ExportDialog() {
 	const [preset, setPreset] = useState("web");
 	const [range, setRange] = useState<"all" | "inout">("all");
 	const [busy, setBusy] = useState(false);
+	const [mode, setMode] = useState<"one" | "variants">("one");
+	const [aspects, setAspects] = useState<string[]>(["9:16"]);
+	const [lengths, setLengths] = useState<number[]>([]);
+	const [saveProjects, setSaveProjects] = useState(false);
 	useEffect(() => {
 		if (!open) return;
 		setRange(hasRange ? "inout" : "all");
@@ -124,6 +128,31 @@ export function ExportDialog() {
 		}
 	};
 
+	const variantCount = Math.max(1, aspects.length) * Math.max(1, lengths.length);
+	const makeVariants = async () => {
+		setBusy(true);
+		close();
+		setBusy(false);
+		notify(`Making ${variantCount} variant${variantCount === 1 ? "" : "s"}…`);
+		const report = await run<{ variants: { video?: string }[] }>("make_variants", {
+			aspects,
+			lengthsSec: lengths,
+			saveProjects,
+		});
+		const first = report?.variants.find((v) => v.video)?.video;
+		if (first) {
+			notify("Variants finished", "success");
+			void window.cue.reveal(first);
+		}
+	};
+	const toggle = <T,>(list: T[], value: T) =>
+		list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+	const chip = (on: boolean) =>
+		cn(
+			"h-8 rounded-lg border px-3 text-[12px]",
+			on ? "border-accent bg-accent/10" : "border-border text-muted hover:border-foreground/30",
+		);
+
 	return (
 		<div
 			className="fixed inset-0 z-[150] flex bg-black/40 backdrop-blur-[2px]"
@@ -146,67 +175,156 @@ export function ExportDialog() {
 						<X className="size-4" />
 					</button>
 				</header>
-				<div className="flex flex-col gap-4 p-5">
-					<div className="grid grid-cols-2 gap-2">
-						{PRESETS.map((p) => (
-							<button
-								key={p.id}
-								type="button"
-								onClick={() => setPreset(p.id)}
-								className={cn(
-									"rounded-lg border px-3 py-2.5 text-left",
-									preset === p.id
-										? "border-accent bg-accent/10"
-										: "border-border hover:border-foreground/30",
-								)}
-							>
-								<span className="block text-[13px] font-medium">{p.label}</span>
-								<span className="block text-[11px] text-muted">{p.sub}</span>
-							</button>
-						))}
-					</div>
-					<div className="flex gap-2">
-						{(["all", "inout"] as const).map((r) => (
-							<button
-								key={r}
-								type="button"
-								disabled={r === "inout" && !hasRange}
-								onClick={() => setRange(r)}
-								className={cn(
-									"flex-1 rounded-lg border px-3 py-2 text-left text-[12px] disabled:opacity-40",
-									range === r
-										? "border-accent bg-accent/10"
-										: "border-border hover:border-foreground/30",
-								)}
-							>
-								{r === "all"
-									? "Whole timeline"
-									: hasRange
-										? `In to out (${formatTime(inPoint as number)} – ${formatTime(outPoint as number)})`
-										: "In to out (mark I and O first)"}
-							</button>
-						))}
-					</div>
-					<p className="text-[12px] text-muted">
-						{chosen.kind === "audio"
-							? `Stereo · 48 kHz · ${formatTime(length)} long`
-							: chosen.kind === "gif"
-								? `${Math.min(720, w)} px wide · 15 fps · ${formatTime(length)} long`
-								: `${w}×${h} · ${project.data.canvas.fps} fps · ${formatTime(length)} long`}
-					</p>
+				<div className="flex gap-1 border-b border-separator px-5 py-2">
+					{(
+						[
+							["one", "One video"],
+							["variants", "Variants"],
+						] as const
+					).map(([m, label]) => (
+						<button
+							key={m}
+							type="button"
+							onClick={() => setMode(m)}
+							className={cn(
+								"h-7 rounded-md px-2.5 text-[12px]",
+								mode === m ? "bg-default text-foreground" : "text-muted hover:text-foreground",
+							)}
+						>
+							{label}
+						</button>
+					))}
 				</div>
+				{mode === "variants" ? (
+					<div className="flex flex-col gap-4 p-5">
+						<p className="text-[12px] text-muted">
+							Other versions of this edit, each exported as its own video. The timeline stays as it
+							is.
+						</p>
+						<div className="flex flex-col gap-2">
+							<p className="text-[12px] font-medium">Frame shapes</p>
+							<div className="flex flex-wrap gap-2">
+								{(["9:16", "1:1", "4:5", "16:9"] as const).map((a) => (
+									<button
+										key={a}
+										type="button"
+										className={chip(aspects.includes(a))}
+										onClick={() => setAspects(toggle(aspects, a))}
+									>
+										{a === "9:16"
+											? "Vertical 9:16"
+											: a === "1:1"
+												? "Square 1:1"
+												: a === "4:5"
+													? "Portrait 4:5"
+													: "Wide 16:9"}
+									</button>
+								))}
+							</div>
+						</div>
+						<div className="flex flex-col gap-2">
+							<p className="text-[12px] font-medium">Shorter cuts</p>
+							<div className="flex flex-wrap gap-2">
+								{[15, 30, 60].map((sec) => (
+									<button
+										key={sec}
+										type="button"
+										disabled={sec * 1000 >= project.durationMs}
+										className={cn(chip(lengths.includes(sec)), "disabled:opacity-40")}
+										onClick={() => setLengths(toggle(lengths, sec))}
+									>
+										{sec} s
+									</button>
+								))}
+							</div>
+							<p className="text-[11px] text-muted">
+								A shorter cut ends at the last cut before its length. Ask the agent for one built
+								from the best moments.
+							</p>
+						</div>
+						<label className="flex items-center gap-2 text-[12px]">
+							<input
+								type="checkbox"
+								checked={saveProjects}
+								onChange={(e) => setSaveProjects(e.target.checked)}
+							/>
+							Also save each as a project, to fine-tune later
+						</label>
+					</div>
+				) : (
+					<div className="flex flex-col gap-4 p-5">
+						<div className="grid grid-cols-2 gap-2">
+							{PRESETS.map((p) => (
+								<button
+									key={p.id}
+									type="button"
+									onClick={() => setPreset(p.id)}
+									className={cn(
+										"rounded-lg border px-3 py-2.5 text-left",
+										preset === p.id
+											? "border-accent bg-accent/10"
+											: "border-border hover:border-foreground/30",
+									)}
+								>
+									<span className="block text-[13px] font-medium">{p.label}</span>
+									<span className="block text-[11px] text-muted">{p.sub}</span>
+								</button>
+							))}
+						</div>
+						<div className="flex gap-2">
+							{(["all", "inout"] as const).map((r) => (
+								<button
+									key={r}
+									type="button"
+									disabled={r === "inout" && !hasRange}
+									onClick={() => setRange(r)}
+									className={cn(
+										"flex-1 rounded-lg border px-3 py-2 text-left text-[12px] disabled:opacity-40",
+										range === r
+											? "border-accent bg-accent/10"
+											: "border-border hover:border-foreground/30",
+									)}
+								>
+									{r === "all"
+										? "Whole timeline"
+										: hasRange
+											? `In to out (${formatTime(inPoint as number)} – ${formatTime(outPoint as number)})`
+											: "In to out (mark I and O first)"}
+								</button>
+							))}
+						</div>
+						<p className="text-[12px] text-muted">
+							{chosen.kind === "audio"
+								? `Stereo · 48 kHz · ${formatTime(length)} long`
+								: chosen.kind === "gif"
+									? `${Math.min(720, w)} px wide · 15 fps · ${formatTime(length)} long`
+									: `${w}×${h} · ${project.data.canvas.fps} fps · ${formatTime(length)} long`}
+						</p>
+					</div>
+				)}
 				<footer className="flex justify-end gap-2 border-t border-separator px-5 py-3">
 					<Button size="sm" variant="ghost" className="h-8 text-[12px]" onPress={close}>
 						Cancel
 					</Button>
-					<Button
-						size="sm"
-						className="h-8 px-4 text-[12px] font-semibold"
-						isDisabled={busy}
-						onPress={() => void start()}
-					>
-						Export…
-					</Button>
+					{mode === "variants" ? (
+						<Button
+							size="sm"
+							className="h-8 px-4 text-[12px] font-semibold"
+							isDisabled={busy || (aspects.length === 0 && lengths.length === 0)}
+							onPress={() => void makeVariants()}
+						>
+							Make {variantCount} variant{variantCount === 1 ? "" : "s"}
+						</Button>
+					) : (
+						<Button
+							size="sm"
+							className="h-8 px-4 text-[12px] font-semibold"
+							isDisabled={busy}
+							onPress={() => void start()}
+						>
+							Export…
+						</Button>
+					)}
 				</footer>
 			</div>
 		</div>

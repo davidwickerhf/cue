@@ -100,11 +100,21 @@ function askWindow<T>(
 	});
 }
 
-async function renderText(clips: TextClip[]): Promise<Record<string, TextRender>> {
+async function renderText(
+	clips: TextClip[],
+	canvas?: { width: number; height: number },
+): Promise<Record<string, TextRender>> {
 	const fps = store.current.canvas.fps;
 	const images = await askWindow<Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }>>(
 		// The clips travel with the request: they may belong to a sequence that is not open.
-		(requestId) => ({ type: "renderText", requestId, clipIds: clips.map((c) => c.id), clips, fps }),
+		(requestId) => ({
+			type: "renderText",
+			requestId,
+			clipIds: clips.map((c) => c.id),
+			clips,
+			fps,
+			...canvas,
+		}),
 		300000,
 	);
 	const root = path.join(store.cacheDir(), "text");
@@ -974,7 +984,8 @@ else {
 			applicationVersion: app.getVersion(),
 			copyright: "© 2026 David Henry Francis Wicker",
 			website: "https://wicker.life",
-			credits: "Open source under the MIT License. cue.wicker.life · Support: ko-fi.com/davidwickerhf",
+			credits:
+				"Open source under the MIT License. cue.wicker.life · Support: ko-fi.com/davidwickerhf",
 		});
 		await loadAppSettings();
 		protocol.handle(MEDIA_SCHEME, serveMedia);

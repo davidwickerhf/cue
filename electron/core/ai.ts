@@ -140,10 +140,7 @@ export interface CaptionChunk {
 	words: { text: string; startMs: number; endMs: number }[];
 }
 
-export function chunkCaptions(
-	segments: TranscriptSegment[],
-	maxChars = 42,
-): CaptionChunk[] {
+export function chunkCaptions(segments: TranscriptSegment[], maxChars = 42): CaptionChunk[] {
 	const chunks: CaptionChunk[] = [];
 	for (const segment of segments) {
 		const words = segment.words?.length

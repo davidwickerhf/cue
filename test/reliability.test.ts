@@ -217,7 +217,9 @@ describe("word-by-word captions", () => {
 	it("estimates timing when turned on, and splits captions between words", () => {
 		let data = applyOp(emptyProject("T"), {
 			type: "addClips",
-			clips: [{ type: "text", trackId: "T1", startMs: 0, durationMs: 4000, text: "one two three four" }],
+			clips: [
+				{ type: "text", trackId: "T1", startMs: 0, durationMs: 4000, text: "one two three four" },
+			],
 		}).data;
 		const id = data.clips[0].id;
 		data = applyOp(data, {
@@ -236,7 +238,11 @@ describe("word-by-word captions", () => {
 		expect(right.text).toBe("three four");
 		expect(right.words?.[0].startMs).toBeLessThan(200);
 		// New text gets new timing.
-		data = applyOp(data, { type: "updateClip", id: right.id, patch: { text: "five six seven" } }).data;
+		data = applyOp(data, {
+			type: "updateClip",
+			id: right.id,
+			patch: { text: "five six seven" },
+		}).data;
 		expect((data.clips.find((c) => c.id === right.id) as TextClip).words).toHaveLength(3);
 	});
 });

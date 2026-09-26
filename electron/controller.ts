@@ -81,7 +81,10 @@ export interface ControllerHooks {
 	sendCommand: (command: EditorCommand) => boolean;
 	focusWindow: () => void;
 	/** Rasterise text clips to full-canvas PNGs (editor window). */
-	renderText: (clips: TextClip[]) => Promise<Record<string, TextRender>>;
+	renderText: (
+		clips: TextClip[],
+		canvas?: { width: number; height: number },
+	) => Promise<Record<string, TextRender>>;
 	/** PNG of the preview at a moment (editor window). */
 	captureFrame: (atMs: number) => Promise<string>;
 	/** The generative runtime built from app settings, keys and local models. */
@@ -709,6 +712,14 @@ export class Controller extends EventEmitter {
 			}
 			case "get_guide":
 				return AGENT_GUIDE;
+			case "make_variants": {
+				const input = parseInput("make_variants", params);
+				if (!input.aspects?.length && !input.lengthsSec?.length)
+					throw new Error("Pick at least one frame shape or length.");
+				return this.job("Making variants", () =>
+					this.store.makeVariants(input, actor, this.hooks.renderText),
+				);
+			}
 			case "split_at_scenes": {
 				const { clipId, threshold, split } = parseInput("split_at_scenes", params);
 				return this.store.splitAtScenes(clipId, actor, { threshold, split });

@@ -419,4 +419,65 @@ describe("compositing", () => {
 			expect(isBlue(await pixel(out, 2.5, 160, 90, 320))).toBe(true);
 		}
 	}, 180000);
+
+	it("makes vertical and shorter variants without touching the edit", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-variants-"));
+		const red = path.join(dir, "red.mp4");
+		const blue = path.join(dir, "blue.mp4");
+		for (const [file, color] of [
+			[red, "red"],
+			[blue, "blue"],
+		])
+			await ffmpeg([
+				"-f",
+				"lavfi",
+				"-i",
+				`color=c=${color}:s=320x180:r=30:d=6`,
+				"-pix_fmt",
+				"yuv420p",
+				file,
+			]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: path.join(dir, "P"), name: "Promo" });
+		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180 } }, "user");
+		const [a, b] = await store.importMedia([red, blue], "user");
+		store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{ type: "media", trackId: "V1", assetId: a.id, startMs: 0, durationMs: 3000 },
+					{ type: "media", trackId: "V1", assetId: b.id, startMs: 3000, durationMs: 5000 },
+				],
+			},
+			"user",
+		);
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "draft" } },
+			"user",
+		);
+		const before = JSON.stringify(store.current);
+		const { variants } = await store.makeVariants(
+			{ aspects: ["9:16"], lengthsSec: [4], saveProjects: true },
+			"user",
+		);
+		// The open edit is untouched.
+		expect(JSON.stringify(store.current)).toBe(before);
+		expect(variants).toHaveLength(1);
+		const [v] = variants;
+		expect(v.label).toBe("9x16 4s");
+		// Ends at the last cut before 4 s (3 s), which is at least 60% of it.
+		expect(v.durationMs).toBe(3000);
+		const info = String(
+			(await run(ffmpegPath(), ["-hide_banner", "-i", v.video as string]).catch((e) => e)).stderr,
+		);
+		expect(info).toContain("1080x1920");
+		// The red picture fills the vertical frame (centre crop), top to bottom.
+		expect((await pixel(v.video as string, 1, 540, 100, 1080))[0]).toBeGreaterThan(150);
+		const saved = JSON.parse(await fs.readFile(v.project as string, "utf8"));
+		expect(saved.canvas.width).toBe(1080);
+	}, 120000);
 });

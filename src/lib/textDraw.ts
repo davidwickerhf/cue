@@ -184,7 +184,14 @@ function drawWords(
 	ctx: CanvasRenderingContext2D,
 	clip: TextClip,
 	f: TextFrame,
-	box: { left: number; top: number; boxW: number; maxText: number; lineHeight: number; outline: boolean },
+	box: {
+		left: number;
+		top: number;
+		boxW: number;
+		maxText: number;
+		lineHeight: number;
+		outline: boolean;
+	},
 ) {
 	const style = clip.style;
 	const ws = clip.wordStyle as NonNullable<TextClip["wordStyle"]>;

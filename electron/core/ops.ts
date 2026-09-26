@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { splitKeyframes, splitZooms, withKeyframe } from "./anim";
 import {
-	captionWordSchema,
-	wordStyleSchema,
 	aiSchema,
 	assertUnique,
 	CLIP_LABELS,
+	captionWordSchema,
 	clipEnd,
 	colorSchema,
 	cropSchema,
@@ -33,6 +32,7 @@ import {
 	transformSchema,
 	transitionSchema,
 	voiceoverTrack,
+	wordStyleSchema,
 } from "./project";
 import { fadesIn, overlaps, transitionLabel } from "./transitions";
 import type {
@@ -695,7 +695,11 @@ function splitOne(
 			const early = c.words.filter((w) => w.startMs < leftLength);
 			const late = c.words
 				.filter((w) => w.startMs >= leftLength)
-				.map((w) => ({ ...w, startMs: w.startMs - leftLength, endMs: Math.max(0, w.endMs - leftLength) }));
+				.map((w) => ({
+					...w,
+					startMs: w.startMs - leftLength,
+					endMs: Math.max(0, w.endMs - leftLength),
+				}));
 			if (early.length && late.length) {
 				left = { ...left, words: early, text: early.map((w) => w.text).join(" ") };
 				right = { ...right, words: late, text: late.map((w) => w.text).join(" ") };
@@ -1007,7 +1011,12 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 							},
 							...(color ? { color: { ...NEUTRAL_COLOR, ...current.color, ...color } } : {}),
 						}
-					: withWords(current, { ...current, ...rest, style: { ...current.style, ...style } }, words, wordStyle);
+					: withWords(
+							current,
+							{ ...current, ...rest, style: { ...current.style, ...style } },
+							words,
+							wordStyle,
+						);
 			if (current.type === "media" && (op.patch.text !== undefined || style || wordStyle || words))
 				throw new Error("Only text clips have text, style and word timing.");
 			const next = validateClip(data, merged as Clip);
@@ -1063,7 +1072,11 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 					const from = Math.max(0, start);
 					// Word times are clip-local: they move with the clip's new start.
 					const words = c.words
-						?.map((w) => ({ ...w, startMs: w.startMs - (from - c.startMs), endMs: w.endMs - (from - c.startMs) }))
+						?.map((w) => ({
+							...w,
+							startMs: w.startMs - (from - c.startMs),
+							endMs: w.endMs - (from - c.startMs),
+						}))
 						.filter((w) => w.endMs > 0)
 						.map((w) => ({ ...w, startMs: Math.max(0, w.startMs) }));
 					next = validateClip(data, {

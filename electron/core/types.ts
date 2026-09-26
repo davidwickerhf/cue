@@ -521,7 +521,16 @@ export type EditorCommand =
 	| { type: "pause" }
 	| { type: "seek"; ms: number }
 	| { type: "previewAsset"; assetId: string }
-	| { type: "renderText"; requestId: string; clipIds: string[]; clips?: TextClip[]; fps: number }
+	| {
+			type: "renderText";
+			requestId: string;
+			clipIds: string[];
+			clips?: TextClip[];
+			fps: number;
+			/** Frame size to draw at (a variant's may differ from the open project's). */
+			width?: number;
+			height?: number;
+	  }
 	| { type: "captureFrame"; requestId: string; atMs: number }
 	| { type: "setInOut"; inMs?: number | null; outMs?: number | null }
 	| {

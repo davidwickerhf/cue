@@ -36,7 +36,10 @@ export interface ExportContext {
 	dir: string;
 	data: ProjectData;
 	/** Rasterises text clips (done by the editor window so text looks identical to the preview). */
-	renderText?: (clips: TextClip[]) => Promise<Record<string, TextRender>>;
+	renderText?: (
+		clips: TextClip[],
+		canvas?: { width: number; height: number },
+	) => Promise<Record<string, TextRender>>;
 	onProgress?: (fraction: number) => void;
 	/** Export only this part of the timeline (e.g. between the in and out points). */
 	range?: { startMs: number; endMs: number };
@@ -478,7 +481,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		(c): c is TextClip => c.type === "text" && c.text.trim().length > 0,
 	);
 	const rendered = textClips.length
-		? await (ctx.renderText?.(textClips) ??
+		? await (ctx.renderText?.(textClips, { width: W, height: H }) ??
 				Promise.reject(new Error("Open the Cue window to render text.")))
 		: {};
 

@@ -60,7 +60,8 @@ export function useEditorCommands() {
 				case "renderText": {
 					try {
 						if (!project) throw new Error("No project open.");
-						const { width, height } = project.data.canvas;
+						const width = command.width ?? project.data.canvas.width;
+						const height = command.height ?? project.data.canvas.height;
 						const images: Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }> = {};
 						for (const id of command.clipIds) {
 							const clip =

@@ -72,6 +72,7 @@ import type {
 	RecentProject,
 	TextClip,
 } from "./types";
+import { type Aspect, reframeData, shortenData, variantLabel } from "./variants";
 
 const HISTORY_LIMIT = 150;
 const ACTIVITY_LIMIT = 200;
@@ -106,7 +107,10 @@ export interface StoreOptions {
 	autoProxies?: () => boolean;
 }
 
-type TextRenderer = (clips: TextClip[]) => Promise<Record<string, TextRender>>;
+type TextRenderer = (
+	clips: TextClip[],
+	canvas?: { width: number; height: number },
+) => Promise<Record<string, TextRender>>;
 
 /**
  * Owns the open project. Every edit goes through `apply`, which validates it,
@@ -613,6 +617,59 @@ export class ProjectStore extends EventEmitter {
 			}
 			return { width, height, reframedClips: changed };
 		});
+	}
+
+	/**
+	 * Makes versions of the edit in other shapes and lengths, without changing
+	 * the open timeline: each is exported as a video, and optionally saved as a
+	 * project next to this one to fine-tune later.
+	 */
+	async makeVariants(
+		options: {
+			aspects?: Aspect[];
+			lengthsSec?: number[];
+			/** Stretches to keep when shortening (timeline ms), best first or in order. */
+			keep?: { startMs: number; endMs: number }[];
+			saveProjects?: boolean;
+			exportVideos?: boolean;
+		},
+		actor: Actor,
+		renderText?: TextRenderer,
+	): Promise<{
+		variants: { label: string; video?: string; project?: string; durationMs: number }[];
+	}> {
+		await this.renderNested(renderText);
+		const base = this.current;
+		const aspects: (Aspect | undefined)[] = options.aspects?.length ? options.aspects : [undefined];
+		const lengths: (number | undefined)[] = options.lengthsSec?.length
+			? options.lengthsSec
+			: [undefined];
+		const made: { label: string; video?: string; project?: string; durationMs: number }[] = [];
+		for (const aspect of aspects)
+			for (const lengthSec of lengths) {
+				if (!aspect && !lengthSec) continue;
+				let data = base;
+				if (lengthSec) data = shortenData(data, lengthSec * 1000, options.keep);
+				if (aspect) data = reframeData(data, aspect);
+				const label = variantLabel(aspect, lengthSec);
+				const name = `${base.name} ${label}`;
+				data = { ...data, name };
+				const entry: (typeof made)[number] = { label, durationMs: projectDuration(data) };
+				if (options.exportVideos !== false) {
+					const target = path.join(this.projectDir, "export", `${slug(name)}.mp4`);
+					await exportVideo({ dir: this.projectDir, data, renderText }, target);
+					entry.video = target;
+				}
+				if (options.saveProjects) {
+					// Next to this project, so media paths relative to it still work.
+					const file = path.join(this.projectDir, `${slug(name)}${PROJECT_EXTENSION}`);
+					await fs.writeFile(file, `${JSON.stringify(data, null, "\t")}\n`);
+					entry.project = file;
+				}
+				made.push(entry);
+			}
+		this.log(actor, `Made ${made.length} variant(s): ${made.map((m) => m.label).join(", ")}`);
+		return { variants: made };
 	}
 
 	// -------------------------------------------------------------------------

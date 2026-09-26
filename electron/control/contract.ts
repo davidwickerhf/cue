@@ -525,6 +525,23 @@ export const contract = {
 			instructions: z.string().max(1000).optional(),
 		},
 	},
+	make_variants: {
+		description:
+			"Make other versions of the edit without changing the open timeline: other frame shapes (9:16 vertical, 1:1, 4:5, 16:9; full-frame pictures are centre-cropped) and/or shorter cuts (e.g. 15, 30, 60 s). Every combination is exported as a video to the project's export folder; saveProjects also saves each as a project next to this one to fine-tune later. For short cuts, pass keep: the timeline stretches worth keeping (e.g. found with find_moments or from the transcript); otherwise the edit ends at the last cut before the target length.",
+		input: {
+			aspects: z
+				.array(z.enum(["9:16", "1:1", "4:5", "16:9"]))
+				.max(4)
+				.optional(),
+			lengthsSec: z.array(z.number().min(3).max(600)).max(4).optional(),
+			keep: z
+				.array(z.object({ startMs: z.number().min(0), endMs: z.number().min(0) }))
+				.max(40)
+				.optional(),
+			saveProjects: z.boolean().default(false),
+			exportVideos: z.boolean().default(true),
+		},
+	},
 	split_at_scenes: {
 		description:
 			"Find the shot changes in the part of a video clip's source it plays and cut the clip (and its linked sound) there, or add 'Shot' markers instead with split false. threshold 0.05–0.9: lower finds more (dissolves), higher only hard cuts. Returns the cut times on the timeline.",
