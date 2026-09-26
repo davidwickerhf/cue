@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 122,
+	"count": 126,
 	"groups": [
 		{
 			"title": "Overview",
@@ -612,6 +612,39 @@
 							"name": "id",
 							"type": "string",
 							"required": true
+						}
+					]
+				},
+				{
+					"name": "branch_sequence",
+					"description": "Try an alternative cut without touching the original: copies the open timeline (or from) as a branch named e.g. 'Main · alt 1' and opens it. Edit the branch; the user can A/B compare it with the original (backquote key) and keep it with promote_branch.",
+					"inputs": [
+						{
+							"name": "name",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "from",
+							"type": "string",
+							"required": false,
+							"note": "sequence id to branch; default the open one"
+						}
+					]
+				},
+				{
+					"name": "promote_branch",
+					"description": "Keep a branch ('Use this version'): it takes the original's name and the original is renamed '… (old)', in one undoable step. The original is found by name ('Main · alt 1' → 'Main') unless originalId is given.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "originalId",
+							"type": "string",
+							"required": false
 						}
 					]
 				},
@@ -1582,6 +1615,71 @@
 							"type": "number",
 							"required": false,
 							"default": "350"
+						}
+					]
+				},
+				{
+					"name": "rough_cut",
+					"description": "Rough cut from a script or brief, on device: finds where each line was said in the transcribed media (word matching that tolerates small wording changes and gaps) and lays the matches out in line order in a new sequence (opened), padded by padMs. Video keeps its sound; audio-only media goes on a Dialogue track. lines default to the project's script lines; assetIds to all media with speech. Returns each match with its confidence (0–1) and the lines not found. Media must be transcribed first (transcribe_media). One undoable step.",
+					"inputs": [
+						{
+							"name": "lines",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "assetIds",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "padMs",
+							"type": "number",
+							"required": false,
+							"default": "150"
+						}
+					]
+				},
+				{
+					"name": "beat_montage",
+					"description": "Music-driven montage: detects the music's beats and builds a new sequence (opened) with the music on an audio track (fading out at the end) and the pictures cut exactly on every 1, 2 or 4 beats, cycling through the media and taking a different part each time (starting on shot changes where found). Stills last one cut and get a gentle push-in. assetIds default to every video and image except the music; lengthSec defaults to the whole song. One undoable step.",
+					"inputs": [
+						{
+							"name": "musicAssetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "assetIds",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "every",
+							"type": "value",
+							"required": false,
+							"default": "2"
+						},
+						{
+							"name": "lengthSec",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "zoomStills",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
 						}
 					]
 				},

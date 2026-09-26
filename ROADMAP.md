@@ -90,16 +90,16 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 ## 6. AI and new ideas
 
 - [x] Edit review: agent changes arrive as proposals to accept or reject
-- [ ] Alternative cuts as branches, compared side by side
+- [x] Alternative cuts as branches, compared side by side (branch_sequence, promote_branch, and an A/B compare above the timeline that flips with ` at the same playhead)
 - [ ] Search shots by content, on device
-- [ ] Rough cut from a brief or script
+- [x] Rough cut from a brief or script (rough_cut: on-device word matching against transcripts, with a confidence per line)
 - [ ] Director's notes with one-click fixes
 - [ ] Voice editing
 - [ ] Smart reframe that follows faces
 - [x] One-click variants (lengths and aspect ratios)
 - [x] Animated word-by-word captions
 - [ ] Recipes: reusable edit templates for people and agents
-- [ ] Music-driven montage
+- [x] Music-driven montage (beat_montage: cuts on every 1, 2 or 4 beats, fresh shots first, push-ins on stills)
 - [ ] Auto-mix: levelled dialogue and ML noise removal (levelling done: auto_mix and the mixer's Auto-mix and LUFS readout; ML noise removal still to do)
 
 ## 7. Website, SEO and getting the word out
