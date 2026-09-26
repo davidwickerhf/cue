@@ -712,6 +712,12 @@ export class Controller extends EventEmitter {
 			}
 			case "get_guide":
 				return AGENT_GUIDE;
+			case "arrange_clips": {
+				const { layout, clipIds } = parseInput("arrange_clips", params);
+				return this.store.arrangeClips(layout, clipIds, actor);
+			}
+			case "add_overlay":
+				return this.store.addOverlay(parseInput("add_overlay", params), actor);
 			case "review_changes": {
 				const { action, clipIds } = parseInput("review_changes", params);
 				if (actor === "agent")

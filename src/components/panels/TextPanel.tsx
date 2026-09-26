@@ -1,4 +1,13 @@
-import { TextAa, TextT } from "@phosphor-icons/react";
+import {
+	ArrowUpRight,
+	ChatText,
+	Circle,
+	Drop,
+	Prohibit,
+	Square,
+	TextAa,
+	TextT,
+} from "@phosphor-icons/react";
 import { useEffect, useRef } from "react";
 import { DEFAULT_TEXT_STYLE } from "../../../electron/core/project";
 import { TITLE_IDS, TITLE_TEMPLATES, type TitleId } from "../../../electron/core/titles";
@@ -52,6 +61,52 @@ function TemplateThumb({ id }: { id: TitleId }) {
 	return <canvas ref={ref} width={384} height={216} className="size-full" />;
 }
 
+/** One-click graphics, placed in the middle of the frame at the playhead. */
+const OVERLAYS = [
+	{
+		kind: "box",
+		label: "Box",
+		hint: "An outline around something",
+		icon: <Square className="size-4" />,
+		place: {},
+	},
+	{
+		kind: "circle",
+		label: "Circle",
+		hint: "Circle something",
+		icon: <Circle className="size-4" />,
+		place: {},
+	},
+	{
+		kind: "arrow",
+		label: "Arrow",
+		hint: "Point at something",
+		icon: <ArrowUpRight className="size-4" />,
+		place: { width: 0.2, height: -0.2 },
+	},
+	{
+		kind: "callout",
+		label: "Callout",
+		hint: "A box with text",
+		icon: <ChatText className="size-4" />,
+		place: { width: 0.34, height: 0.16, y: 0.3 },
+	},
+	{
+		kind: "blur",
+		label: "Blur",
+		hint: "Blur an area (faces, screens, plates)",
+		icon: <Drop className="size-4" />,
+		place: { width: 0.25, height: 0.25 },
+	},
+	{
+		kind: "redact",
+		label: "Redact",
+		hint: "Cover an area with a solid box",
+		icon: <Prohibit className="size-4" />,
+		place: { width: 0.25, height: 0.12 },
+	},
+] as const;
+
 export function TextPanel() {
 	const project = useProject();
 	if (!project) return null;
@@ -94,6 +149,33 @@ export function TextPanel() {
 				<p className="text-[11px] text-muted">
 					Double-click a title in the viewer to type into it.
 				</p>
+			</Section>
+			<Section title="Shapes and overlays">
+				<div className="grid grid-cols-3 gap-1.5">
+					{OVERLAYS.map((o) => (
+						<button
+							key={o.kind}
+							type="button"
+							title={o.hint}
+							onClick={async () => {
+								const result = await run<{ clipId?: string }>("add_overlay", {
+									kind: o.kind,
+									startMs: Math.round(playback.currentMs),
+									...o.place,
+								});
+								if (result?.clipId) {
+									window.cue.selectClips([result.clipId]);
+									editor.set({ inspectorOpen: true });
+									playback.seek(playback.currentMs + 450);
+								}
+							}}
+							className="flex h-14 flex-col items-center justify-center gap-1 rounded-lg border border-border text-[11px] text-muted hover:border-accent hover:text-foreground"
+						>
+							{o.icon}
+							{o.label}
+						</button>
+					))}
+				</div>
 			</Section>
 			<Section title={`On the timeline · ${textClips.length}`}>
 				{textClips.length === 0 ? (

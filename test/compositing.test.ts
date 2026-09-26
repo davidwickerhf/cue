@@ -480,4 +480,141 @@ describe("compositing", () => {
 		const saved = JSON.parse(await fs.readFile(v.project as string, "utf8"));
 		expect(saved.canvas.width).toBe(1080);
 	}, 120000);
+
+	it("draws boxes, arrows, redactions and blur boxes into the export", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-overlays-"));
+		const src = path.join(dir, "bars.mp4");
+		// Vertical stripes: something with sharp edges to blur.
+		await ffmpeg(["-f", "lavfi", "-i", "smptebars=s=320x180:r=30:d=2", "-pix_fmt", "yuv420p", src]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Overlays" });
+		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180 } }, "user");
+		const [asset] = await store.importMedia([src], "user");
+		store.apply(
+			{
+				type: "addClips",
+				clips: [{ type: "media", trackId: "V1", assetId: asset.id, startMs: 0, durationMs: 2000 }],
+			},
+			"user",
+		);
+		const at = { startMs: 0, durationMs: 2000 };
+		await store.addOverlay(
+			{ kind: "redact", ...at, x: 0.2, y: 0.3, width: 0.2, height: 0.2 },
+			"user",
+		);
+		await store.addOverlay(
+			{ kind: "blur", ...at, x: 0.7, y: 0.3, width: 0.3, height: 0.3 },
+			"user",
+		);
+		await store.addOverlay(
+			{ kind: "box", ...at, x: 0.5, y: 0.75, width: 0.5, height: 0.3, color: "#ff00ff" },
+			"user",
+		);
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
+			"user",
+		);
+		const renderText = async (clips: import("../electron/core/types").TextClip[]) => {
+			// Tests have no window: draw the shapes with ffmpeg instead (a box of the same place and colour).
+			const out: Record<string, import("../electron/core/exporter").TextRender> = {};
+			for (const c of clips) {
+				if (!c.shape) continue;
+				const file = path.join(dir, `${c.id}.png`);
+				const w = Math.round(Math.abs(c.shape.width) * 320);
+				const h = Math.round(Math.abs(c.shape.height) * 180);
+				const x = Math.round(c.style.x * 320 - w / 2);
+				const y = Math.round(c.style.y * 180 - h / 2);
+				const fill = c.shape.fill
+					? `0x${c.shape.fill.slice(1)}`
+					: `0x${(c.shape.stroke ?? "#ffffff").slice(1)}`;
+				await ffmpeg([
+					"-f",
+					"lavfi",
+					"-i",
+					`color=c=${fill}:s=${w}x${h},format=rgba,pad=320:180:${x}:${y}:color=black@0`,
+					"-frames:v",
+					"1",
+					file,
+				]);
+				out[c.id] = { kind: "still", file };
+			}
+			return out;
+		};
+		const out = (await store.export("video", "overlays.mp4", "user", renderText)).outputs[0];
+		// The redaction is black.
+		const [r, g, b] = await pixel(out, 1, 64, 54, 320);
+		expect(Math.max(r, g, b)).toBeLessThan(40);
+		// The blur box softens the stripe edges inside it; outside it they stay sharp.
+		const across = async (y: number) => {
+			const row = await Promise.all(
+				Array.from({ length: 40 }, (_, i) => pixel(out, 1, 180 + i * 2, y, 320)),
+			);
+			// Largest jump between neighbours: sharp edges jump a lot.
+			return Math.max(...row.slice(1).map((p, i) => Math.abs(p[0] - row[i][0])));
+		};
+		expect(await across(54)).toBeLessThan((await across(100)) * 0.7);
+		// The box outline is magenta.
+		const [mr, mg, mb] = await pixel(out, 1, 84, 136, 320);
+		expect(mr > 180 && mb > 180 && mg < 90).toBe(true);
+	}, 120000);
+
+	it("arranges clips side by side and picture in picture", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-layouts-"));
+		const red = path.join(dir, "red.mp4");
+		const blue = path.join(dir, "blue.mp4");
+		for (const [file, color] of [
+			[red, "red"],
+			[blue, "blue"],
+		])
+			await ffmpeg([
+				"-f",
+				"lavfi",
+				"-i",
+				`color=c=${color}:s=320x180:r=30:d=2`,
+				"-pix_fmt",
+				"yuv420p",
+				file,
+			]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Layouts" });
+		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180 } }, "user");
+		const [a, b] = await store.importMedia([red, blue], "user");
+		const top = store.apply({ type: "addTrack", kind: "video", index: 0 }, "user")
+			.created?.[0] as string;
+		const [bottomClip, topClip] = store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{ type: "media", trackId: "V1", assetId: a.id, startMs: 0, durationMs: 2000 },
+					{ type: "media", trackId: top, assetId: b.id, startMs: 0, durationMs: 2000 },
+				],
+			},
+			"user",
+		).created as string[];
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
+			"user",
+		);
+		const isRed = ([r, g, bl]: number[]) => r > 150 && g < 90 && bl < 90;
+		const isBlue = ([r, g, bl]: number[]) => bl > 150 && r < 90 && g < 90;
+
+		await store.arrangeClips("side-by-side", [bottomClip, topClip], "user");
+		let out = (await store.export("video", "side.mp4", "user")).outputs[0];
+		expect(isRed(await pixel(out, 1, 60, 90, 320))).toBe(true);
+		expect(isBlue(await pixel(out, 1, 260, 90, 320))).toBe(true);
+
+		// Picture in picture: the clip on the higher track (blue) is the small one.
+		await store.arrangeClips("pip-br", [bottomClip, topClip], "user");
+		out = (await store.export("video", "pip.mp4", "user")).outputs[0];
+		expect(isRed(await pixel(out, 1, 60, 60, 320))).toBe(true);
+		expect(isBlue(await pixel(out, 1, 260, 145, 320))).toBe(true);
+	}, 120000);
 });

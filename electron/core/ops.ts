@@ -10,6 +10,7 @@ import {
 	cropSchema,
 	DEFAULT_KEY,
 	DEFAULT_MASK,
+	DEFAULT_SHAPE,
 	DEFAULT_TEXT_STYLE,
 	DEFAULT_TRANSFORM,
 	defaultTracks,
@@ -26,6 +27,7 @@ import {
 	newId,
 	normaliseLine,
 	settingsSchema,
+	shapeSchema,
 	sortLines,
 	takeClip,
 	textStyleSchema,
@@ -84,6 +86,8 @@ export const textClipInput = z.object({
 	name: z.string().max(120).optional(),
 	/** Word timings (clip-local), for word-by-word captions. */
 	words: z.array(captionWordSchema).max(400).optional(),
+	/** A graphic under the text: box, ellipse, line or arrow (text may be empty). */
+	shape: shapeSchema.partial().optional(),
 	wordStyle: wordStyleSchema.optional(),
 });
 
@@ -113,6 +117,7 @@ export const clipPatch = z
 		key: keySchema.partial().nullable(),
 		effects: effectsSchema.partial().nullable(),
 		wordStyle: wordStyleSchema.nullable(),
+		shape: shapeSchema.partial().nullable(),
 		words: z.array(captionWordSchema).max(400).nullable(),
 	})
 	.partial();
@@ -558,6 +563,7 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 			animationIn: input.animationIn ?? "fade",
 			animationOut: input.animationOut ?? "fade",
 			...(input.name ? { name: input.name } : {}),
+			...(input.shape ? { shape: shapeSchema.parse({ ...DEFAULT_SHAPE, ...input.shape }) } : {}),
 			...(input.wordStyle
 				? {
 						wordStyle: input.wordStyle,
@@ -964,8 +970,19 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "updateClip": {
 			const current = clip(data, op.id);
 			unlocked(data, current.trackId);
-			const { transform, style, color, label, mask, key, effects, wordStyle, words, ...patch } =
-				op.patch;
+			const {
+				transform,
+				style,
+				color,
+				label,
+				mask,
+				key,
+				effects,
+				wordStyle,
+				words,
+				shape,
+				...patch
+			} = op.patch;
 			// null clears a label, mask or key; a partial mask or key merges with what is there.
 			const rest = {
 				...patch,
@@ -1013,7 +1030,19 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 						}
 					: withWords(
 							current,
-							{ ...current, ...rest, style: { ...current.style, ...style } },
+							{
+								...current,
+								...rest,
+								style: { ...current.style, ...style },
+								...(shape === undefined
+									? {}
+									: {
+											shape:
+												shape === null
+													? undefined
+													: shapeSchema.parse({ ...DEFAULT_SHAPE, ...current.shape, ...shape }),
+										}),
+							},
 							words,
 							wordStyle,
 						);

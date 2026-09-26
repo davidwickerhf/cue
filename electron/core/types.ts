@@ -254,6 +254,23 @@ export interface TextStyle {
 	rotation?: number;
 }
 
+/**
+ * A graphic drawn with a text clip (under its text): a box, an ellipse, a line
+ * or an arrow, centred on the text position. Sizes are shares of the frame.
+ */
+export interface Shape {
+	kind: "rect" | "ellipse" | "line" | "arrow";
+	/** Box and ellipse size; for lines and arrows, the vector from start to end. */
+	width: number;
+	height: number;
+	fill: string | null;
+	stroke: string | null;
+	/** Pixels on the export canvas. */
+	strokeWidth: number;
+	/** Corner radius of a box, pixels. */
+	radius: number;
+}
+
 /** A word of a caption, with when it is said (clip-local). */
 export interface CaptionWord {
 	text: string;
@@ -283,6 +300,8 @@ export interface TextClip {
 	animationOut: TextAnimation;
 	/** Captions generated from speech keep a pointer to their source. */
 	source?: { kind: "caption"; assetId?: string };
+	/** A graphic under the text (boxes, arrows, callouts). */
+	shape?: Shape;
 	/** The words of `text` with their timing, for word-by-word animation. */
 	words?: CaptionWord[];
 	wordStyle?: WordStyle;

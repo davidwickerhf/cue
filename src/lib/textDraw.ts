@@ -122,6 +122,11 @@ export function drawTextClip(
 	ctx.translate(cx, cy);
 	if (style.rotation) ctx.rotate((style.rotation * Math.PI) / 180);
 	ctx.scale(f.scale, f.scale);
+	if (clip.shape) drawShape(ctx, clip.shape, width, height);
+	if (!clip.text.trim()) {
+		ctx.restore();
+		return;
+	}
 	const left = -boxW / 2;
 	const top = -boxH / 2;
 	if (style.background) {
@@ -176,6 +181,54 @@ export function drawTextClip(
 		}
 		ctx.fillText(line, x, y);
 	});
+	ctx.restore();
+}
+
+/** A shape centred on the origin (boxes and ellipses) or through it (lines and arrows). */
+function drawShape(
+	ctx: CanvasRenderingContext2D,
+	shape: NonNullable<TextClip["shape"]>,
+	width: number,
+	height: number,
+) {
+	const w = shape.width * width;
+	const h = shape.height * height;
+	ctx.save();
+	ctx.lineWidth = shape.strokeWidth;
+	ctx.lineJoin = "round";
+	ctx.lineCap = "round";
+	ctx.strokeStyle = shape.stroke ?? "transparent";
+	ctx.fillStyle = shape.fill ?? "transparent";
+	if (shape.kind === "rect" || shape.kind === "ellipse") {
+		ctx.beginPath();
+		if (shape.kind === "rect")
+			ctx.roundRect(-Math.abs(w) / 2, -Math.abs(h) / 2, Math.abs(w), Math.abs(h), shape.radius);
+		else ctx.ellipse(0, 0, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2);
+		if (shape.fill) ctx.fill();
+		if (shape.stroke && shape.strokeWidth > 0) ctx.stroke();
+	} else {
+		// From the start to the end point, with a head at the end for arrows.
+		const [x0, y0, x1, y1] = [-w / 2, -h / 2, w / 2, h / 2];
+		ctx.strokeStyle = shape.stroke ?? shape.fill ?? "#ffffff";
+		ctx.beginPath();
+		ctx.moveTo(x0, y0);
+		ctx.lineTo(x1, y1);
+		ctx.stroke();
+		if (shape.kind === "arrow") {
+			const angle = Math.atan2(y1 - y0, x1 - x0);
+			const head = Math.max(14, shape.strokeWidth * 3.2);
+			ctx.fillStyle = ctx.strokeStyle;
+			ctx.beginPath();
+			ctx.moveTo(
+				x1 + Math.cos(angle) * shape.strokeWidth * 0.6,
+				y1 + Math.sin(angle) * shape.strokeWidth * 0.6,
+			);
+			ctx.lineTo(x1 - Math.cos(angle - 0.45) * head, y1 - Math.sin(angle - 0.45) * head);
+			ctx.lineTo(x1 - Math.cos(angle + 0.45) * head, y1 - Math.sin(angle + 0.45) * head);
+			ctx.closePath();
+			ctx.fill();
+		}
+	}
 	ctx.restore();
 }
 

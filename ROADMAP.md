@@ -50,8 +50,8 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [x] Waveforms on video clips
 - [x] Effects library: blur, sharpen, vignette, glow, stabilisation
 - [x] More transitions: wipes, slides, zoom, blur
-- [ ] Shapes and overlays: arrows, callouts, blur and redact boxes
-- [ ] Picture-in-picture and split-screen layouts
+- [x] Shapes and overlays: arrows, callouts, blur and redact boxes
+- [x] Picture-in-picture and split-screen layouts
 - [ ] Per-track EQ and compressor
 - [x] Volume line on audio clips
 - [ ] Screen and camera recording

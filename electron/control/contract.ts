@@ -525,6 +525,39 @@ export const contract = {
 			instructions: z.string().max(1000).optional(),
 		},
 	},
+	arrange_clips: {
+		description:
+			"Put several pictures on screen at once (clips that play at the same time on different video tracks): side-by-side, top-bottom, thirds, grid (four), full (back to full frame), or picture in picture pip-br / pip-bl / pip-tr / pip-tl (the clip on the higher track becomes the small one; one clip alone is just made small). Split layouts fill areas in the order of clipIds, each picture centre-cropped to fill its area.",
+		input: {
+			layout: z.enum([
+				"full",
+				"side-by-side",
+				"top-bottom",
+				"thirds",
+				"grid",
+				"pip-br",
+				"pip-bl",
+				"pip-tr",
+				"pip-tl",
+			]),
+			clipIds: z.array(z.string()).min(1).max(4),
+		},
+	},
+	add_overlay: {
+		description:
+			"Add a graphic over the picture in one step. box, circle, arrow, line: an outline in color (arrows and lines go from (x - width/2, y - height/2) to (x + width/2, y + height/2), so width and height can be negative to point the other way); callout: a dark box with text; redact: a solid box (black by default) that hides what is under it; blur: blurs everything under that area (an adjustment layer with a mask). x, y (centre), width, height are shares of the frame. Graphics go on a 'Graphics' text track and pop in; edit them afterwards with update_clip (style x/y, shape {kind, width, height, fill, stroke, strokeWidth, radius}, text).",
+		input: {
+			kind: z.enum(["box", "circle", "arrow", "line", "callout", "blur", "redact"]),
+			startMs: z.number().min(0),
+			durationMs: z.number().min(100).default(3000),
+			x: z.number().min(-0.5).max(1.5).default(0.5),
+			y: z.number().min(-0.5).max(1.5).default(0.5),
+			width: z.number().min(-2).max(2).default(0.3),
+			height: z.number().min(-2).max(2).default(0.2),
+			color: z.string().optional(),
+			text: z.string().max(400).optional(),
+		},
+	},
 	review_changes: {
 		description:
 			"The user's decision on an agent's proposed changes (review mode): accept keeps them, reject undoes them; clipIds limits it to those clips. Agents cannot call this: when get_state shows pendingReview, tell the user what you changed and let them decide.",

@@ -305,6 +305,20 @@ function SelectionOverlay({
 
 function boxOf(clip: Clip, project: ProjectSnapshot, width: number, height: number) {
 	const scale = width / project.data.canvas.width;
+	if (clip.type === "text" && clip.shape && !clip.text.trim()) {
+		// A shape on its own: its own size (a line's or arrow's bounding box).
+		const s = clip.style;
+		const w = Math.max(24, Math.abs(clip.shape.width) * width);
+		const h = Math.max(24, Math.abs(clip.shape.height) * height);
+		return {
+			left: s.x * width - w / 2,
+			top: s.y * height - h / 2,
+			width: w,
+			height: h,
+			cx: s.x,
+			cy: s.y,
+		};
+	}
 	if (clip.type === "text") {
 		const s = (clip as TextClip).style;
 		const ctx = document.createElement("canvas").getContext("2d");

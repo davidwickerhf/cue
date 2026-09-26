@@ -478,7 +478,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			.sort((a, b) => a.startMs - b.startMs),
 	);
 	const textClips = layers.filter(
-		(c): c is TextClip => c.type === "text" && c.text.trim().length > 0,
+		(c): c is TextClip => c.type === "text" && (c.text.trim().length > 0 || !!c.shape),
 	);
 	const rendered = textClips.length
 		? await (ctx.renderText?.(textClips, { width: W, height: H }) ??
@@ -531,12 +531,35 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			const filters = [
 				...gradeFilters(clip.color),
 				...effectFilters(clip.effects, H).filter((f) => !f.startsWith("glow:")),
-			].map((f) => `${f}:enable='between(t,${start},${end})'`);
-			if (filters.length) {
-				const out = `adj${adjustments++}`;
-				chains.push(`[${current}]${filters.join(",")},format=yuva420p[${out}]`);
-				current = out;
+			];
+			if (!filters.length) continue;
+			const out = `adj${adjustments++}`;
+			if (clip.mask) {
+				// Masked: grade a copy, keep only the masked part of it and lay it over the
+				// original, so only that area changes (blur and redact boxes).
+				const maskFile = await maskImage(ctx.dir, clip.mask, W, H);
+				const m = addInput([
+					"-loop",
+					"1",
+					"-framerate",
+					String(fps),
+					"-t",
+					s(lengthMs + 1000),
+					"-i",
+					maskFile,
+				]);
+				chains.push(`[${current}]split[${out}a][${out}b]`);
+				chains.push(`[${out}b]${filters.join(",")},format=yuva420p[${out}g]`);
+				chains.push(`[${m}:v]format=gray,scale=${W}:${H}[${out}m]`);
+				chains.push(`[${out}g][${out}m]alphamerge[${out}k]`);
+				chains.push(
+					`[${out}a][${out}k]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass,format=yuva420p[${out}]`,
+				);
+			} else {
+				const timed = filters.map((f) => `${f}:enable='between(t,${start},${end})'`);
+				chains.push(`[${current}]${timed.join(",")},format=yuva420p[${out}]`);
 			}
+			current = out;
 			continue;
 		}
 		const file = resolveInProject(ctx.dir, a.path);

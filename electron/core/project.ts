@@ -307,6 +307,25 @@ const mediaClipSchema = z.object({
 	name: z.string().max(120).optional(),
 });
 
+export const shapeSchema = z.object({
+	kind: z.enum(["rect", "ellipse", "line", "arrow"]),
+	width: z.number().min(-2).max(2),
+	height: z.number().min(-2).max(2),
+	fill: z.string().max(60).nullable(),
+	stroke: z.string().max(60).nullable(),
+	strokeWidth: z.number().min(0).max(80),
+	radius: z.number().min(0).max(400),
+});
+export const DEFAULT_SHAPE = {
+	kind: "rect" as const,
+	width: 0.3,
+	height: 0.2,
+	fill: null,
+	stroke: "#ffd60a",
+	strokeWidth: 8,
+	radius: 16,
+};
+
 export const captionWordSchema = z.object({
 	text: z.string().max(200),
 	startMs: z.number().min(0),
@@ -330,6 +349,7 @@ const textClipSchema = z.object({
 	source: z.object({ kind: z.literal("caption"), assetId: z.string().optional() }).optional(),
 	words: z.array(captionWordSchema).max(400).optional(),
 	wordStyle: wordStyleSchema.optional(),
+	shape: shapeSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),
 	label: z.enum(CLIP_LABELS).optional(),

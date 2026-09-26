@@ -142,11 +142,14 @@ function Nothing({ count }: { count: number }) {
 	const project = useProject();
 	if (count > 1)
 		return (
-			<Section>
-				<p className="text-[12px] text-muted">
-					Drag to move them together, or use split, duplicate and delete above.
-				</p>
-			</Section>
+			<>
+				<Section>
+					<p className="text-[12px] text-muted">
+						Drag to move them together, or use split, duplicate and delete above.
+					</p>
+				</Section>
+				<ArrangeSection />
+			</>
 		);
 	if (!project) return null;
 	const { canvas } = project.data;
@@ -550,6 +553,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 					</div>
 				</Section>
 			)}
+			{visual && !adjustment && <ArrangeSection single={clip.id} />}
 			{visual && <ZoomSection clip={clip} />}
 			{visual && <ColorSection clip={clip} />}
 			{visual && <EffectsSection clip={clip} video={asset?.kind === "video"} />}
@@ -808,6 +812,7 @@ function TextInspector({ clip }: { clip: TextClip }) {
 	const fonts = useFonts();
 	return (
 		<>
+			{clip.shape && <ShapeSection clip={clip} />}
 			<Section title="Text">
 				<TextInput multiline rows={3} value={clip.text} onCommit={(text) => patch({ text })} />
 			</Section>
@@ -1292,6 +1297,135 @@ function MaskSection({ clip }: { clip: MediaClip }) {
 				checked={m.invert}
 				onChange={(invert) => set({ invert })}
 			/>
+		</Section>
+	);
+}
+
+/** Split screens and picture in picture for the selected pictures. */
+function ArrangeSection({ single }: { single?: string }) {
+	const project = useProject();
+	const selected = useApp((s) => s.selectedClipIds) ?? [];
+	if (!project) return null;
+	const ids = single
+		? [single]
+		: selected.filter((id) => {
+				const c = project.data.clips.find((x) => x.id === id);
+				const t = project.data.tracks.find((x) => x.id === c?.trackId);
+				return c?.type === "media" && t?.kind === "video";
+			});
+	if (ids.length === 0 || ids.length > 4) return null;
+	const options = (
+		single
+			? (["full", "pip-tl", "pip-tr", "pip-bl", "pip-br"] as const)
+			: ids.length === 2
+				? (["side-by-side", "top-bottom", "pip-br", "pip-bl", "pip-tr", "pip-tl"] as const)
+				: ids.length === 3
+					? (["thirds"] as const)
+					: (["grid"] as const)
+	) as readonly string[];
+	const label: Record<string, string> = {
+		full: "Full frame",
+		"side-by-side": "Side by side",
+		"top-bottom": "Top and bottom",
+		thirds: "Three across",
+		grid: "Grid of four",
+		"pip-br": "PiP ↘",
+		"pip-bl": "PiP ↙",
+		"pip-tr": "PiP ↗",
+		"pip-tl": "PiP ↖",
+	};
+	return (
+		<Section title={single ? "Screen position" : "Arrange on screen"}>
+			<div className="grid grid-cols-2 gap-1">
+				{options.map((layout) => (
+					<button
+						key={layout}
+						type="button"
+						onClick={() => void run("arrange_clips", { layout, clipIds: ids })}
+						className="h-7 rounded-md border border-border px-2 text-left text-[11px] text-muted hover:border-foreground/30 hover:text-foreground"
+					>
+						{label[layout]}
+					</button>
+				))}
+			</div>
+			{!single && ids.length === 2 && (
+				<p className="text-[11px] text-muted">
+					For picture in picture, the clip on the higher track is the small one.
+				</p>
+			)}
+		</Section>
+	);
+}
+
+/** The graphic of a shape clip: kind, size and colours. Position is in Layout. */
+function ShapeSection({ clip }: { clip: TextClip }) {
+	const shape = clip.shape as NonNullable<TextClip["shape"]>;
+	const set = (p: Record<string, unknown>) =>
+		void run("update_clip", { id: clip.id, patch: { shape: p } });
+	const line = shape.kind === "line" || shape.kind === "arrow";
+	return (
+		<Section title="Shape">
+			<Segmented
+				size="xs"
+				value={shape.kind}
+				options={[
+					{ value: "rect", label: "Box" },
+					{ value: "ellipse", label: "Circle" },
+					{ value: "arrow", label: "Arrow" },
+					{ value: "line", label: "Line" },
+				]}
+				onChange={(kind) => set({ kind })}
+			/>
+			<Field label={line ? "Across" : "Width"}>
+				<Range
+					value={shape.width}
+					min={line ? -1 : 0.02}
+					max={1}
+					step={0.01}
+					format={(v) => `${Math.round(v * 100)}%`}
+					onCommit={(width) => set({ width })}
+				/>
+			</Field>
+			<Field label={line ? "Down" : "Height"}>
+				<Range
+					value={shape.height}
+					min={line ? -1 : 0.02}
+					max={1}
+					step={0.01}
+					format={(v) => `${Math.round(v * 100)}%`}
+					onCommit={(height) => set({ height })}
+				/>
+			</Field>
+			<Field label="Line">
+				<ColorInput value={shape.stroke} allowNone onCommit={(stroke) => set({ stroke })} />
+			</Field>
+			<Field label="Line width">
+				<Range
+					value={shape.strokeWidth}
+					min={0}
+					max={40}
+					step={1}
+					format={(v) => `${v}px`}
+					onCommit={(strokeWidth) => set({ strokeWidth })}
+				/>
+			</Field>
+			{!line && (
+				<Field label="Fill">
+					<ColorInput value={shape.fill} allowNone onCommit={(fill) => set({ fill })} />
+				</Field>
+			)}
+			{shape.kind === "rect" && (
+				<Field label="Corners">
+					<Range
+						value={shape.radius}
+						min={0}
+						max={120}
+						step={1}
+						format={(v) => `${v}px`}
+						onCommit={(radius) => set({ radius })}
+					/>
+				</Field>
+			)}
 		</Section>
 	);
 }

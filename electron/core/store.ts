@@ -32,6 +32,7 @@ import {
 	toMlt,
 	toOtio,
 } from "./interchange";
+import { LAYOUTS, type LayoutKind, layoutTransforms } from "./layouts";
 import { makePoster } from "./library";
 import {
 	analyseSpeech,
@@ -342,6 +343,166 @@ export class ProjectStore extends EventEmitter {
 	// -------------------------------------------------------------------------
 	// Analysis and AI helpers
 	// -------------------------------------------------------------------------
+
+	/**
+	 * Adds a graphic over the picture in one step: a box, circle, arrow, line or
+	 * callout (drawn with a text clip on a graphics track), or a blur or redact box
+	 * (an adjustment layer masked to the area). Positions are shares of the frame.
+	 */
+	async addOverlay(
+		input: {
+			kind: "box" | "circle" | "arrow" | "line" | "callout" | "blur" | "redact";
+			startMs: number;
+			durationMs: number;
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+			color?: string;
+			text?: string;
+		},
+		actor: Actor,
+	): Promise<{ clipId: string; trackId: string }> {
+		return this.transaction(actor, `Added a ${input.kind} overlay`, () => {
+			const { kind, startMs, durationMs, x, y, width, height } = input;
+			const color = input.color ?? (kind === "redact" ? "#000000" : "#ffd60a");
+			if (kind === "blur") {
+				const created =
+					this.apply({ type: "addAdjustment", startMs, durationMs }, actor).created ?? [];
+				const clipId = created.find((id) => this.current.clips.some((c) => c.id === id)) as string;
+				this.apply(
+					{
+						type: "updateClip",
+						id: clipId,
+						patch: {
+							name: "Blur box",
+							effects: { blur: 0.9 },
+							mask: {
+								shape: "rectangle",
+								x,
+								y,
+								width: Math.abs(width),
+								height: Math.abs(height),
+								feather: 0.02,
+								invert: false,
+							},
+						},
+					},
+					actor,
+				);
+				const trackId = this.current.clips.find((c) => c.id === clipId)?.trackId as string;
+				return { clipId, trackId };
+			}
+			// Graphics go on a text track above the picture ("Graphics"), made if needed.
+			let trackId = this.current.tracks.find((t) => t.kind === "text" && t.name === "Graphics")?.id;
+			if (!trackId)
+				trackId = this.apply({ type: "addTrack", kind: "text", name: "Graphics", index: 0 }, actor)
+					.created?.[0] as string;
+			const shape =
+				kind === "circle"
+					? { kind: "ellipse" as const, width, height, fill: null, stroke: color, strokeWidth: 8 }
+					: kind === "arrow" || kind === "line"
+						? {
+								kind: kind as "arrow" | "line",
+								width,
+								height,
+								fill: null,
+								stroke: color,
+								strokeWidth: 10,
+							}
+						: kind === "redact"
+							? {
+									kind: "rect" as const,
+									width,
+									height,
+									fill: color,
+									stroke: null,
+									strokeWidth: 0,
+									radius: 4,
+								}
+							: kind === "callout"
+								? {
+										kind: "rect" as const,
+										width,
+										height,
+										fill: "rgba(12,12,14,0.82)",
+										stroke: color,
+										strokeWidth: 4,
+										radius: 18,
+									}
+								: {
+										kind: "rect" as const,
+										width,
+										height,
+										fill: null,
+										stroke: color,
+										strokeWidth: 8,
+										radius: 16,
+									};
+			const text = kind === "callout" ? (input.text ?? "Callout") : (input.text ?? "");
+			const created = this.apply(
+				{
+					type: "addClips",
+					clips: [
+						{
+							type: "text",
+							trackId,
+							startMs,
+							durationMs,
+							text,
+							name: kind[0].toUpperCase() + kind.slice(1),
+							shape,
+							animationIn: kind === "redact" ? "none" : "pop",
+							animationOut: kind === "redact" ? "none" : "fade",
+							style: {
+								x,
+								y,
+								background: null,
+								fontSize: 44,
+								fontWeight: 700,
+								width: Math.max(0.1, Math.abs(width) - 0.02),
+								shadow: false,
+							},
+						},
+					],
+				},
+				actor,
+			).created;
+			return { clipId: created?.[0] as string, trackId };
+		});
+	}
+
+	/**
+	 * Arranges pictures on screen: side by side, stacked, a grid, or picture in
+	 * picture. Split layouts fill areas left to right, top to bottom in the order
+	 * given; for picture in picture the clip on the higher track is the small one.
+	 */
+	arrangeClips(layout: LayoutKind, clipIds: string[], actor: Actor) {
+		const clips = clipIds.map((id) => {
+			const clip = this.current.clips.find((c) => c.id === id);
+			if (!clip || clip.type !== "media") throw new Error(`No picture clip "${id}".`);
+			return { clip, asset: this.current.assets.find((a) => a.id === clip.assetId) };
+		});
+		const needed = LAYOUTS[layout].slots;
+		if (clips.length > needed)
+			throw new Error(
+				`"${LAYOUTS[layout].label}" takes up to ${needed} clips; ${clips.length} were given.`,
+			);
+		const order = (id: string) => this.current.tracks.findIndex((t) => t.id === id);
+		const placed = layout.startsWith("pip")
+			? [...clips].sort((a, b) => order(b.clip.trackId) - order(a.clip.trackId))
+			: clips;
+		const patches = layoutTransforms(layout, placed, this.current.canvas);
+		return this.transaction(
+			actor,
+			`Arranged ${clips.length} clip(s): ${LAYOUTS[layout].label.toLowerCase()}`,
+			() => {
+				for (const { id, transform } of patches)
+					this.apply({ type: "updateClip", id, patch: { transform } }, actor);
+				return { arranged: patches.map((p) => p.id) };
+			},
+		);
+	}
 
 	/** Shot changes found in a video (seconds into the source), by threshold. */
 	private scenes = new Map<string, Promise<number[]>>();
