@@ -110,7 +110,7 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [x] Performance: poster images and lazy video on the site, Core Web Vitals checked in Vercel
 - [x] Pages people search for: "AI video editor for Mac", "open-source Premiere alternative", "edit video with Claude Code / MCP", "text-based video editing", each with a short demo
 - [x] Changelog page on the site
-- [ ] Docs pages on the site
+- [x] Docs pages on the site
 - [x] Funding link (Ko-fi) on GitHub, the README, the site and the app
 - [ ] GitHub: topics, social preview image, a short demo GIF at the top of the README
 - [ ] Listings: MCP server directories (mcp.so, Smithery, Glama, the official MCP registry), awesome-mcp-servers, awesome-macOS, AlternativeTo, Homebrew cask
