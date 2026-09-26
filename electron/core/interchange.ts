@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { binPath } from "./bins";
 import { allSequences } from "./ops";
 import { resolveInProject } from "./paths";
 import { projectDuration } from "./project";
@@ -15,6 +16,31 @@ import type { Asset, Clip, MediaClip, ProjectData, TextClip, Track } from "./typ
  * - MLT XML (.mlt): Shotcut, and any MLT-based editor
  * - CMX3600 EDL (.edl): nearly every NLE and online tool
  */
+
+/** How a media item is organised in Cue (bin, tags, rating, note), as other formats can carry it. */
+export interface LibraryInfo {
+	/** Bin path, sub-bins joined with " › ". */
+	bin?: string;
+	tags?: string[];
+	rating?: number;
+	note?: string;
+}
+
+export function libraryInfo(data: ProjectData, asset: Asset): LibraryInfo | null {
+	const info: LibraryInfo = {
+		...(asset.binId && binPath(data, asset.binId) ? { bin: binPath(data, asset.binId) ?? "" } : {}),
+		...(asset.tags?.length ? { tags: asset.tags } : {}),
+		...(asset.rating ? { rating: asset.rating } : {}),
+		...(asset.note ? { note: asset.note } : {}),
+	};
+	return Object.keys(info).length ? info : null;
+}
+
+/** OTIO media reference metadata: Cue's library info under "cue", nothing when there is none. */
+function libraryMeta(data: ProjectData, asset: Asset) {
+	const info = libraryInfo(data, asset);
+	return info ? { cue: { library: info } } : {};
+}
 
 export type InterchangeFormat = "otio" | "fcpxml" | "mlt" | "edl";
 
@@ -213,7 +239,7 @@ export function toOtio(data: ProjectData, dir: string): string {
 						target_url: asset ? pathToFileURL(l.file(asset)).href : "",
 						available_range:
 							asset && asset.durationMs > 0 ? range(0, l.frames(asset.durationMs)) : null,
-						metadata: {},
+						metadata: asset ? libraryMeta(data, asset) : {},
 					},
 				},
 				active_media_reference_key: "DEFAULT_MEDIA",
@@ -309,6 +335,8 @@ type ImportedClip =
 			volume?: number;
 			extra?: Partial<MediaClip>;
 			name?: string;
+			/** Bin, tags, rating and note from a Cue export. */
+			library?: LibraryInfo;
 	  }
 	| { type: "text"; text: string; startMs: number; durationMs: number; extra?: Partial<TextClip> }
 	| { type: "adjustment"; startMs: number; durationMs: number; extra?: Partial<MediaClip> }
@@ -480,6 +508,7 @@ function parseStack(stack: OtioNode, baseDir: string, found: { fps: number }): I
 					volume: meta?.type === "media" ? meta.volume : video && hasAudioTracks ? 0 : undefined,
 					name: typeof c.name === "string" ? c.name : undefined,
 					extra,
+					library: readLibrary(ref.metadata),
 				});
 			}
 			cursor += duration;
@@ -502,6 +531,20 @@ function parseStack(stack: OtioNode, baseDir: string, found: { fps: number }): I
 		label: String(m.name ?? ""),
 	}));
 	return { tracks: [...visual, ...audio], markers, durationMs: Math.round(longest) };
+}
+
+function readLibrary(metadata: unknown): LibraryInfo | undefined {
+	const raw = (metadata as { cue?: { library?: Record<string, unknown> } } | undefined)?.cue
+		?.library;
+	if (!raw || typeof raw !== "object") return undefined;
+	const info: LibraryInfo = {};
+	if (typeof raw.bin === "string" && raw.bin.trim()) info.bin = raw.bin.slice(0, 250);
+	if (Array.isArray(raw.tags))
+		info.tags = raw.tags.filter((t): t is string => typeof t === "string").slice(0, 50);
+	if (typeof raw.rating === "number")
+		info.rating = Math.max(0, Math.min(5, Math.round(raw.rating)));
+	if (typeof raw.note === "string") info.note = raw.note.slice(0, 4000);
+	return Object.keys(info).length ? info : undefined;
 }
 
 function isLinked(node: OtioNode) {
@@ -616,6 +659,17 @@ export function toFcpxml(data: ProjectData, dir: string): string {
 					);
 				if (tag === "asset-clip" && (gain !== 1 || track.muted))
 					inner.push(`<adjust-volume amount="${track.muted ? "-96" : db(gain)}dB"/>`);
+				// Final Cut shows the bin and tags as keywords, four stars and up as a favourite.
+				const lib = tag === "asset-clip" ? libraryInfo(data, asset) : null;
+				if (lib) {
+					if (lib.note) inner.unshift(`<note>${xml(lib.note)}</note>`);
+					const words = [...(lib.bin ? [lib.bin] : []), ...(lib.tags ?? [])].map((w) =>
+						w.replace(/,/g, " "),
+					);
+					const range = `start="${t(span.in)}" duration="${duration}"`;
+					if (words.length) inner.push(`<keyword ${range} value="${xml(words.join(", "))}"/>`);
+					if ((lib.rating ?? 0) >= 4) inner.push(`<rating ${range} value="favorite"/>`);
+				}
 				connected.push(
 					`<${tag} ref="${ref}" lane="${lane}" offset="${offset}" name="${xml(clip.name ?? asset.name)}" start="${t(span.in)}" duration="${duration}"${asset.kind === "audio" ? ' audioRole="dialogue"' : ""}>${inner.join("")}</${tag}>`,
 				);

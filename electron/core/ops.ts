@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { splitKeyframes, splitZooms, withKeyframe } from "./anim";
+import { binPath } from "./bins";
 import {
 	aiSchema,
 	assertUnique,
@@ -41,9 +42,11 @@ import {
 import { fadesIn, overlaps, transitionLabel } from "./transitions";
 import type {
 	Asset,
+	Bin,
 	CaptionWord,
 	Clip,
 	MediaClip,
+	MediaInfo,
 	ProjectData,
 	TextClip,
 	Track,
@@ -157,6 +160,32 @@ export const opSchema = z.discriminatedUnion("type", [
 	// Media library
 	z.object({ type: z.literal("renameAsset"), id: z.string(), name: z.string().min(1).max(200) }),
 	z.object({ type: z.literal("removeAsset"), id: z.string() }),
+	// Bins (folders), tags, ratings and notes for media
+	z.object({
+		type: z.literal("createBin"),
+		id: z.string().min(1).max(80).optional(),
+		name: z.string().trim().min(1).max(120),
+		parentId: z.string().optional(),
+	}),
+	z.object({
+		type: z.literal("renameBin"),
+		id: z.string(),
+		name: z.string().trim().min(1).max(120),
+	}),
+	z.object({ type: z.literal("removeBin"), id: z.string() }),
+	z.object({
+		type: z.literal("moveMedia"),
+		assetIds: z.array(z.string()).min(1),
+		binId: z.string().nullable(),
+	}),
+	z.object({
+		type: z.literal("tagMedia"),
+		assetIds: z.array(z.string()).min(1),
+		add: z.array(z.string().max(60)).optional(),
+		remove: z.array(z.string().max(60)).optional(),
+		rating: z.number().int().min(0).max(5).optional(),
+		note: z.string().max(4000).optional(),
+	}),
 	// Tracks
 	z.object({
 		type: z.literal("addTrack"),
@@ -359,7 +388,9 @@ export type InternalOp =
 	/** Change fields of a media item (e.g. a nested sequence's render). */
 	| { type: "updateAsset"; id: string; patch: Partial<Asset> }
 	/** New file locations for media that moved (path as stored in the project). */
-	| { type: "relinkAssets"; paths: Record<string, { path: string; relPath: string }> };
+	| { type: "relinkAssets"; paths: Record<string, { path: string; relPath: string }> }
+	/** Technical details probed from files (at import, or backfilled when a project opens). */
+	| { type: "setMediaInfo"; infos: Record<string, MediaInfo>; sizes?: Record<string, number> };
 
 export interface OpResult {
 	data: ProjectData;
@@ -392,6 +423,27 @@ function asset(data: ProjectData, id: string): Asset {
 	if (!found) throw new Error(`No media "${id}".`);
 	return found;
 }
+
+function bin(data: ProjectData, id: string): Bin {
+	const found = data.bins?.find((candidate) => candidate.id === id);
+	if (!found) {
+		const names = (data.bins ?? []).map((b) => `${b.id} (${b.name})`).join(", ");
+		throw new Error(`No bin "${id}". Bins: ${names || "none"}.`);
+	}
+	return found;
+}
+
+/** Trimmed, single-spaced tags without case-insensitive repeats. */
+export function cleanTags(tags: string[]): string[] {
+	const out: string[] = [];
+	for (const raw of tags) {
+		const tag = raw.trim().replace(/\s+/g, " ").slice(0, 60);
+		if (tag && !out.some((t) => t.toLowerCase() === tag.toLowerCase())) out.push(tag);
+	}
+	return out;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function unlocked(data: ProjectData, trackId: string): Track {
 	const t = track(data, trackId);
@@ -855,6 +907,23 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			summary: `Relinked ${count} media file${count === 1 ? "" : "s"}`,
 		};
 	}
+	if (rawOp.type === "setMediaInfo") {
+		return {
+			data: {
+				...data,
+				assets: data.assets.map((a) =>
+					rawOp.infos[a.id]
+						? {
+								...a,
+								info: rawOp.infos[a.id],
+								...(rawOp.sizes?.[a.id] !== undefined ? { size: rawOp.sizes[a.id] } : {}),
+							}
+						: a,
+				),
+			},
+			summary: `Read media info for ${plural(Object.keys(rawOp.infos).length, "file")}`,
+		};
+	}
 	if (rawOp.type === "setTranscript") {
 		asset(data, rawOp.assetId);
 		return {
@@ -908,6 +977,121 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			return {
 				data: next,
 				summary: `Removed "${a.name}" and ${before - after} clip(s)`,
+			};
+		}
+
+		case "createBin": {
+			const bins = data.bins ?? [];
+			if (op.id && bins.some((b) => b.id === op.id))
+				throw new Error(`A bin with id "${op.id}" already exists.`);
+			// Nesting stops at one level: a bin inside a sub-bin would be hard to see in the panel.
+			if (op.parentId && bin(data, op.parentId).parentId)
+				throw new Error("Bins nest one level deep: pick a top-level bin as the parent.");
+			const clash = bins.find(
+				(b) => b.parentId === op.parentId && b.name.toLowerCase() === op.name.toLowerCase(),
+			);
+			if (clash) throw new Error(`There is already a bin called "${clash.name}" (${clash.id}).`);
+			const created: Bin = {
+				id: op.id ?? newId("b"),
+				name: op.name,
+				...(op.parentId ? { parentId: op.parentId } : {}),
+			};
+			return {
+				data: { ...data, bins: [...bins, created] },
+				summary: `Created bin "${binPath({ ...data, bins: [...bins, created] }, created.id)}"`,
+				created: [created.id],
+			};
+		}
+		case "renameBin": {
+			const b = bin(data, op.id);
+			return {
+				data: {
+					...data,
+					bins: (data.bins ?? []).map((x) => (x.id === op.id ? { ...x, name: op.name } : x)),
+				},
+				summary: `Renamed bin "${b.name}" to "${op.name}"`,
+			};
+		}
+		case "removeBin": {
+			const b = bin(data, op.id);
+			// Its media and sub-bins move up to where the bin was, so nothing is lost.
+			const moved = data.assets.filter((a) => a.binId === b.id).length;
+			return {
+				data: {
+					...data,
+					bins: (data.bins ?? [])
+						.filter((x) => x.id !== b.id)
+						.map((x) =>
+							x.parentId === b.id
+								? b.parentId
+									? { ...x, parentId: b.parentId }
+									: { id: x.id, name: x.name }
+								: x,
+						),
+					assets: data.assets.map((a) => {
+						if (a.binId !== b.id) return a;
+						const { binId: _, ...rest } = a;
+						return b.parentId ? { ...rest, binId: b.parentId } : rest;
+					}),
+				},
+				summary: `Removed bin "${b.name}"${moved ? ` (${plural(moved, "item")} moved ${b.parentId ? "to its parent" : "to the top level"})` : ""}`,
+			};
+		}
+		case "moveMedia": {
+			for (const id of op.assetIds) asset(data, id);
+			const target = op.binId === null ? null : bin(data, op.binId);
+			const ids = new Set(op.assetIds);
+			return {
+				data: {
+					...data,
+					assets: data.assets.map((a) => {
+						if (!ids.has(a.id)) return a;
+						const { binId: _, ...rest } = a;
+						return target ? { ...rest, binId: target.id } : rest;
+					}),
+				},
+				summary: `Moved ${plural(ids.size, "media item")} to ${target ? `"${binPath(data, target.id)}"` : "the top level"}`,
+			};
+		}
+		case "tagMedia": {
+			for (const id of op.assetIds) asset(data, id);
+			const ids = new Set(op.assetIds);
+			const add = cleanTags(op.add ?? []);
+			const remove = new Set(cleanTags(op.remove ?? []).map((t) => t.toLowerCase()));
+			const assets = data.assets.map((a) => {
+				if (!ids.has(a.id)) return a;
+				const next: Asset = { ...a };
+				if (add.length || remove.size) {
+					const tags = cleanTags([...(a.tags ?? []), ...add]).filter(
+						(t) => !remove.has(t.toLowerCase()),
+					);
+					if (tags.length) next.tags = tags;
+					else delete next.tags;
+				}
+				if (op.rating !== undefined) {
+					if (op.rating > 0) next.rating = op.rating;
+					else delete next.rating;
+				}
+				if (op.note !== undefined) {
+					const note = op.note.trim();
+					if (note) next.note = note;
+					else delete next.note;
+				}
+				return next;
+			});
+			const what = [
+				add.length ? `tagged ${add.map((t) => `"${t}"`).join(", ")}` : "",
+				remove.size
+					? `untagged ${[...(op.remove ?? [])].map((t) => `"${t.trim()}"`).join(", ")}`
+					: "",
+				op.rating !== undefined ? (op.rating ? `rated ${op.rating}★` : "cleared the rating") : "",
+				op.note !== undefined ? (op.note.trim() ? "noted" : "cleared the note") : "",
+			].filter(Boolean);
+			const target =
+				ids.size === 1 ? `"${asset(data, op.assetIds[0]).name}"` : plural(ids.size, "media item");
+			return {
+				data: { ...data, assets },
+				summary: `${target[0].toUpperCase()}${target.slice(1)}: ${what.join(", ") || "unchanged"}`,
 			};
 		}
 

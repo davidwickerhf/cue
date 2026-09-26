@@ -3,6 +3,7 @@ import { TRANSITION_KINDS } from "./transitions";
 import type {
 	AiSettings,
 	Asset,
+	Bin,
 	Clip,
 	ExportSettings,
 	LineStatus,
@@ -228,6 +229,28 @@ export const aiSchema = z.object({
 	imageModel: z.string().min(1),
 });
 
+export const mediaInfoSchema = z.object({
+	format: z.string().optional(),
+	videoCodec: z.string().optional(),
+	videoProfile: z.string().optional(),
+	pixelFormat: z.string().optional(),
+	fps: z.number().optional(),
+	bitrateKbps: z.number().optional(),
+	audioCodec: z.string().optional(),
+	audioChannels: z.number().optional(),
+	channelLayout: z.string().optional(),
+	sampleRate: z.number().optional(),
+	creationTime: z.string().optional(),
+	rotation: z.number().optional(),
+	probedAt: z.string(),
+});
+
+export const binSchema = z.object({
+	id,
+	name: z.string().min(1).max(120),
+	parentId: z.string().optional(),
+});
+
 const assetSchema = z.object({
 	id,
 	kind: z.enum(["video", "audio", "image", "adjustment"]),
@@ -256,6 +279,11 @@ const assetSchema = z.object({
 		})
 		.optional(),
 	actor: z.enum(["user", "agent", "system"]).default("user"),
+	binId: z.string().optional(),
+	tags: z.array(z.string().max(60)).optional(),
+	rating: z.number().int().min(0).max(5).optional(),
+	note: z.string().max(4000).optional(),
+	info: mediaInfoSchema.optional(),
 	transcript: z
 		.object({
 			model: z.string(),
@@ -396,6 +424,7 @@ const projectSchema = z.object({
 		})
 		.default({ width: 1920, height: 1080, fps: 30, background: "#000000" }),
 	assets: z.array(assetSchema).default([]),
+	bins: z.array(binSchema).default([]),
 	tracks: z.array(trackSchema).default([]),
 	clips: z.array(clipSchema).default([]),
 	lines: z.array(lineInputSchema).default([]),
@@ -500,6 +529,7 @@ export function emptyProject(name: string): ProjectData {
 		name,
 		canvas: { width: 1920, height: 1080, fps: 30, background: "#000000" },
 		assets: [],
+		bins: [],
 		tracks: defaultTracks(),
 		clips: [],
 		lines: [],
@@ -525,6 +555,8 @@ export function parseProject(raw: unknown): ProjectData {
 		parsed.tracks.map((track) => track.id),
 		"track",
 	);
+	const bins = tidyBins(parsed.bins);
+	const binIds = new Set(bins.map((b) => b.id));
 	assertUnique(
 		parsed.clips.map((clip) => clip.id),
 		"clip",
@@ -533,7 +565,11 @@ export function parseProject(raw: unknown): ProjectData {
 		version: 2,
 		name: parsed.name,
 		canvas: parsed.canvas,
-		assets: parsed.assets as Asset[],
+		// Media filed in a bin that no longer exists goes back to the top level.
+		assets: parsed.assets.map((a) =>
+			a.binId && !binIds.has(a.binId) ? { ...a, binId: undefined } : a,
+		) as Asset[],
+		bins,
 		tracks: groupTracks(parsed.tracks as Track[]),
 		clips: parsed.clips as Clip[],
 		lines,
@@ -552,6 +588,19 @@ export function parseProject(raw: unknown): ProjectData {
 				}
 			: {}),
 	};
+}
+
+/**
+ * Keeps bins consistent after loading: unique ids, parents that exist, and
+ * only one level of nesting (a bin inside a sub-bin moves up a level).
+ */
+export function tidyBins(bins: Bin[]): Bin[] {
+	const seen = new Set<string>();
+	const unique = bins.filter((b) => !seen.has(b.id) && seen.add(b.id));
+	const top = new Set(unique.filter((b) => !b.parentId).map((b) => b.id));
+	return unique.map((b) =>
+		b.parentId && !top.has(b.parentId) ? { id: b.id, name: b.name } : { ...b },
+	);
 }
 
 export const clipEnd = (clip: Clip) => clip.startMs + clip.durationMs;

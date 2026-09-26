@@ -39,7 +39,46 @@ export interface Asset {
 	sequenceId?: string;
 	/** Word-level transcript of the speech in this media (source time). */
 	transcript?: Transcript;
+	/** The bin (folder) this media is filed in; none means the top level. */
+	binId?: string;
+	tags?: string[];
+	/** 0–5 stars; 0 or none is unrated. Favourites are 5. */
+	rating?: number;
+	note?: string;
+	/** Technical details read from the file (codec, frame rate, …), probed once and kept. */
+	info?: MediaInfo;
 	actor: Actor;
+}
+
+/** What `ffmpeg -i` reports about a file. Fields are missing when the file doesn't say. */
+export interface MediaInfo {
+	/** Container, e.g. "mov" or "matroska". */
+	format?: string;
+	videoCodec?: string;
+	/** e.g. "High" for H.264. */
+	videoProfile?: string;
+	pixelFormat?: string;
+	fps?: number;
+	/** Overall bitrate, kilobits per second. */
+	bitrateKbps?: number;
+	audioCodec?: string;
+	audioChannels?: number;
+	/** e.g. "stereo" or "5.1(side)". */
+	channelLayout?: string;
+	sampleRate?: number;
+	/** When the camera or app says it was recorded (ISO). */
+	creationTime?: string;
+	/** Clockwise rotation the player applies (phone footage). */
+	rotation?: number;
+	/** When the file was probed (ISO), so a project probes each file once. */
+	probedAt: string;
+}
+
+/** A folder in the media library. Bins nest one level deep. */
+export interface Bin {
+	id: string;
+	name: string;
+	parentId?: string;
 }
 
 export interface TranscriptWord {
@@ -413,6 +452,8 @@ export interface ProjectData {
 	name: string;
 	canvas: Canvas;
 	assets: Asset[];
+	/** Folders for media (older projects have none). */
+	bins?: Bin[];
 	/** The open timeline. */
 	tracks: Track[];
 	clips: Clip[];

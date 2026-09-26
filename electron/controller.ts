@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
+import { binPath, filterMedia, mediaUses, usedAssetIds } from "./core/bins";
 import type { TextRender } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
 import { activeSequence, allSequences } from "./core/ops";
@@ -308,13 +309,42 @@ export class Controller extends EventEmitter {
 				);
 				return assets.map((a) => this.describeAsset(a));
 			}
-			case "list_media":
-				return this.store.current.assets.map((a) => this.describeAsset(a));
-			case "remove_media":
-				return this.store.apply(
-					{ type: "removeAsset", id: parseInput("remove_media", params).id },
-					actor,
-				);
+			case "list_media": {
+				const { filter } = parseInput("list_media", params);
+				const data = this.store.current;
+				// Adjustment layers are built in, not media; they only show when nothing filters.
+				const assets = filter ? filterMedia(data, filter) : data.assets;
+				const used = usedAssetIds(data);
+				return assets.map((a) => this.describeAsset(a, used));
+			}
+			case "remove_media": {
+				const input = parseInput("remove_media", params);
+				const list = [...new Set([...(input.id ? [input.id] : []), ...(input.ids ?? [])])];
+				if (!list.length) throw new Error("Give the id (or ids) of the media to remove.");
+				if (list.length === 1) return this.store.apply({ type: "removeAsset", id: list[0] }, actor);
+				return this.store.transaction(actor, `Removed ${list.length} media items`, () => {
+					for (const id of list) this.store.apply({ type: "removeAsset", id }, actor);
+					return { removed: list.length };
+				});
+			}
+			case "list_bins": {
+				const data = this.store.current;
+				return (data.bins ?? []).map((b) => ({
+					...b,
+					path: binPath(data, b.id),
+					items: data.assets.filter((a) => a.binId === b.id).length,
+				}));
+			}
+			case "create_bin":
+				return this.store.apply({ type: "createBin", ...parseInput("create_bin", params) }, actor);
+			case "rename_bin":
+				return this.store.apply({ type: "renameBin", ...parseInput("rename_bin", params) }, actor);
+			case "remove_bin":
+				return this.store.apply({ type: "removeBin", ...parseInput("remove_bin", params) }, actor);
+			case "move_media":
+				return this.store.apply({ type: "moveMedia", ...parseInput("move_media", params) }, actor);
+			case "tag_media":
+				return this.store.apply({ type: "tagMedia", ...parseInput("tag_media", params) }, actor);
 			case "add_track":
 				return this.store.apply({ type: "addTrack", ...parseInput("add_track", params) }, actor);
 			case "update_track":
@@ -1033,7 +1063,10 @@ export class Controller extends EventEmitter {
 		return this.describeTake(this.requireLine(l.id), take);
 	}
 
-	private describeAsset(a: Asset) {
+	private describeAsset(a: Asset, used?: Set<string>) {
+		const data = this.store.current;
+		const uses = mediaUses(data, a.id);
+		const info = a.info;
 		return {
 			id: a.id,
 			kind: a.kind,
@@ -1043,9 +1076,32 @@ export class Controller extends EventEmitter {
 			hasAudio: a.hasAudio,
 			origin: a.origin,
 			lineId: a.lineId,
-			usedBy: this.store.current.clips
-				.filter((c) => c.type === "media" && c.assetId === a.id)
-				.map((c) => c.id),
+			bin: a.binId ? { id: a.binId, path: binPath(data, a.binId) } : null,
+			tags: a.tags ?? [],
+			rating: a.rating ?? 0,
+			note: a.note,
+			used: used ? used.has(a.id) : uses.length > 0,
+			// Clips on the open timeline by id; other timelines by name and count.
+			usedBy: uses.filter((u) => u.open).map((u) => u.clipId),
+			usedInOtherSequences: [...new Set(uses.filter((u) => !u.open).map((u) => u.sequenceName))],
+			info: info
+				? {
+						format: info.format,
+						videoCodec: info.videoCodec,
+						videoProfile: info.videoProfile,
+						fps: info.fps,
+						bitrateKbps: info.bitrateKbps,
+						audioCodec: info.audioCodec,
+						audioChannels: info.audioChannels,
+						sampleRate: info.sampleRate,
+						creationTime: info.creationTime,
+						rotation: info.rotation,
+						fileBytes: a.size,
+					}
+				: a.size !== undefined
+					? { fileBytes: a.size }
+					: undefined,
+			transcribed: !!a.transcript,
 		};
 	}
 
@@ -1084,6 +1140,7 @@ export class Controller extends EventEmitter {
 					clips: data.clips.filter((c) => c.trackId === t.id).length,
 				})),
 				media: data.assets.length,
+				bins: (data.bins ?? []).length,
 				offlineMedia: this.store.offline().map((id) => ({
 					id,
 					name: data.assets.find((a) => a.id === id)?.name,

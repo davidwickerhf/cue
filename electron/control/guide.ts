@@ -10,7 +10,7 @@ Cue is a desktop video editor built so that you, an agent, can do anything the u
 ## Start here
 1. get_state: the open project (tracks, media count, markers, script lines, settings), the selection, and view (playhead, in/out marks, open panel). If project is null, use list_projects then open_project, or create_project.
 2. get_timeline (optionally fromMs/toMs/trackId): every clip with its timing.
-3. list_media: the media items (assets) you can place.
+3. list_media: the media items (assets) you can place, with their bins, tags and ratings.
 Look before and after you edit: render_frame(atMs) returns a PNG path of exactly what the viewer shows.
 
 ## Units and ids
@@ -42,6 +42,9 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 - Shape: set_canvas, reframe (e.g. 1080×1920 for vertical; then adjust transform.x per clip to follow the subject).
 - Markers: add_marker, update_marker, remove_marker, clear_markers.
 - Media problems: get_state.offlineMedia lists missing files; relink_media or find_offline_media fix them.
+
+## Organising media
+The media library has bins (folders, one level of sub-bins), tags, star ratings (1–5; 5 is a favourite) and a note per item. list_media returns each item's bin, tags, rating, note, where it is used and technical info (codec, frame rate, bitrate, file size, audio channels, recording date); pass filter {binId, tag, kind, unused, minRating, query} to narrow it, e.g. {unused: true} for footage not yet in the edit or {query: "drone"} to search names, tags, notes and transcripts. list_bins shows the bins. Organise with create_bin, rename_bin, remove_bin (its media moves up a level, nothing is deleted), move_media (binId null for the top level) and tag_media (add or remove tags, set rating or note for several items at once). remove_media takes several ids at once. Keep to the user's own naming when they already have bins or tags.
 
 ## Sequences (several timelines)
 A project can hold several timelines. list_sequences shows them; the open one is what every editing tool changes. new_sequence, open_sequence, rename_sequence, duplicate_sequence, delete_sequence. nest_clips turns selected clips into one clip backed by a new sequence (like Premiere's Nest); open_sequence on it to edit inside, then open "main" again. Nested clips play a render of their sequence that refreshes automatically.
