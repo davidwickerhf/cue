@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 import type { Clip } from "../../electron/core/types";
 import { run } from "../lib/api";
+import {
+	clearKeySelection,
+	deleteSelectedKeys,
+	keyframeLanes,
+	toggleLanes,
+} from "../lib/keyframes";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import {
@@ -121,6 +127,10 @@ export function useShortcuts() {
 			} else if (key === "j" && !mod) {
 				shuttleRate = shuttleRate < 0 ? Math.max(-4, shuttleRate * 2) : -1;
 				playback.shuttle(shuttleRate);
+			} else if (key === "k" && e.shiftKey && !mod) {
+				// ⇧K shows or hides the keyframe lanes of the selected clips.
+				handled();
+				toggleLanes(selectedClips.filter((c) => c.type === "media").map((c) => c.id));
 			} else if (key === "k" && !mod) playback.pause();
 			else if ((key === "arrowleft" || key === "arrowright") && e.altKey && selected.length) {
 				handled();
@@ -171,6 +181,13 @@ export function useShortcuts() {
 					? [...new Set(selectedClips.map((c) => c.trackId))]
 					: undefined;
 				void run("split_at", { atMs: Math.round(playback.currentMs), trackIds: tracks });
+			} else if (
+				(key === "backspace" || key === "delete") &&
+				keyframeLanes.get().selected.length &&
+				deleteSelectedKeys()
+			) {
+				// Selected keyframes go before the clip they belong to.
+				handled();
 			} else if ((key === "backspace" || key === "delete") && selected.length) {
 				handled();
 				void run("delete_clips", { ids: selected, ripple: e.shiftKey || editor.get().ripple });
@@ -191,7 +208,8 @@ export function useShortcuts() {
 			} else if (key === "a" && mod) {
 				handled();
 				window.cue.selectClips(project.data.clips.map((c) => c.id));
-			} else if (key === "escape") window.cue.selectClips([]);
+			} else if (key === "escape" && keyframeLanes.get().selected.length) clearKeySelection();
+			else if (key === "escape") window.cue.selectClips([]);
 			else if (key === "m" && !mod && !e.shiftKey)
 				void run("add_marker", { atMs: Math.round(playback.currentMs), label: "Marker" });
 			else if (key === "m" && e.shiftKey) {

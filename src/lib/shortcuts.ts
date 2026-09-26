@@ -81,6 +81,16 @@ export const SHORTCUTS: {
 			{ label: "Zoom in / out", keys: ["=", "-"] },
 			{ label: "Zoom to fit", keys: ["\\"] },
 			{ label: "Zoom around pointer", keys: ["⌘ scroll"] },
+			{
+				label: "Show / hide keyframe lanes",
+				keys: ["⇧K"],
+				note: "Of the selected clips; the caret on an animated clip does the same",
+			},
+			{
+				label: "Select several keyframes",
+				keys: ["⇧ click"],
+				note: "In a lane: drag to move, ⌫ to delete, double-click the line to add, right-click for the ease",
+			},
 		],
 	},
 	{

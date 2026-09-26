@@ -6,6 +6,7 @@ import {
 	ArrowsLeftRight,
 	ArrowsOutLineHorizontal,
 	CaretDown,
+	CaretRight,
 	ChartLine,
 	Check,
 	Copy,
@@ -56,6 +57,7 @@ import type {
 } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
 import { agentDraft } from "../../lib/chat";
+import { clearKeySelection, keyframeLanes, toggleLanes } from "../../lib/keyframes";
 import { notes } from "../../lib/notes";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
@@ -66,6 +68,7 @@ import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
 import { IconButton, Segmented } from "../ui/controls";
 import { Filmstrip, Tiled, Waveform } from "./ClipVisuals";
+import { KeyframeLanes } from "./KeyframeLanes";
 import { SequenceTabs } from "./SequenceTabs";
 
 const HEADER_W = 212;
@@ -178,6 +181,7 @@ export function Timeline() {
 	const [marquee, setMarquee] = useState<Marquee | null>(null);
 	const marqueeRef = useRef<Marquee | null>(null);
 	const scrollBucket = useScrollBucket(scroller);
+	const openLanes = keyframeLanes.use((s) => s.open);
 
 	useEffect(() => {
 		const el = scroller.current;
@@ -312,6 +316,7 @@ export function Timeline() {
 	const onClipDown = (clip: Clip, e: ReactPointerEvent) => {
 		if (e.button !== 0) return;
 		e.stopPropagation();
+		clearKeySelection();
 		const track = tracks.find((t) => t.id === clip.trackId);
 		const atMs = timeAt(e.clientX);
 		if (tool === "blade") {
@@ -685,10 +690,11 @@ export function Timeline() {
 					if (
 						e.button !== 0 ||
 						target.closest(
-							"[data-clip],[data-track-header],[data-ruler],button,input,[role=button]",
+							"[data-clip],[data-track-header],[data-ruler],[data-lane],button,input,[role=button]",
 						)
 					)
 						return;
+					clearKeySelection();
 					if (!e.shiftKey) window.cue.selectClips([]);
 					if (tool !== "select") return;
 					const m = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, add: e.shiftKey };
@@ -804,6 +810,7 @@ export function Timeline() {
 											transform={view.dy ? `translateY(${view.dy}px)` : undefined}
 											tool={tool}
 											locked={track.locked}
+											lanesOpen={openLanes.includes(clip.id)}
 											onDown={(e) => onClipDown(clip, e)}
 											onEdgeDown={(edge, e) => onEdgeDown(clip, edge, e)}
 											onContext={(e) => {
@@ -834,6 +841,15 @@ export function Timeline() {
 										/>
 									))}
 							</Row>
+							<KeyframeLanes
+								track={track}
+								clips={clipsByTrack.get(track.id) ?? []}
+								assets={assetsById}
+								project={project}
+								pxPerMs={pxPerMs}
+								headerWidth={HEADER_W}
+								window={[windowStart, windowEnd]}
+							/>
 						</Fragment>
 					))}
 					<AddTrackRow />
@@ -1791,6 +1807,7 @@ function ClipView({
 	transform,
 	tool,
 	locked,
+	lanesOpen,
 	onDown,
 	onEdgeDown,
 	onContext,
@@ -1813,6 +1830,8 @@ function ClipView({
 	transform?: string;
 	tool: string;
 	locked: boolean;
+	/** Its keyframe lanes are showing under the track. */
+	lanesOpen?: boolean;
 	onDown: (e: ReactPointerEvent) => void;
 	onEdgeDown: (edge: "start" | "end", e: ReactPointerEvent) => void;
 	onContext: (e: React.MouseEvent) => void;
@@ -2017,6 +2036,27 @@ function ClipView({
 					clip.type === "text" ? "h-full" : "pt-1",
 				)}
 			>
+				{media && (keyframeTimes.length > 0 || lanesOpen) && (
+					<button
+						type="button"
+						title={lanesOpen ? "Hide keyframes (⇧K)" : "Show keyframes (⇧K)"}
+						aria-label={lanesOpen ? "Hide keyframes" : "Show keyframes"}
+						aria-expanded={lanesOpen}
+						// Its own click, not the start of a clip drag.
+						onPointerDown={(e) => e.stopPropagation()}
+						onClick={(e) => {
+							e.stopPropagation();
+							toggleLanes([clip.id]);
+						}}
+						className="-ml-0.5 flex size-4 shrink-0 items-center justify-center rounded bg-black/25 text-amber-200 hover:bg-black/50"
+					>
+						{lanesOpen ? (
+							<CaretDown weight="bold" className="size-2.5" />
+						) : (
+							<CaretRight weight="bold" className="size-2.5" />
+						)}
+					</button>
+				)}
 				{clip.type === "text" && <TextT weight="bold" className="size-3 shrink-0" />}
 				{clip.groupId && <LinkSimple weight="bold" className="size-3 shrink-0 opacity-80" />}
 				<span className="truncate">{label}</span>
@@ -2224,6 +2264,18 @@ function ClipMenu({
 								atMs: Math.round(menu.atMs),
 								durationMs: 2000,
 							}),
+					},
+				]
+			: []),
+		...(media && project.data.tracks.find((t) => t.id === media.trackId)?.kind !== "text"
+			? [
+					{
+						label: keyframeLanes.get().open.includes(media.id)
+							? "Hide keyframes"
+							: "Show keyframes",
+						icon: <ChartLine className="size-3.5" />,
+						keys: "⇧K",
+						action: () => toggleLanes([media.id]),
 					},
 				]
 			: []),
