@@ -85,3 +85,16 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [ ] Recipes: reusable edit templates for people and agents
 - [ ] Music-driven montage
 - [ ] Auto-mix: levelled dialogue and ML noise removal
+
+## 7. Website, SEO and getting the word out
+
+- [ ] Metadata: page title and description per section, canonical URL, Open Graph and Twitter cards with a real preview image
+- [ ] Structured data: `SoftwareApplication` (name, OS, price 0, download URL, screenshots) and `FAQPage` for the FAQ
+- [ ] `sitemap.xml`, `robots.txt` and `llms.txt` (so AI search can describe Cue correctly)
+- [ ] Performance: poster images and lazy video on the site, Core Web Vitals checked in Vercel
+- [ ] Pages people search for: "AI video editor for Mac", "open-source Premiere alternative", "edit video with Claude Code / MCP", "text-based video editing", each with a short demo
+- [ ] Docs and changelog pages on the site (fresh, linkable content)
+- [ ] GitHub: topics, social preview image, a short demo GIF at the top of the README, "Buy me a coffee" funding link
+- [ ] Listings: MCP server directories (mcp.so, Smithery, Glama, the official MCP registry), awesome-mcp-servers, awesome-macOS, AlternativeTo, Homebrew cask
+- [ ] Launches: Show HN, Product Hunt, r/VideoEditing, r/macapps, r/ClaudeAI and r/LocalLLaMA (local models), Mastodon and X with short Recordly demo clips
+- [ ] A launch post on wicker.life: why an editor an agent can drive, with the demo videos
