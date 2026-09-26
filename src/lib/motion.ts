@@ -7,6 +7,7 @@ import {
 	type MotionSettings,
 	motionKey,
 } from "../../electron/core/motion";
+import { MOTION_FONTS } from "../../electron/core/motionSpec";
 
 /**
  * Draws motion graphics (Lottie) for the viewer and for export. Each animation is
@@ -17,6 +18,21 @@ import {
  */
 
 DotLottie.setWasmUrl(wasmUrl);
+
+/** Fonts bundled for motion graphics (Inter, Space Grotesk, Instrument Serif, JetBrains Mono). */
+const fontFiles = import.meta.glob("../assets/motion-fonts/*.ttf", {
+	eager: true,
+	query: "?url",
+	import: "default",
+}) as Record<string, string>;
+
+/** Registered once, before the first graphic loads (text layers look fonts up by name). */
+const fontsReady: Promise<unknown> = Promise.all(
+	MOTION_FONTS.map((f) => {
+		const url = Object.entries(fontFiles).find(([file]) => file.endsWith(`/${f.name}.ttf`))?.[1];
+		return url ? DotLottie.registerFont(f.name, url).catch(() => false) : false;
+	}),
+);
 
 interface Player {
 	/** Made once the file is read (the player takes its data when created). */
@@ -50,6 +66,11 @@ function load(url: string): Promise<LottieJson> {
 		documents.set(url, doc);
 	}
 	return doc;
+}
+
+/** Gives a document to play under `key` without a file (gallery previews). */
+export function provideMotion(key: string, json: LottieJson) {
+	if (!documents.has(key)) documents.set(key, Promise.resolve(json));
 }
 
 /** Forgets a file's cached copy (after it changed on disk). */
@@ -92,8 +113,8 @@ function player(url: string, settings: MotionSettings | undefined): Player {
 		p.failed = message;
 		resolveReady();
 	};
-	load(url)
-		.then((json) => {
+	Promise.all([load(url), fontsReady])
+		.then(([json]) => {
 			if (players.get(key) !== p) return resolveReady();
 			const dot = new DotLottie({
 				canvas,

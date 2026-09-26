@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
+import { MOTION_GUIDE } from "./control/motionGuide";
 import { findLibraryAsset, LIBRARY_ASSETS, materializeLibraryAsset } from "./core/assetLibrary";
 import { binPath, filterMedia, mediaUses, usedAssetIds } from "./core/bins";
 import {
@@ -24,6 +25,7 @@ import {
 import type { Rasteriser } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
 import { ffmpeg } from "./core/media";
+import { describeParams, MOTION_TEMPLATES, MOTION_THEMES } from "./core/motionTemplates";
 import { reviewEdit } from "./core/notes";
 import { activeSequence, allSequences } from "./core/ops";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
@@ -1158,8 +1160,64 @@ export class Controller extends EventEmitter {
 				if (!this.hooks.appSettings) throw new Error("App settings are not available.");
 				return this.hooks.appSettings.set(parseInput("update_app_settings", params).patch);
 			}
-			case "get_guide":
-				return AGENT_GUIDE;
+			case "get_guide": {
+				const { topic } = parseInput("get_guide", params);
+				return topic === "motion" ? MOTION_GUIDE : AGENT_GUIDE;
+			}
+			case "list_motion_templates": {
+				const { category } = parseInput("list_motion_templates", params);
+				return {
+					templates: MOTION_TEMPLATES.filter((t) => !category || t.category === category).map(
+						(t) => ({
+							id: t.id,
+							name: t.name,
+							category: t.category,
+							description: t.description,
+							overlay: t.overlay,
+							params: describeParams(t),
+							example: t.example,
+						}),
+					),
+					themes: MOTION_THEMES.map(
+						({ id, label, bg, surface, text, accent, accent2, accent3 }) => ({
+							id,
+							label,
+							colors: { bg, surface, text, accent, accent2, accent3 },
+						}),
+					),
+				};
+			}
+			case "create_motion_graphic": {
+				const input = parseInput("create_motion_graphic", params);
+				const placed =
+					input.trackId !== undefined || input.startMs !== undefined || input.atCutMs !== undefined;
+				const { asset, clipId } = await this.store.createMotionGraphic(
+					{
+						template: input.template,
+						params: input.params,
+						spec: input.spec,
+						name: input.name,
+						place: placed
+							? {
+									trackId: input.trackId,
+									startMs: input.startMs,
+									durationMs: input.durationMs,
+									atCutMs: input.atCutMs,
+								}
+							: undefined,
+					},
+					actor,
+				);
+				return { ...this.describeAsset(asset), ...(clipId ? { clipId } : {}) };
+			}
+			case "update_motion_graphic": {
+				const { assetId, ...change } = parseInput("update_motion_graphic", params);
+				return this.describeAsset(await this.store.updateMotionGraphic(assetId, change, actor));
+			}
+			case "get_motion_graphic": {
+				const { assetId } = parseInput("get_motion_graphic", params);
+				return this.store.motionGraphicSource(assetId);
+			}
 			case "arrange_clips": {
 				const { layout, clipIds } = parseInput("arrange_clips", params);
 				return this.store.arrangeClips(layout, clipIds, actor);

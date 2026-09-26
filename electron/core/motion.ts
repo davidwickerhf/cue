@@ -215,7 +215,10 @@ export function motionInfo(json: LottieJson): MotionInfo {
 	const texts: MotionText[] = textLayers(json).map(({ id, comp, layer }) => ({
 		id,
 		// After Effects writes line breaks as \r, and soft breaks (in paragraph text) as \u0003.
-		text: String(layer.t.d.k[0]?.s?.t ?? "").replace(/[\r\u0003]/g, "\n"),
+		text: String(layer.t.d.k[0]?.s?.t ?? "")
+			.replace(/\r/g, "\n")
+			.split(String.fromCharCode(3))
+			.join("\n"),
 		...(comp ? { comp } : {}),
 		...(glyphs ? { glyphs: true } : {}),
 	}));

@@ -26,8 +26,46 @@ export const contract = {
 	// --- Overview --------------------------------------------------------------
 	get_guide: {
 		description:
-			"How Cue works and how to edit with these tools: concepts, units, track order, workflows and which tool does what. Read it once before editing.",
-		input: {},
+			"How Cue works and how to edit with these tools: concepts, units, track order, workflows and which tool does what. Read it once before editing. topic 'motion' is the guide to designing motion graphics (the spec format, design rules and patterns); read it before create_motion_graphic with a spec.",
+		input: { topic: z.enum(["editing", "motion"]).default("editing") },
+	},
+	list_motion_templates: {
+		description:
+			"Cue's motion graphic templates (lower thirds, titles, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
+		input: {
+			category: z
+				.enum(["lower third", "title", "chart", "stat", "callout", "list", "quote", "transition"])
+				.optional(),
+		},
+	},
+	create_motion_graphic: {
+		description:
+			"Make a motion graphic (a Lottie animation, played like video) from a template with params, or from a spec you write (see get_guide {topic: 'motion'}). It is added to the media; with trackId, startMs or atCutMs it is also placed on the timeline (on the top picture track when free there, else a new Graphics track). atCutMs centres a transition on a cut. Text and data are editable later with update_motion_graphic; look at it with render_frame.",
+		input: {
+			template: z.string().optional(),
+			params: z.record(z.string(), z.unknown()).optional(),
+			spec: z.record(z.string(), z.unknown()).optional(),
+			name: z.string().max(120).optional(),
+			trackId: z.string().optional(),
+			startMs: z.number().min(0).optional(),
+			durationMs: z.number().min(1).optional(),
+			atCutMs: z.number().min(0).optional(),
+		},
+	},
+	update_motion_graphic: {
+		description:
+			"Rebuild a motion graphic made in Cue: params merge with its current ones (change a title, the data, the theme, colors); spec replaces it entirely; template switches to another template. Clips using it update; one undo step.",
+		input: {
+			assetId: z.string(),
+			params: z.record(z.string(), z.unknown()).optional(),
+			spec: z.record(z.string(), z.unknown()).optional(),
+			template: z.string().optional(),
+		},
+	},
+	get_motion_graphic: {
+		description:
+			"A motion graphic's source: the template and params it was made from, and its full spec (for templates, the spec they build). Copy and change the spec to make a new graphic in the same style.",
+		input: { assetId: z.string() },
 	},
 	get_state: {
 		description:
@@ -1143,6 +1181,7 @@ export const contract = {
 			panel: z
 				.enum([
 					"media",
+					"library",
 					"script",
 					"transcript",
 					"text",

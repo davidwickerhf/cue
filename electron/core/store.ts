@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -54,8 +54,10 @@ import {
 	toWav,
 } from "./media";
 import { type MontageSource, planMontage } from "./montage";
-import { motionDurationMs, motionInfo } from "./motion";
+import { type LottieJson, motionDurationMs, motionInfo } from "./motion";
 import { readMotionFile } from "./motionFile";
+import { compileMotion } from "./motionSpec";
+import { buildTemplate, motionTemplate } from "./motionTemplates";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
@@ -83,6 +85,7 @@ import type {
 	Infographic,
 	MediaClip,
 	MediaInfo,
+	MotionSource,
 	ProjectData,
 	ProjectSnapshot,
 	Proposal,
@@ -2572,30 +2575,177 @@ export class ProjectStore extends EventEmitter {
 	 */
 	private async motionAsset(file: string, actor: Actor): Promise<Asset> {
 		const json = await readMotionFile(file);
+		return {
+			id: newId("a"),
+			kind: "lottie",
+			name: path.basename(file),
+			...(await this.writeMotion(json, path.parse(file).name)),
+			hasAudio: false,
+			origin: "import",
+			createdAt: new Date().toISOString(),
+			actor,
+		};
+	}
+
+	/** Saves a Lottie document in the project's graphics folder; the asset fields that describe it. */
+	private async writeMotion(json: LottieJson, name: string) {
 		const info = motionInfo(json);
 		const folder = path.join(this.projectDir, "graphics");
 		await fs.mkdir(folder, { recursive: true });
-		const base = safeSegment(path.parse(file).name) || "graphic";
+		const base = safeSegment(name).slice(0, 60) || "graphic";
 		let target = path.join(folder, `${base}.json`);
 		for (let n = 2; existsSync(target); n++) target = path.join(folder, `${base}-${n}.json`);
 		const text = JSON.stringify(json);
 		await fs.writeFile(target, text);
 		return {
-			id: newId("a"),
-			kind: "lottie",
-			name: path.basename(file),
 			path: relativeToProject(this.projectDir, target),
 			relPath: path.relative(this.projectDir, target),
 			size: Buffer.byteLength(text),
 			durationMs: motionDurationMs(info),
 			width: Math.round(json.w),
 			height: Math.round(json.h),
-			hasAudio: false,
-			origin: "import",
-			createdAt: new Date().toISOString(),
 			motion: info,
+		};
+	}
+
+	/** The spec a template (with parameters) or a written spec describes, at this project's size. */
+	private motionSpecOf(source: MotionSource): unknown {
+		const { width, height, fps } = this.current.canvas;
+		if (source.template)
+			return buildTemplate(source.template, source.params ?? {}, { width, height, fps });
+		if (source.spec) return { width, height, fps, ...source.spec };
+		throw new Error("Give a template (with params) or a spec.");
+	}
+
+	private compileSource(source: MotionSource): LottieJson {
+		return compileMotion(this.motionSpecOf(source), {
+			resolveImage: (src) => {
+				try {
+					const file = resolveInProject(this.projectDir, src);
+					const ext = path.extname(file).slice(1).toLowerCase();
+					const type = ext === "svg" ? "svg+xml" : ext === "jpg" ? "jpeg" : ext;
+					return `data:image/${type};base64,${readFileSync(file).toString("base64")}`;
+				} catch {
+					return null;
+				}
+			},
+		});
+	}
+
+	/**
+	 * Makes a motion graphic from a template or a spec and adds it to the media.
+	 * With a place, it goes on the timeline too: on the given track, or on the top
+	 * picture track when that is free there (otherwise a new track above it).
+	 * `atCutMs` centres a transition on a cut (its "cut" marker lands on it).
+	 */
+	async createMotionGraphic(
+		input: MotionSource & {
+			name?: string;
+			place?: { trackId?: string; startMs?: number; durationMs?: number; atCutMs?: number };
+		},
+		actor: Actor,
+	): Promise<{ asset: Asset; clipId?: string }> {
+		const source: MotionSource = input.template
+			? { template: input.template, params: input.params ?? {} }
+			: { spec: input.spec };
+		const json = this.compileSource(source);
+		const name =
+			input.name ??
+			(input.template ? motionTemplate(input.template).name : String(json.nm ?? "Graphic"));
+		const asset: Asset = {
+			id: newId("a"),
+			kind: "lottie",
+			name,
+			...(await this.writeMotion(json, name)),
+			hasAudio: false,
+			origin: "generated",
+			createdAt: new Date().toISOString(),
+			motionSource: source,
 			actor,
 		};
+		let clipId: string | undefined;
+		await this.transaction(actor, `Made ${name}`, async () => {
+			this.apply({ type: "addAsset", asset }, actor);
+			const place = input.place;
+			if (!place) return;
+			const cut = asset.motion?.markers.find((m) => m.name === "cut");
+			const startMs = Math.max(
+				0,
+				Math.round(
+					place.atCutMs !== undefined
+						? place.atCutMs - (cut?.startMs ?? asset.durationMs / 2)
+						: (place.startMs ?? 0),
+				),
+			);
+			const durationMs = Math.round(place.durationMs ?? asset.durationMs);
+			let trackId = place.trackId;
+			if (!trackId) {
+				const top = this.current.tracks.find((t) => t.kind === "video" && !t.locked);
+				const busy = top
+					? this.current.clips.some(
+							(c) =>
+								c.trackId === top.id &&
+								c.startMs < startMs + durationMs &&
+								c.startMs + c.durationMs > startMs,
+						)
+					: true;
+				trackId =
+					top && !busy
+						? top.id
+						: (this.apply({ type: "addTrack", kind: "video", name: "Graphics", index: 0 }, actor)
+								.created?.[0] as string);
+			}
+			const result = this.apply(
+				{
+					type: "addClips",
+					clips: [{ type: "media", trackId, assetId: asset.id, startMs, durationMs, name }],
+				},
+				actor,
+			);
+			clipId = result.created?.[0];
+		});
+		return { asset: this.current.assets.find((a) => a.id === asset.id) ?? asset, clipId };
+	}
+
+	/**
+	 * Rebuilds a motion graphic made in Cue with new parameters (merged with the
+	 * old ones) or a new spec. Clips using it show the new version; undo goes back.
+	 */
+	async updateMotionGraphic(
+		assetId: string,
+		change: { params?: Record<string, unknown>; spec?: Record<string, unknown>; template?: string },
+		actor: Actor,
+	): Promise<Asset> {
+		const a = this.current.assets.find((x) => x.id === assetId);
+		if (a?.kind !== "lottie") throw new Error(`No motion graphic "${assetId}".`);
+		const old = a.motionSource;
+		if (!old && !change.spec && !change.template)
+			throw new Error(
+				`${a.name} was imported, not made in Cue: give a spec or a template to replace it.`,
+			);
+		const source: MotionSource = change.spec
+			? { spec: change.spec }
+			: {
+					template: change.template ?? old?.template,
+					params:
+						change.template && change.template !== old?.template
+							? (change.params ?? {})
+							: { ...old?.params, ...change.params },
+				};
+		const json = this.compileSource(source);
+		const fields = await this.writeMotion(json, a.name);
+		this.apply(
+			{ type: "updateAsset", id: a.id, patch: { ...fields, motionSource: source } },
+			actor,
+		);
+		return this.current.assets.find((x) => x.id === a.id) as Asset;
+	}
+
+	/** A motion graphic's source: its template and parameters, or its spec (built in full for templates). */
+	motionGraphicSource(assetId: string): { source: MotionSource; spec: unknown } {
+		const a = this.current.assets.find((x) => x.id === assetId);
+		if (!a?.motionSource) throw new Error(`"${assetId}" is not a motion graphic made in Cue.`);
+		return { source: a.motionSource, spec: this.motionSpecOf(a.motionSource) };
 	}
 
 	/** Turns a finished microphone recording into a take for a line. */

@@ -5,6 +5,8 @@ import type { LibraryAsset } from "../../../electron/core/assetLibrary";
 import { notify, run } from "../../lib/api";
 import { librarySelection } from "../../lib/assetLibrary";
 import { editor } from "../../lib/state";
+import { Segmented } from "../ui/controls";
+import { MotionGallery } from "./MotionGallery";
 
 const posters = import.meta.glob("../../../resources/assets/posters/*.jpg", {
 	eager: true,
@@ -13,7 +15,26 @@ const posters = import.meta.glob("../../../resources/assets/posters/*.jpg", {
 }) as Record<string, string>;
 const poster = (id: string) => posters[`../../../resources/assets/posters/${id}.jpg`];
 
+/** Cue's own motion graphics, and curated footage from free libraries. */
 export function LibraryPanel() {
+	const [tab, setTab] = useState<"motion" | "footage">("motion");
+	return (
+		<div className="flex flex-col gap-3 p-3">
+			<Segmented
+				size="xs"
+				value={tab}
+				options={[
+					{ value: "motion", label: "Motion graphics" },
+					{ value: "footage", label: "Footage" },
+				]}
+				onChange={setTab}
+			/>
+			{tab === "motion" ? <MotionGallery /> : <FootageLibrary />}
+		</div>
+	);
+}
+
+function FootageLibrary() {
 	const [assets, setAssets] = useState<LibraryAsset[]>([]);
 	const [query, setQuery] = useState("");
 	const [category, setCategory] = useState("All");
@@ -41,7 +62,7 @@ export function LibraryPanel() {
 		}
 	};
 	return (
-		<div className="flex flex-col gap-3 p-3">
+		<div className="flex flex-col gap-3">
 			<div>
 				<p className="text-[13px] font-semibold">Find a shot for the story</p>
 				<p className="mt-1 text-[11px] leading-relaxed text-muted">

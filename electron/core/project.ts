@@ -335,6 +335,13 @@ const assetSchema = z.object({
 	note: z.string().max(4000).optional(),
 	info: mediaInfoSchema.optional(),
 	motion: motionInfoSchema.optional(),
+	motionSource: z
+		.object({
+			template: z.string().optional(),
+			params: z.record(z.string(), z.unknown()).optional(),
+			spec: z.record(z.string(), z.unknown()).optional(),
+		})
+		.optional(),
 	transcript: z
 		.object({
 			model: z.string(),

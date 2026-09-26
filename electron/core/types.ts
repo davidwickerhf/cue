@@ -55,7 +55,15 @@ export interface Asset {
 	info?: MediaInfo;
 	/** Motion graphics: frame rate, editable text layers and colours. */
 	motion?: import("./motion").MotionInfo;
+	/** Motion graphics made in Cue: the template and parameters, or the spec, it was built from. */
+	motionSource?: MotionSource;
 	actor: Actor;
+}
+
+export interface MotionSource {
+	template?: string;
+	params?: Record<string, unknown>;
+	spec?: Record<string, unknown>;
 }
 
 /** What `ffmpeg -i` reports about a file. Fields are missing when the file doesn't say. */

@@ -11,9 +11,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { valueAt } from "../../../electron/core/anim";
 import type { MotionSettings } from "../../../electron/core/motion";
+import { MOTION_TEMPLATES, MOTION_THEMES } from "../../../electron/core/motionTemplates";
 import { TRANSITIONS } from "../../../electron/core/transitions";
 import type { Asset, MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
-import { run } from "../../lib/api";
+import { notify, run } from "../../lib/api";
 import { isMac, keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
@@ -359,7 +360,12 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 				</p>
 			</Section>
 			<Timing clip={clip} />
-			{asset?.kind === "lottie" && <MotionSection clip={clip} asset={asset} />}
+			{asset?.kind === "lottie" && asset.motionSource?.template && (
+				<TemplateSection clip={clip} asset={asset} />
+			)}
+			{asset?.kind === "lottie" && !asset.motionSource?.template && (
+				<MotionSection clip={clip} asset={asset} />
+			)}
 			{adjustment && (
 				<Section>
 					<p className="text-[12px] leading-relaxed text-muted">
@@ -1831,6 +1837,152 @@ function MotionSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
 						? "A longer clip holds before the outro, which plays as the clip ends."
 						: "Holds its last frame when the clip runs past the animation."}
 			</p>
+		</Section>
+	);
+}
+
+/** What kind of field a template parameter needs (zod schemas, defaults and optionals unwrapped). */
+function paramField(schema: unknown): { type: string; values?: string[] } {
+	// biome-ignore lint/suspicious/noExplicitAny: reading zod's own definition.
+	let s = schema as any;
+	while (s?._zod?.def?.type === "default" || s?._zod?.def?.type === "optional")
+		s = s._zod.def.innerType;
+	const type = String(s?._zod?.def?.type ?? "unknown");
+	return type === "enum"
+		? { type, values: Object.values(s._zod.def.entries) as string[] }
+		: { type };
+}
+
+const humanize = (key: string) =>
+	key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+
+/**
+ * A graphic made from one of Cue's templates: its parameters (text, data, theme,
+ * accent) as fields. Each change rebuilds the graphic, as one undo step.
+ */
+function TemplateSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
+	const source = asset.motionSource;
+	const template = MOTION_TEMPLATES.find((t) => t.id === source?.template);
+	if (!source || !template) return null;
+	const params = source.params ?? {};
+	const set = (key: string, value: unknown) =>
+		void run("update_motion_graphic", { assetId: asset.id, params: { [key]: value } });
+	const loop = !!clip.motion?.loop;
+	return (
+		<Section title={template.name}>
+			<p className="text-[11px] leading-relaxed text-muted">{template.description}</p>
+			{Object.entries(template.params.shape).map(([key, schema]) => {
+				const field = paramField(schema);
+				const value = params[key];
+				const label = humanize(key);
+				if (key === "theme")
+					return (
+						<Field key={key} label="Theme">
+							<div className="flex flex-wrap gap-1.5">
+								{MOTION_THEMES.map((t) => (
+									<button
+										key={t.id}
+										type="button"
+										title={t.label}
+										aria-label={`${t.label} theme`}
+										aria-pressed={(value ?? "midnight") === t.id}
+										onClick={() => set("theme", t.id)}
+										className={cn(
+											"flex h-6 overflow-hidden rounded-md ring-1",
+											(value ?? "midnight") === t.id ? "ring-2 ring-accent" : "ring-border",
+										)}
+									>
+										<span className="w-3" style={{ background: t.bg }} />
+										<span className="w-2" style={{ background: t.accent }} />
+										<span className="w-2" style={{ background: t.accent2 }} />
+									</button>
+								))}
+							</div>
+						</Field>
+					);
+				if (key === "colors") {
+					const colors = (value ?? {}) as Record<string, string>;
+					const theme = MOTION_THEMES.find((t) => t.id === (params.theme ?? "midnight"));
+					return (
+						<Field key={key} label="Accent colour">
+							<ColorInput
+								value={colors.accent ?? theme?.accent ?? "#5b8cff"}
+								onCommit={(accent) => accent && set("colors", { ...colors, accent })}
+							/>
+						</Field>
+					);
+				}
+				if (key === "durationMs")
+					return (
+						<Field key={key} label="Length (s)">
+							<NumberInput
+								value={Math.round(Number(value ?? asset.durationMs) / 100) / 10}
+								min={0.4}
+								max={60}
+								step={0.1}
+								digits={1}
+								onCommit={(v) => set("durationMs", Math.round(v * 1000))}
+							/>
+						</Field>
+					);
+				if (field.type === "string")
+					return (
+						<Field key={key} label={label}>
+							<TextInput
+								value={String(value ?? "")}
+								multiline={String(value ?? "").includes("\n")}
+								rows={2}
+								onCommit={(v) => set(key, v)}
+							/>
+						</Field>
+					);
+				if (field.type === "enum" && field.values)
+					return (
+						<Field key={key} label={label}>
+							<Segmented
+								size="xs"
+								value={String(value ?? field.values[0])}
+								options={field.values.map((v) => ({ value: v, label: humanize(v) }))}
+								onChange={(v) => set(key, v)}
+							/>
+						</Field>
+					);
+				if (field.type === "number")
+					return (
+						<Field key={key} label={label}>
+							<NumberInput
+								value={Number(value ?? 0)}
+								step={0.01}
+								digits={2}
+								onCommit={(v) => set(key, v)}
+							/>
+						</Field>
+					);
+				// Lists and objects (chart data): edited as JSON.
+				return (
+					<Field key={key} label={label}>
+						<TextInput
+							multiline
+							rows={5}
+							value={JSON.stringify(value ?? [], null, 1)}
+							onCommit={(v) => {
+								try {
+									set(key, JSON.parse(v));
+								} catch {
+									notify(`${label}: that is not valid JSON.`, "danger");
+								}
+							}}
+						/>
+					</Field>
+				);
+			})}
+			<Toggle
+				label="Loop"
+				checked={loop}
+				onChange={(next) =>
+					void run("update_clip", { id: clip.id, patch: { motion: { loop: next } } })
+				}
+			/>
 		</Section>
 	);
 }
