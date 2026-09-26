@@ -1,0 +1,23 @@
+// @see https://www.electron.build/configuration/configuration
+{
+  appId: "life.wicker.cue",
+  productName: "Cue",
+  asar: true,
+  asarUnpack: ["node_modules/ffmpeg-static/**"],
+  directories: { output: "release", buildResources: "build" },
+  files: [
+    "dist",
+    "dist-electron",
+    "!**/*.md",
+  ],
+  extraResources: [{ from: "dist-mcp", to: "mcp" }],
+  mac: {
+    category: "public.app-category.video",
+    target: [{ target: "dir" }],
+    icon: "build/icon.icns",
+    identity: null,
+    extendInfo: {
+      NSMicrophoneUsageDescription: "Cue records voiceover takes from your microphone.",
+    },
+  },
+}
