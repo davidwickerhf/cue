@@ -338,6 +338,22 @@ class PlaybackEngine {
 		ctx.globalAlpha = 1;
 	}
 
+	/** Originals instead of proxies, for inspecting a zoomed-in viewer. */
+	private fullQuality = false;
+
+	/** Plays the original media (sharp when zoomed in) or the proxies (light). */
+	setFullQuality(on: boolean) {
+		if (this.fullQuality === on) return;
+		this.fullQuality = on;
+		this.render(this.currentMs);
+	}
+
+	private videoUrl(assetId: string): string {
+		const project = this.project;
+		if (!project) return "";
+		return (this.fullQuality ? undefined : project.proxyUrls[assetId]) ?? project.assetUrls[assetId];
+	}
+
 	/** Redraw after the viewer changes size. */
 	refresh() {
 		this.measure();
@@ -712,7 +728,7 @@ class PlaybackEngine {
 		const project = this.project;
 		const asset = this.index?.assets.get(clip.assetId);
 		if (!project || asset?.kind !== "video") return;
-		const url = project.proxyUrls[clip.assetId] ?? project.assetUrls[clip.assetId];
+		const url = this.videoUrl(clip.assetId);
 		if (slot.src !== url) {
 			slot.video.src = url;
 			slot.src = url;
@@ -737,7 +753,7 @@ class PlaybackEngine {
 		const isImage = asset?.kind === "image";
 		const url = isImage
 			? project.assetUrls[clip.assetId]
-			: (project.proxyUrls[clip.assetId] ?? project.assetUrls[clip.assetId]);
+			: this.videoUrl(clip.assetId);
 		const local = ms - clip.startMs;
 		const t = clip.transform;
 		const kf = clip.keyframes;

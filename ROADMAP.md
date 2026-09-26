@@ -54,7 +54,9 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [x] Picture-in-picture and split-screen layouts
 - [x] Per-track EQ and compressor (with Voice and Music bed presets, in the mixer and update_track)
 - [x] Volume line on audio clips
-- [x] Screen and camera recording (Record dialog, ⇧⌘R, record_screen)
+- [x] Screen and camera recording (Record dialog, ⇧⌘R, record_screen), recorded natively with ScreenCaptureKit
+- [x] Studio look for screen recordings, as in Recordly: wallpaper, rounded corners and shadow, a smooth cursor drawn back without the real one, zooms on clicks, click ripples, a round camera bubble (all editable clips)
+- [x] Viewer zoom for inspecting the frame (pinch or ⌘-scroll, Fit to 400%, Shift+Z, originals instead of proxies when zoomed)
 - [x] Media bins, tags and media info
 - [x] Scene detection (split at shot changes, from the clip menu or split_at_scenes)
 - [x] GIF, MP3 and AAC export (social formats: see one-click variants)

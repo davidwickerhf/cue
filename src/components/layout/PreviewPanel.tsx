@@ -7,11 +7,20 @@ import { keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { showTimeline, source } from "../../lib/source";
-import { useApp, useProject } from "../../lib/state";
+import { createStore, useApp, useProject } from "../../lib/state";
 import { cn, formatSeconds } from "../../lib/utils";
 import { compareView, layout } from "../../lib/workspace";
 import { ClipStrip } from "./ClipStrip";
 import { MonitorHeader, SourceMonitor, SourcePane, ViewerTabs } from "./SourceMonitor";
+
+/** How far the viewer is zoomed in: a multiple of the size that fits (1 = Fit). */
+export const viewerZoom = createStore({ scale: 1 });
+
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 8;
+
+/** Zoom presets as shares of the canvas's real pixels (100% = one canvas pixel per screen pixel). */
+const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4];
 
 export function PreviewPanel() {
 	const safeAreas = layout.use((s) => s.overlays.safeAreas);
@@ -26,6 +35,10 @@ export function PreviewPanel() {
 	const stage = useRef<HTMLDivElement>(null);
 	const textCanvas = useRef<HTMLCanvasElement>(null);
 	const [size, setSize] = useState({ w: 0, h: 0 });
+	const scroller = useRef<HTMLDivElement>(null);
+	const zoom = viewerZoom.use((z) => z.scale);
+	// A point of the picture (as shares) to keep under the pointer while zooming.
+	const anchor = useRef<{ u: number; v: number; x: number; y: number } | null>(null);
 	const canvas = project?.data.canvas;
 	const aspect = canvas ? canvas.width / canvas.height : 16 / 9;
 
@@ -47,32 +60,124 @@ export function PreviewPanel() {
 		return () => playback.detach();
 	}, []);
 
+	const stageW = size.w * zoom;
+	const stageH = size.h * zoom;
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the stage's size is what changed
 	useEffect(() => {
-		// Re-lay out pictures and text when the viewer is resized.
+		// Re-lay out pictures and text when the viewer is resized or zoomed.
 		playback.refresh();
-	}, [size.w, size.h]);
+	}, [stageW, stageH]);
+
+	// Pinch or ⌘/Ctrl-scroll zooms around the pointer; plain scrolling pans.
+	useEffect(() => {
+		const el = scroller.current;
+		if (!el) return;
+		const onWheel = (e: WheelEvent) => {
+			if (!e.ctrlKey && !e.metaKey) return;
+			e.preventDefault();
+			const frame = stage.current?.getBoundingClientRect();
+			if (!frame) return;
+			const current = viewerZoom.get().scale;
+						// Pinches send small steps, mouse wheels big ones: at most a quarter per event.
+			const step = Math.max(-0.22, Math.min(0.22, -e.deltaY * 0.006));
+			const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current * Math.exp(step)));
+			if (next === current) return;
+			anchor.current = {
+				u: (e.clientX - frame.left) / frame.width,
+				v: (e.clientY - frame.top) / frame.height,
+				x: e.clientX,
+				y: e.clientY,
+			};
+			viewerZoom.set({ scale: next });
+		};
+		el.addEventListener("wheel", onWheel, { passive: false });
+		return () => el.removeEventListener("wheel", onWheel);
+	}, []);
+
+	// After a zoom, scroll so the anchored point is back where it was (or keep the middle).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs on each zoom change
+	useLayoutEffect(() => {
+		const el = scroller.current;
+		const frame = stage.current?.getBoundingClientRect();
+		if (!el || !frame) return;
+		const box = el.getBoundingClientRect();
+		const a = anchor.current ?? {
+			u: 0.5,
+			v: 0.5,
+			x: box.left + box.width / 2,
+			y: box.top + box.height / 2,
+		};
+		anchor.current = null;
+		el.scrollLeft += frame.left + a.u * frame.width - a.x;
+		el.scrollTop += frame.top + a.v * frame.height - a.y;
+	}, [zoom]);
+
+	// Zoomed in, proxies look soft: play the originals.
+	useEffect(() => playback.setFullQuality(zoom > 1.2), [zoom]);
+
+	// Shift+Z: back to Fit.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const t = e.target as HTMLElement | null;
+			if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+			if (e.code === "KeyZ" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+				e.preventDefault();
+				viewerZoom.set({ scale: 1 });
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
+
+	// Middle-button drag pans a zoomed viewer.
+	const pan = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (e.button !== 1) return;
+		e.preventDefault();
+		const el = e.currentTarget;
+		const start = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
+		const move = (m: PointerEvent) => {
+			el.scrollLeft = start.left - (m.clientX - start.x);
+			el.scrollTop = start.top - (m.clientY - start.y);
+		};
+		const up = () => {
+			window.removeEventListener("pointermove", move);
+			window.removeEventListener("pointerup", up);
+		};
+		window.addEventListener("pointermove", move);
+		window.addEventListener("pointerup", up);
+	};
 
 	const program = (
 		<>
 			<div ref={area} className="relative flex min-h-0 flex-1 items-center justify-center">
+				{/* biome-ignore lint/a11y/noStaticElementInteractions: middle-button panning of the zoomed viewer */}
 				<div
-					data-stage-frame
-					ref={stage}
-					className="relative overflow-hidden"
-					style={{
-						width: size.w,
-						height: size.h,
-						background: canvas?.background ?? "#000",
-						boxShadow: "0 0 0 1px rgb(255 255 255 / 0.06)",
-					}}
+					ref={scroller}
+					onPointerDown={pan}
+					className={cn("absolute inset-0 flex", zoom > 1 ? "overflow-auto" : "overflow-hidden")}
 				>
-					<canvas
-						ref={textCanvas}
-						className="pointer-events-none absolute inset-0 z-10 size-full"
-					/>
-					{project && <SelectionOverlay project={project} width={size.w} height={size.h} />}
-					{safeAreas && <SafeAreas />}
-					{compare && project && <SplitDivider />}
+					<div className="m-auto shrink-0 px-6 py-4">
+						<div
+							data-stage-frame
+							ref={stage}
+							className="relative overflow-hidden"
+							style={{
+								width: stageW,
+								height: stageH,
+								background: canvas?.background ?? "#000",
+								boxShadow: "0 0 0 1px rgb(255 255 255 / 0.06)",
+							}}
+						>
+							<canvas
+								ref={textCanvas}
+								className="pointer-events-none absolute inset-0 z-10 size-full"
+							/>
+							{project && <SelectionOverlay project={project} width={stageW} height={stageH} />}
+							{safeAreas && <SafeAreas />}
+							{compare && project && <SplitDivider />}
+						</div>
+					</div>
 				</div>
 				{project && project.data.clips.length === 0 && <EmptyProject project={project} />}
 				<Teleprompter />
@@ -187,12 +292,49 @@ function Transport({ project }: { project: ProjectSnapshot }) {
 				</button>
 			</div>
 			<div className="flex items-center gap-3 justify-self-end">
+				<ZoomMenu canvasWidth={project.data.canvas.width} />
 				<Meters />
 				<span className="font-mono text-[12px] tabular text-muted">
 					{timecode(project.durationMs, project.data.canvas.fps)}
 				</span>
 			</div>
 		</div>
+	);
+}
+
+/** The viewer's zoom: Fit, or a share of the canvas's real pixels. */
+function ZoomMenu({ canvasWidth }: { canvasWidth: number }) {
+	const scale = viewerZoom.use((z) => z.scale);
+	// Screen pixels per canvas pixel when fitted (from the stage's current width).
+	const fitted = () => {
+		const frame = document.querySelector("[data-stage-frame]")?.getBoundingClientRect();
+		const width = frame ? frame.width / viewerZoom.get().scale : canvasWidth;
+		return (width * window.devicePixelRatio) / canvasWidth;
+	};
+	const percent = Math.round(fitted() * scale * 100);
+	return (
+		<select
+			aria-label="Viewer zoom"
+			title="Viewer zoom: pinch or ⌘-scroll to zoom, scroll or middle-drag to pan, Shift+Z to fit"
+			value={scale === 1 ? "fit" : "custom"}
+			onChange={(e) => {
+				const v = e.target.value;
+				if (v === "fit") viewerZoom.set({ scale: 1 });
+				else if (v !== "custom")
+					viewerZoom.set({
+						scale: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(v) / fitted())),
+					});
+			}}
+			className="h-6 rounded-md border border-border bg-default px-1 font-mono text-[11px] text-muted"
+		>
+			<option value="fit">Fit</option>
+			{scale !== 1 && <option value="custom">{percent}%</option>}
+			{ZOOM_PRESETS.map((p) => (
+				<option key={p} value={p}>
+					{Math.round(p * 100)}%
+				</option>
+			))}
+		</select>
 	);
 }
 
