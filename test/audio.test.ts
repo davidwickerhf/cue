@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { compressorSettings, mixRole, trackAudioFilters } from "../electron/core/audio";
+import { denoiseFilters, rnnoiseModel } from "../electron/core/denoise";
 import { ffmpeg } from "../electron/core/media";
-import { applyOp } from "../electron/core/ops";
-import { emptyProject } from "../electron/core/project";
+import { applyOp, clipPatch } from "../electron/core/ops";
+import { emptyProject, parseProject } from "../electron/core/project";
 import { ProjectStore } from "../electron/core/store";
 
 /** Mean level of a file in dB, from ffmpeg's volumedetect. */
@@ -155,5 +156,133 @@ describe("auto-mix", () => {
 		expect(store.current.tracks.find((t) => t.id === "A1")?.volume).toBe(1);
 		expect(store.current.tracks.find((t) => t.id === "A1")?.eq).toBeUndefined();
 		expect(store.current.tracks.find((t) => t.id === "A2")?.duck).toBe(false);
+	}, 90000);
+});
+
+/** RMS level (dB) of a stretch of a file, from astats. */
+async function rmsLevel(file: string, fromS: number, seconds: number): Promise<number> {
+	let log: string;
+	try {
+		log = await ffmpeg([
+			"-ss",
+			String(fromS),
+			"-t",
+			String(seconds),
+			"-i",
+			file,
+			"-af",
+			"astats=measure_overall=RMS_level:measure_perchannel=none",
+			"-f",
+			"null",
+			"-",
+		]);
+	} catch (error) {
+		log = String((error as { stderr?: string }).stderr);
+	}
+	const found = /RMS level dB:\s+(-?[\d.]+|-inf)/.exec(log);
+	if (!found) throw new Error(`No level in ${log.slice(-400)}`);
+	return found[1] === "-inf" ? -120 : Number(found[1]);
+}
+
+describe("noise reduction", () => {
+	it("reads old true/false settings as off and light", () => {
+		expect(clipPatch.parse({ denoise: true }).denoise).toBe("light");
+		expect(clipPatch.parse({ denoise: false }).denoise).toBe("off");
+		expect(clipPatch.parse({ denoise: "voice" }).denoise).toBe("voice");
+		expect(clipPatch.safeParse({ denoise: "loud" }).success).toBe(false);
+		const data = emptyProject("x");
+		const old = {
+			...data,
+			assets: [
+				{
+					id: "a_1",
+					kind: "audio",
+					name: "a.wav",
+					path: "a.wav",
+					durationMs: 1000,
+					origin: "import",
+					createdAt: "2026-01-01T00:00:00.000Z",
+				},
+			],
+			clips: [
+				{
+					id: "c_1",
+					type: "media",
+					trackId: "A1",
+					assetId: "a_1",
+					startMs: 0,
+					durationMs: 1000,
+					denoise: true,
+				},
+				{
+					id: "c_2",
+					type: "media",
+					trackId: "A1",
+					assetId: "a_1",
+					startMs: 1000,
+					durationMs: 1000,
+				},
+			],
+		};
+		const parsed = parseProject(JSON.parse(JSON.stringify(old)));
+		expect(parsed.clips.map((c) => (c.type === "media" ? c.denoise : null))).toEqual([
+			"light",
+			"off",
+		]);
+	});
+
+	it("uses the bundled RNNoise model for voice", () => {
+		expect(rnnoiseModel()).toMatch(/resources\/rnnoise\/std\.rnnn$/);
+		expect(denoiseFilters("off")).toEqual([]);
+		expect(denoiseFilters("light")).toEqual(["highpass=f=80", "afftdn=nf=-25:tn=1"]);
+		expect(denoiseFilters("voice")[1]).toMatch(/^arnndn=m='.*std\.rnnn':mix=0\.9$/);
+	});
+
+	it("lowers the noise floor in the export and in the preview proxy", async () => {
+		const { dir, store } = await project("cue-denoise-");
+		// Two seconds of noise alone, then a tone over the noise.
+		const noisy = path.join(dir, "noisy.wav");
+		await ffmpeg([
+			"-f",
+			"lavfi",
+			"-i",
+			"anoisesrc=d=5:c=pink:a=0.08:r=48000",
+			"-f",
+			"lavfi",
+			"-i",
+			"sine=f=440:d=5:sample_rate=48000",
+			"-filter_complex",
+			"[1]volume=0.3,volume='if(lt(t,2),0,1)':eval=frame[s];[0][s]amix=inputs=2:normalize=0",
+			"-ac",
+			"2",
+			noisy,
+		]);
+		const [asset] = await store.importMedia([noisy], "user");
+		store.apply(
+			{
+				type: "addClips",
+				clips: [{ type: "media", trackId: "A2", assetId: asset.id, startMs: 0, durationMs: 5000 }],
+			},
+			"user",
+		);
+		store.apply({ type: "updateTrack", id: "A2", patch: { volume: 1, duck: false } }, "user");
+		const id = store.current.clips[0].id;
+		const levels: Record<string, number> = {};
+		for (const mode of ["off", "light", "voice"] as const) {
+			store.apply({ type: "updateClip", id, patch: { denoise: mode } }, "user");
+			const out = (await store.export("audio", `${mode}.wav`, "user")).outputs[0];
+			// The noise-only stretch, away from the edges.
+			levels[mode] = await rmsLevel(out, 0.5, 1.2);
+		}
+		expect(levels.off - levels.light).toBeGreaterThan(1);
+		expect(levels.off - levels.voice).toBeGreaterThan(10);
+		expect(levels.voice).toBeLessThan(levels.light);
+		// The preview plays a denoised proxy that matches.
+		const plain = await store.audioProxy(asset.id, 1, "off");
+		const voice = await store.audioProxy(asset.id, 1, "voice");
+		expect(voice).not.toBe(plain);
+		expect((await rmsLevel(plain, 0.5, 1.2)) - (await rmsLevel(voice, 0.5, 1.2))).toBeGreaterThan(
+			10,
+		);
 	}, 90000);
 });

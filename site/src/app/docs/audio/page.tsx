@@ -136,9 +136,11 @@ export default function Page() {
 			<H2 id="denoise">Denoise and loudness</H2>
 			<Ul>
 				<li>
-					<strong className="text-white">Denoise</strong> cleans up low rumble and steady background noise on a clip (a high-pass filter and FFT noise reduction). It is
-					applied when you export: switch on <strong className="text-white">Reduce background noise</strong> in the clip&apos;s Audio
-					section, or ask an agent (&quot;Denoise the interview clips&quot;).
+					<strong className="text-white">Reduce background noise</strong> in the clip&apos;s Audio section has three settings.{" "}
+					<strong className="text-white">Light</strong> is a high-pass filter and FFT noise reduction for low rumble and steady hiss.{" "}
+					<strong className="text-white">Voice (ML)</strong> runs RNNoise, a small neural network trained on speech, on your Mac: it
+					removes most sound that isn&apos;t a voice (fans, traffic, keyboards). The preview plays the cleaned sound, so what you hear is
+					what you export. You can also ask an agent (&quot;Denoise the interview clips with the voice model&quot;).
 				</li>
 				<li>
 					<strong className="text-white">Normalise loudness</strong> in the project settings (Export section) evens out the level of the

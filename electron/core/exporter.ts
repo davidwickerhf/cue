@@ -4,6 +4,7 @@ import path from "node:path";
 import { keyframeExpr, zoomExprs } from "./anim";
 import { trackAudioFilters } from "./audio";
 import { toSrt, toVtt } from "./captions";
+import { denoiseChain } from "./denoise";
 import { ffmpeg } from "./media";
 import { resolveInProject } from "./paths";
 import {
@@ -181,7 +182,7 @@ function audioChain(input: string, src: AudioSource, label: string): string {
 		: `volume=${src.gain.toFixed(3)}`;
 	return (
 		`${input}atrim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},asetpts=PTS-STARTPTS${tempo(clip.speed)}` +
-		`,aresample=48000,aformat=channel_layouts=stereo${clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : ""},${volume}` +
+		`,aresample=48000,aformat=channel_layouts=stereo${denoiseChain(clip.denoise)},${volume}` +
 		(fades.length ? `,${fades.join(",")}` : "") +
 		`,adelay=${Math.round(clip.startMs)}:all=1[${label}]`
 	);
@@ -343,7 +344,7 @@ export async function exportStems(ctx: ExportContext, outDir?: string): Promise<
 		}
 		const a = assetOf(ctx.data, clip.assetId);
 		const out = path.join(target, stemName(ctx.data.export.stemPattern, line.id, line.index));
-		const clean = clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : "";
+		const clean = denoiseChain(clip.denoise);
 		// The line sounds as it does in the mix: with its track's EQ and compressor.
 		const processing = trackAudioFilters(trackOf(ctx.data, clip.trackId))
 			.map((f) => `,${f}`)

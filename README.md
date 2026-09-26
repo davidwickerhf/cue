@@ -58,7 +58,7 @@ A fast, open-source video editor for macOS. Edit by hand with the shortcuts you 
 | **Sequences** | Several timelines per project, nesting clips into their own sequence, sequence tabs. |
 | **Look and motion** | Keyframes for position, scale and volume, push-in zooms, crop, colour grading and LUTs, adjustment layers, masks, chroma key. |
 | **Titles** | Templates, all installed fonts, outline, gradient, spacing, rotation, in and out animations, on-viewer editing. |
-| **Audio** | Waveforms, mixer with level, pan, solo, meters, three-band EQ and a compressor per track, auto-mix and a LUFS readout, ducking under the voiceover, denoise, loudness normalisation, beat detection and cut-to-the-beat. |
+| **Audio** | Waveforms, mixer with level, pan, solo, meters, three-band EQ and a compressor per track, auto-mix and a LUFS readout, ducking under the voiceover, denoise (a light FFT filter or the RNNoise voice model, heard in the preview too), loudness normalisation, beat detection and cut-to-the-beat. |
 | **Speech** | Word-level transcripts, text-based editing, filler-word removal, search by meaning, chapters, captions (SRT and VTT). |
 | **Voiceover** | A script on the timeline as timed lines, teleprompter recording with takes per line, AI voices. |
 | **Generate** | Voices, captions, images and B-roll with OpenAI, or on-device with macOS voices, Whisper and Ollama or LM Studio. |
@@ -194,4 +194,5 @@ Cue is made by [David Henry Francis Wicker](https://wicker.life) and released un
 
 - The stack and layout take inspiration from [Recordly](https://github.com/webadderallorg/Recordly); no Recordly code is used. The demos on the website and in this README were recorded in Cue and rendered with Recordly.
 - Video processing by [FFmpeg](https://ffmpeg.org) via [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static).
+- Voice noise removal uses the [RNNoise](https://github.com/xiph/rnnoise) model (`std.rnnn`, the model shipped with RNNoise 0.1, in the format FFmpeg's `arnndn` reads, from [arnndn-models](https://github.com/richardpl/arnndn-models)). © 2017 Mozilla, © 2007–2017 Jean-Marc Valin, © 2005–2017 Xiph.Org Foundation, © 2003–2004 Mark Borgerding; BSD 3-Clause License, included in [`resources/rnnoise/LICENSE`](resources/rnnoise/LICENSE) and in the app.
 - Demo footage: *Sintel* and *Big Buck Bunny* © Blender Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).

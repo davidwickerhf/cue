@@ -38,7 +38,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 
 - [x] Timeline draws only visible clips (zoom at 500 clips is about 30 fps).
 - [x] Leave the project out of state updates when it hasn't changed (selection, jobs, recorder).
-- [ ] Send only the changed clips on an edit (still the whole project, 170 KB at 500 clips; edits take 10–35 ms).
+- [x] Send only the changed clips on an edit (a patch against the window's version: 0.2–4 KB instead of 170 KB at 500 clips; unchanged clips keep their identity in the renderer).
 - [x] Tune HEVC quality so it is smaller than H.264.
 - [x] Trim the 460 KB stylesheet.
 
@@ -100,7 +100,7 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [x] Animated word-by-word captions
 - [x] Recipes: reusable edit templates for people and agents
 - [x] Music-driven montage (beat_montage: cuts on every 1, 2 or 4 beats, fresh shots first, push-ins on stills)
-- [ ] Auto-mix: levelled dialogue and ML noise removal (levelling done: auto_mix and the mixer's Auto-mix and LUFS readout; ML noise removal still to do)
+- [x] Auto-mix: levelled dialogue and ML noise removal (auto_mix and the mixer's Auto-mix and LUFS readout; per-clip denoise Off / Light / Voice (ML) with RNNoise, heard in the preview too)
 
 ## 7. Website, SEO and getting the word out
 

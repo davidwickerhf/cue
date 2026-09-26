@@ -1,16 +1,32 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 import type { MethodName } from "./control/contract";
-import type { AppState, EditorCommand, ProjectSummary, RecorderStatus } from "./core/types";
+import type { ProjectPatch } from "./core/delta";
+import type {
+	AppState,
+	DenoiseMode,
+	EditorCommand,
+	ProjectSummary,
+	RecorderStatus,
+} from "./core/types";
 
 const api = {
 	/** The same methods agents use, performed as the user. */
 	call: <T = unknown>(method: MethodName, params?: unknown) =>
 		ipcRenderer.invoke("cue:call", method, params) as Promise<T>,
 	getState: () => ipcRenderer.invoke("cue:state") as Promise<AppState>,
-	/** `projectUnchanged`: the project was left out because the window already has this version. */
-	onState: (listener: (state: AppState, projectUnchanged: boolean) => void) => {
-		const handler = (_event: IpcRendererEvent, state: AppState, projectUnchanged = false) =>
-			listener(state, projectUnchanged);
+	/**
+	 * `projectUnchanged`: the project was left out because the window already has this version.
+	 * `patch`: the project was left out; apply this to the version the window has.
+	 */
+	onState: (
+		listener: (state: AppState, projectUnchanged: boolean, patch?: ProjectPatch) => void,
+	) => {
+		const handler = (
+			_event: IpcRendererEvent,
+			state: AppState,
+			projectUnchanged = false,
+			patch?: ProjectPatch,
+		) => listener(state, projectUnchanged, patch);
 		ipcRenderer.on("cue:state", handler);
 		return () => {
 			ipcRenderer.removeListener("cue:state", handler);
@@ -66,8 +82,8 @@ const api = {
 		};
 	},
 	peaks: (assetId: string) => ipcRenderer.invoke("cue:peaks", assetId) as Promise<number[]>,
-	audioProxy: (assetId: string, speed: number) =>
-		ipcRenderer.invoke("cue:audioProxy", assetId, speed) as Promise<string>,
+	audioProxy: (assetId: string, speed: number, denoise: DenoiseMode = "off") =>
+		ipcRenderer.invoke("cue:audioProxy", assetId, speed, denoise) as Promise<string>,
 	thumbnails: (assetId: string) =>
 		ipcRenderer.invoke("cue:thumbnails", assetId) as Promise<{
 			intervalMs: number;

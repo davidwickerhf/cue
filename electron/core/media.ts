@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import ffmpegStatic from "ffmpeg-static";
-import type { MediaInfo } from "./types";
+import { denoiseFilters } from "./denoise";
+import type { DenoiseMode, MediaInfo } from "./types";
 
 const run = promisify(execFile);
 
@@ -366,12 +367,19 @@ export async function makeVideoProxy(input: string, output: string): Promise<voi
 /**
  * Audio for playback: extracted from videos (so the editor never downloads a
  * whole movie to decode its sound) and, for sped-up clips, time-stretched with
- * pitch preserved, exactly as the export does it.
+ * pitch preserved, exactly as the export does it. With noise reduction on,
+ * the proxy is denoised the same way too, so the preview sounds like the export.
  */
-export async function makeAudioProxy(input: string, output: string, speed: number): Promise<void> {
+export async function makeAudioProxy(
+	input: string,
+	output: string,
+	speed: number,
+	denoise: DenoiseMode = "off",
+): Promise<void> {
 	await fs.mkdir(path.dirname(output), { recursive: true });
 	const tmp = `${output}.part.m4a`;
-	const filters = speed === 1 ? [] : ["-af", atempoChain(speed)];
+	const chain = [...(speed === 1 ? [] : [atempoChain(speed)]), ...denoiseFilters(denoise)];
+	const filters = chain.length ? ["-af", chain.join(",")] : [];
 	await ffmpeg([
 		"-i",
 		input,
