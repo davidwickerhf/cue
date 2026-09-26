@@ -620,11 +620,11 @@ describe("compositing", () => {
 			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
 			"user",
 		);
-		const renderText = async (clips: import("../electron/core/types").TextClip[]) => {
+		const renderText = async (clips: (TextClip | MediaClip)[]) => {
 			// Tests have no window: draw the shapes with ffmpeg instead (a box of the same place and colour).
 			const out: Record<string, import("../electron/core/exporter").TextRender> = {};
 			for (const c of clips) {
-				if (!c.shape) continue;
+				if (c.type !== "text" || !c.shape) continue;
 				const file = path.join(dir, `${c.id}.png`);
 				const w = Math.round(Math.abs(c.shape.width) * 320);
 				const h = Math.round(Math.abs(c.shape.height) * 180);

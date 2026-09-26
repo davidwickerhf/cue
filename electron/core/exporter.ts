@@ -34,14 +34,21 @@ export type TextRender =
 	| { kind: "still"; file: string }
 	| { kind: "sequence"; pattern: string; fps: number };
 
+/**
+ * Rasterises text clips and motion graphics (done by the editor window, so they
+ * look identical to the preview). Motion graphics are drawn at `sizes[clip.id]`,
+ * one frame per output frame from the clip's start.
+ */
+export type Rasteriser = (
+	clips: (TextClip | MediaClip)[],
+	canvas?: { width: number; height: number },
+	sizes?: Record<string, { width: number; height: number }>,
+) => Promise<Record<string, TextRender>>;
+
 export interface ExportContext {
 	dir: string;
 	data: ProjectData;
-	/** Rasterises text clips (done by the editor window so text looks identical to the preview). */
-	renderText?: (
-		clips: TextClip[],
-		canvas?: { width: number; height: number },
-	) => Promise<Record<string, TextRender>>;
+	renderText?: Rasteriser;
 	onProgress?: (fraction: number) => void;
 	/** Export only this part of the timeline (e.g. between the in and out points). */
 	range?: { startMs: number; endMs: number };
@@ -511,6 +518,27 @@ function encoder(data: ProjectData): string[] {
 		: ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p"];
 }
 
+/**
+ * The pixel size to draw a motion graphic at: as large as it appears on the
+ * output frame at its biggest (scale and zooms), never smaller than the file's
+ * own size, and at most 4096 on a side.
+ */
+export function motionRenderSize(
+	a: Asset,
+	clip: MediaClip,
+	W: number,
+	H: number,
+): { width: number; height: number } {
+	const aw = a.width || W;
+	const ah = a.height || H;
+	const fit = Math.min(W / aw, H / ah);
+	const scales = [clip.transform.scale, ...(clip.keyframes?.scale ?? []).map((k) => k.value)];
+	const zoom = Math.max(1, ...(clip.zooms ?? []).map((z) => z.scale));
+	const k = Math.min(Math.max(1, fit * Math.max(...scales) * zoom), 4096 / Math.max(aw, ah));
+	const even = (v: number) => Math.max(2, Math.round(v / 2) * 2);
+	return { width: even(aw * k), height: even(ah * k) };
+}
+
 /** Composites every visible video, image and text clip and mixes the audio. */
 export async function exportVideo(ctx: ExportContext, outFile?: string): Promise<ExportReport> {
 	const { data } = ctx;
@@ -547,9 +575,17 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			c.type === "text" &&
 			(c.text.trim().length > 0 || !!c.shape || !!c.infographic || !!c.dataCallout),
 	);
-	const rendered = textClips.length
-		? await (ctx.renderText?.(textClips, { width: W, height: H }) ??
-				Promise.reject(new Error("Open the Cue window to render text.")))
+	// Motion graphics are drawn by the window too, at the size they appear (vector art stays sharp).
+	const motionClips = layers.filter(
+		(c): c is MediaClip => c.type === "media" && assetOf(data, c.assetId).kind === "lottie",
+	);
+	const motionSizes = Object.fromEntries(
+		motionClips.map((c) => [c.id, motionRenderSize(assetOf(data, c.assetId), c, W, H)]),
+	);
+	const drawn = [...textClips, ...motionClips];
+	const rendered = drawn.length
+		? await (ctx.renderText?.(drawn, { width: W, height: H }, motionSizes) ??
+				Promise.reject(new Error("Open the Cue window to render text and graphics.")))
 		: {};
 
 	const inputs: string[] = [];
@@ -632,8 +668,10 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const file = resolveInProject(ctx.dir, a.path);
 		const t = clip.transform;
 		const c = t.crop;
-		const sw = a.width || W;
-		const sh = a.height || H;
+		const motion = a.kind === "lottie" ? rendered[clip.id] : undefined;
+		if (a.kind === "lottie" && motion?.kind !== "sequence") continue;
+		const sw = a.kind === "lottie" ? motionSizes[clip.id].width : a.width || W;
+		const sh = a.kind === "lottie" ? motionSizes[clip.id].height : a.height || H;
 		const fitBase = Math.min(W / sw, H / sh);
 		const cropW = 1 - c.left - c.right;
 		const cropH = 1 - c.top - c.bottom;
@@ -728,6 +766,10 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				file,
 			]);
 			source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS`;
+		} else if (a.kind === "lottie" && motion?.kind === "sequence") {
+			// Already one frame per output frame from the clip's start, speed and looping applied.
+			index = addInput(["-framerate", String(motion.fps), "-i", motion.pattern]);
+			source = `[${index}:v]format=rgba,setpts=PTS-STARTPTS,fps=${fps}`;
 		} else if (a.kind === "video") {
 			index = addInput(["-i", file]);
 			const steady = clip.effects?.stabilize

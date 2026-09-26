@@ -17,7 +17,7 @@ import {
 	exportVoiceover,
 	type Loudness,
 	measureLoudness,
-	type TextRender,
+	type Rasteriser,
 } from "./exporter";
 import { type HistoryEntry, ProjectHistory } from "./history";
 import {
@@ -54,6 +54,8 @@ import {
 	toWav,
 } from "./media";
 import { type MontageSource, planMontage } from "./montage";
+import { motionDurationMs, motionInfo } from "./motion";
+import { readMotionFile } from "./motionFile";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
@@ -78,14 +80,13 @@ import type {
 	Clip,
 	DataCallout,
 	DenoiseMode,
+	Infographic,
 	MediaClip,
 	MediaInfo,
 	ProjectData,
 	ProjectSnapshot,
 	Proposal,
 	RecentProject,
-	Infographic,
-	TextClip,
 } from "./types";
 import { type Aspect, reframeData, shortenData, variantLabel } from "./variants";
 import {
@@ -133,10 +134,7 @@ export interface StoreOptions {
 	reviewAgentEdits?: () => boolean;
 }
 
-type TextRenderer = (
-	clips: TextClip[],
-	canvas?: { width: number; height: number },
-) => Promise<Record<string, TextRender>>;
+type TextRenderer = Rasteriser;
 
 /**
  * Owns the open project. Every edit goes through `apply`, which validates it,
@@ -317,7 +315,13 @@ export class ProjectStore extends EventEmitter {
 		if (!this.data || !file) return;
 		const offline = new Set(this.offline());
 		const todo = this.data.assets.filter(
-			(a) => !a.info && a.path && !a.sequenceId && a.kind !== "adjustment" && !offline.has(a.id),
+			(a) =>
+				!a.info &&
+				a.path &&
+				!a.sequenceId &&
+				a.kind !== "adjustment" &&
+				a.kind !== "lottie" &&
+				!offline.has(a.id),
 		);
 		if (!todo.length) return;
 		const dir = this.projectDir;
@@ -2515,6 +2519,20 @@ export class ProjectStore extends EventEmitter {
 			const resolved = path.resolve(file);
 			const kind = kindOf(resolved);
 			if (!kind) throw new Error(`Unsupported file type: ${path.basename(resolved)}`);
+			if (kind === "lottie") {
+				const asset = await this.motionAsset(resolved, actor);
+				this.apply(
+					{
+						type: "addAsset",
+						asset,
+						placeOn: place ? { trackId: place.trackId, startMs: at } : undefined,
+					},
+					actor,
+				);
+				at += asset.durationMs;
+				added.push(asset);
+				continue;
+			}
 			const [info, stat] = await Promise.all([probe(resolved), fs.stat(resolved)]);
 			const asset: Asset = {
 				id: newId("a"),
@@ -2545,6 +2563,39 @@ export class ProjectStore extends EventEmitter {
 		}
 		this.autoBuildProxies();
 		return added;
+	}
+
+	/**
+	 * A motion graphic (Lottie .json or .lottie) as media. The animation is saved as
+	 * one self-contained JSON file in the project's graphics folder (pictures inside),
+	 * so the project keeps working when the download folder is cleaned up.
+	 */
+	private async motionAsset(file: string, actor: Actor): Promise<Asset> {
+		const json = await readMotionFile(file);
+		const info = motionInfo(json);
+		const folder = path.join(this.projectDir, "graphics");
+		await fs.mkdir(folder, { recursive: true });
+		const base = safeSegment(path.parse(file).name) || "graphic";
+		let target = path.join(folder, `${base}.json`);
+		for (let n = 2; existsSync(target); n++) target = path.join(folder, `${base}-${n}.json`);
+		const text = JSON.stringify(json);
+		await fs.writeFile(target, text);
+		return {
+			id: newId("a"),
+			kind: "lottie",
+			name: path.basename(file),
+			path: relativeToProject(this.projectDir, target),
+			relPath: path.relative(this.projectDir, target),
+			size: Buffer.byteLength(text),
+			durationMs: motionDurationMs(info),
+			width: Math.round(json.w),
+			height: Math.round(json.h),
+			hasAudio: false,
+			origin: "import",
+			createdAt: new Date().toISOString(),
+			motion: info,
+			actor,
+		};
 	}
 
 	/** Turns a finished microphone recording into a take for a line. */

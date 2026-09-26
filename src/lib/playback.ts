@@ -5,6 +5,7 @@ import {
 	EQ_BANDS,
 	FLAT_EQ,
 } from "../../electron/core/audio";
+import { motionFrameAt, motionKey } from "../../electron/core/motion";
 import {
 	BLUR_FROM,
 	entered,
@@ -24,6 +25,7 @@ import type {
 	Track,
 } from "../../electron/core/types";
 import { createKeyer, type Keyer, maskUrl } from "./compositing";
+import { drawMotion, onMotionReady } from "./motion";
 import { createStore } from "./state";
 import { drawTextClip, textFrame } from "./textDraw";
 
@@ -34,6 +36,10 @@ interface Slot {
 	frame: HTMLDivElement;
 	video: HTMLVideoElement;
 	image: HTMLImageElement;
+	/** Motion graphics (Lottie) are drawn into this canvas, made on first use. */
+	motion?: HTMLCanvasElement;
+	/** What the motion canvas shows, so an unchanged frame isn't drawn again. */
+	motionKey?: string;
 	clipId: string | null;
 	src: string;
 	/** Latest seek wanted while a seek is still running. */
@@ -361,6 +367,13 @@ class PlaybackEngine {
 		return (
 			(this.fullQuality ? undefined : project.proxyUrls[assetId]) ?? project.assetUrls[assetId]
 		);
+	}
+
+	constructor() {
+		// A motion graphic that finished loading is drawn at once, even when paused.
+		onMotionReady(() => {
+			if (!this.playing) this.render(this.currentMs);
+		});
 	}
 
 	/** Redraw after the viewer changes size. */
@@ -760,7 +773,8 @@ class PlaybackEngine {
 		if (asset?.kind === "adjustment") return this.renderAdjustment(slot, clip, ms);
 		if (slot.frame.style.backdropFilter) slot.frame.style.backdropFilter = "";
 		const isImage = asset?.kind === "image";
-		const url = isImage ? project.assetUrls[clip.assetId] : this.videoUrl(clip.assetId);
+		const isMotion = asset?.kind === "lottie";
+		const url = isImage || isMotion ? project.assetUrls[clip.assetId] : this.videoUrl(clip.assetId);
 		const local = ms - clip.startMs;
 		const t = clip.transform;
 		const kf = clip.keyframes;
@@ -821,9 +835,14 @@ class PlaybackEngine {
 			frame.maskImage = mask;
 			frame.maskSize = "100% 100%";
 		}
-		const element = isImage ? slot.image : slot.video;
-		const other = isImage ? slot.video : slot.image;
-		if (other.style.display !== "none") other.style.display = "none";
+		const element: HTMLElement = isMotion
+			? this.motionCanvas(slot)
+			: isImage
+				? slot.image
+				: slot.video;
+		for (const other of [slot.video, slot.image, slot.motion])
+			if (other && other !== element && other.style.display !== "none")
+				other.style.display = "none";
 		element.style.display = "";
 		// The same framing as the export: the focus is centred but the picture always covers the frame.
 		const z = zoomView(zoomAt(clip.zooms, local));
@@ -850,7 +869,7 @@ class PlaybackEngine {
 			slot.signal.style.display = tr?.kind === "signal-glitch" && p < 1 ? "" : "none";
 		this.showVignette(slot, look?.effects);
 		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
-		if (clip.key) {
+		if (clip.key && !isMotion) {
 			if (slot.keyer === undefined) {
 				slot.keyer = createKeyer();
 				if (slot.keyer) slot.frame.append(slot.keyer.canvas);
@@ -863,7 +882,7 @@ class PlaybackEngine {
 				k.transform = element.style.transform;
 				k.transformOrigin = element.style.transformOrigin;
 				k.filter = element.style.filter;
-				slot.keyer.draw(element, clip.key);
+				slot.keyer.draw(element as HTMLVideoElement | HTMLImageElement, clip.key);
 			}
 		} else if (slot.keyedClip) {
 			slot.keyedClip = null;
@@ -871,8 +890,16 @@ class PlaybackEngine {
 			slot.image.style.opacity = "";
 			if (slot.keyer) slot.keyer.canvas.style.display = "none";
 		}
+		if (isMotion && asset) {
+			if (!slot.video.paused) slot.video.pause();
+			this.drawMotionFrame(slot, clip, asset, url, local, w, h);
+		}
 		this.placeOriginal(slot, element, x * W - w / 2, w, h);
 		slot.clipId = clip.id;
+		if (isMotion) {
+			slot.src = url;
+			return;
+		}
 		if (isImage) {
 			if (slot.src !== url) {
 				slot.image.src = url;
@@ -909,6 +936,48 @@ class PlaybackEngine {
 		}
 	}
 
+	/** The slot's canvas for motion graphics. */
+	private motionCanvas(slot: Slot): HTMLCanvasElement {
+		if (!slot.motion) {
+			slot.motion = document.createElement("canvas");
+			slot.motion.className = "absolute inset-0 size-full";
+			slot.frame.append(slot.motion);
+		}
+		return slot.motion;
+	}
+
+	/** Draws a motion graphic's frame for this moment, sharp at the size it is shown. */
+	private drawMotionFrame(
+		slot: Slot,
+		clip: MediaClip,
+		asset: Asset,
+		url: string,
+		local: number,
+		w: number,
+		h: number,
+	) {
+		const canvas = this.motionCanvas(slot);
+		if (!asset.motion) return;
+		const dpr = window.devicePixelRatio || 1;
+		// Zoomed in, the graphic is drawn larger so it stays sharp (it is vector art).
+		const zoom = zoomAt(clip.zooms, local)?.scale ?? 1;
+		const limit = 4096 / Math.max(w, h, 1);
+		const k = Math.min(dpr * Math.max(1, zoom), limit);
+		const cw = Math.max(2, Math.round(w * k));
+		const ch = Math.max(2, Math.round(h * k));
+		const frame = motionFrameAt(asset.motion, clip, local);
+		const key = `${url}|${motionKey(clip.motion)}|${frame.toFixed(3)}|${cw}x${ch}`;
+		if (slot.motionKey === key) return;
+		if (canvas.width !== cw || canvas.height !== ch) {
+			canvas.width = cw;
+			canvas.height = ch;
+		}
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+		// Remembered only once drawn: a graphic still loading is drawn when it is ready.
+		slot.motionKey = drawMotion(ctx, url, clip.motion, frame) ? key : undefined;
+	}
+
 	/** An adjustment layer: a full-frame backdrop filter grading everything drawn below it. */
 	private renderAdjustment(slot: Slot, clip: MediaClip, ms: number) {
 		const frame = slot.frame.style;
@@ -938,6 +1007,7 @@ class PlaybackEngine {
 		this.showVignette(slot, look?.effects);
 		slot.video.style.display = "none";
 		slot.image.style.display = "none";
+		if (slot.motion) slot.motion.style.display = "none";
 		if (slot.keyer) slot.keyer.canvas.style.display = "none";
 		if (!slot.video.paused) slot.video.pause();
 		slot.clipId = clip.id;
@@ -989,9 +1059,11 @@ class PlaybackEngine {
 		const keyed = slot.keyer && slot.keyedClip?.key && slot.keyer.canvas.style.display !== "none";
 		const src = keyed
 			? (slot.keyer as Keyer).canvas
-			: slot.video.style.display !== "none"
-				? slot.video
-				: slot.image;
+			: slot.motion && slot.motion.style.display !== "none"
+				? slot.motion
+				: slot.video.style.display !== "none"
+					? slot.video
+					: slot.image;
 		if (src instanceof HTMLVideoElement && src.readyState < 2) return;
 		if (src instanceof HTMLImageElement && !src.complete) return;
 		ctx.clearRect(0, 0, o.width, o.height);

@@ -1,7 +1,9 @@
 import { useEffect } from "react";
+import { type MotionInfo, motionFrameAt } from "../../electron/core/motion";
 import type { TextClip } from "../../electron/core/types";
 import { librarySelection } from "../lib/assetLibrary";
 import { capture } from "../lib/capture";
+import { motionSettled, rasteriseMotion } from "../lib/motion";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
@@ -142,7 +144,26 @@ export function useEditorCommands() {
 							const clip =
 								command.clips?.find((c) => c.id === id) ??
 								project.data.clips.find((c): c is TextClip => c.id === id && c.type === "text");
-							if (clip) images[id] = await rasterise(clip, width, height, command.fps);
+							if (clip?.type === "media") {
+								const asset = project.data.assets.find((a) => a.id === clip.assetId);
+								const url = project.assetUrls[clip.assetId];
+								const size = command.sizes?.[id];
+								if (asset?.motion && url && size) {
+									const count = Math.max(1, Math.ceil((clip.durationMs / 1000) * command.fps));
+									const frames = Array.from({ length: count }, (_, i) =>
+										motionFrameAt(asset.motion as MotionInfo, clip, (i * 1000) / command.fps),
+									);
+									images[id] = {
+										frames: await rasteriseMotion(
+											url,
+											clip.motion,
+											frames,
+											size.width,
+											size.height,
+										),
+									};
+								}
+							} else if (clip) images[id] = await rasterise(clip, width, height, command.fps);
 						}
 						window.cue.reply(command.requestId, null, images);
 					} catch (error) {
@@ -157,6 +178,8 @@ export function useEditorCommands() {
 						document.body.dataset.capturing = "";
 						if (capturing.scale !== 1) viewerZoom.set({ scale: 1 });
 						await playback.seekAndSettle(command.atMs);
+						// Motion graphics still loading are drawn once ready (the viewer redraws itself).
+						await motionSettled();
 						await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 						const frame = document.querySelector<HTMLElement>("[data-stage-frame]");
 						if (!frame) throw new Error("The preview is not visible.");

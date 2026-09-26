@@ -7,8 +7,9 @@ import {
 	Waveform,
 	X,
 } from "@phosphor-icons/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Asset, ProjectSnapshot } from "../../../electron/core/types";
+import { motionPoster } from "../../lib/motion";
 import {
 	attachSource,
 	closeSource,
@@ -202,7 +203,9 @@ function SourceBody({
 					className,
 				)}
 			>
-				{asset.kind === "image" ? (
+				{asset.kind === "lottie" ? (
+					<MotionStill asset={asset} url={url} />
+				) : asset.kind === "image" ? (
 					<img
 						src={url}
 						alt=""
@@ -231,7 +234,7 @@ function SourceBody({
 				)}
 			</div>
 			<div className="flex flex-col gap-2 border-t border-separator bg-surface px-3 py-2">
-				{asset.kind !== "image" && (
+				{asset.kind !== "image" && asset.kind !== "lottie" && (
 					// biome-ignore lint/a11y/noStaticElementInteractions: a scrub bar, like the timeline ruler
 					<div
 						className="relative h-5 cursor-pointer"
@@ -275,7 +278,7 @@ function SourceBody({
 						<Mark label="Mark in (I)" onPress={() => markSource("in")}>
 							{"{"}
 						</Mark>
-						{asset.kind !== "image" && (
+						{asset.kind !== "image" && asset.kind !== "lottie" && (
 							<button
 								type="button"
 								aria-label={playing ? "Pause" : "Play"}
@@ -368,4 +371,27 @@ function Mark({
 			{children}
 		</button>
 	);
+}
+
+/** A motion graphic in the source monitor: a still of it (it plays on the timeline). */
+function MotionStill({ asset, url }: { asset: Asset; url: string | undefined }) {
+	const [poster, setPoster] = useState<string | null>(null);
+	useEffect(() => {
+		if (!url || !asset.motion) return;
+		let alive = true;
+		void motionPoster(url, asset.motion, 960)
+			.then((p) => alive && setPoster(p))
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	}, [url, asset.motion]);
+	return poster ? (
+		<img
+			src={poster}
+			alt=""
+			draggable={false}
+			className="max-h-full max-w-full object-contain [background:repeating-conic-gradient(#0000_0_25%,#8881_0_50%)_0_0/16px_16px]"
+		/>
+	) : null;
 }

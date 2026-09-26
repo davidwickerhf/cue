@@ -8,8 +8,11 @@ export type Actor = "user" | "agent" | "system";
 // Media library
 // ---------------------------------------------------------------------------
 
-/** "adjustment" is Cue's built-in adjustment layer: no file, it grades whatever is below it. */
-export type AssetKind = "video" | "audio" | "image" | "adjustment";
+/**
+ * "adjustment" is Cue's built-in adjustment layer: no file, it grades whatever is below it.
+ * "lottie" is a motion graphic (After Effects via Bodymovin/LottieFiles), drawn by the app.
+ */
+export type AssetKind = "video" | "audio" | "image" | "adjustment" | "lottie";
 export type AssetOrigin = "import" | "recording" | "tts" | "generated";
 
 export interface Asset {
@@ -50,6 +53,8 @@ export interface Asset {
 	note?: string;
 	/** Technical details read from the file (codec, frame rate, …), probed once and kept. */
 	info?: MediaInfo;
+	/** Motion graphics: frame rate, editable text layers and colours. */
+	motion?: import("./motion").MotionInfo;
 	actor: Actor;
 }
 
@@ -273,6 +278,8 @@ export interface MediaClip {
 	key?: ChromaKey;
 	effects?: Effects;
 	frame?: Frame;
+	/** Motion graphics: this clip's text and colour changes, and whether it loops. */
+	motion?: import("./motion").MotionSettings;
 	/** How this clip enters from the clip before it on the same track. */
 	transitionIn?: Transition;
 	/** Clips with the same group move and delete together (e.g. linked picture and sound). */
@@ -674,7 +681,9 @@ export type EditorCommand =
 			type: "renderText";
 			requestId: string;
 			clipIds: string[];
-			clips?: TextClip[];
+			/** Text clips, and media clips of motion graphics (drawn at `sizes[id]`). */
+			clips?: (TextClip | MediaClip)[];
+			sizes?: Record<string, { width: number; height: number }>;
 			fps: number;
 			/** Frame size to draw at (a variant's may differ from the open project's). */
 			width?: number;

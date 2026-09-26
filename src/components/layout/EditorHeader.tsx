@@ -3,8 +3,8 @@ import {
 	ArrowClockwise,
 	ArrowCounterClockwise,
 	CaretLeft,
-	Rectangle,
 	FilmStrip,
+	Rectangle,
 	SidebarSimple,
 	SquareSplitHorizontal,
 } from "@phosphor-icons/react";

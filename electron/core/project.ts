@@ -274,9 +274,36 @@ export const binSchema = z.object({
 	parentId: z.string().optional(),
 });
 
+const motionInfoSchema = z.object({
+	fps: z.number().positive(),
+	inFrame: z.number(),
+	outFrame: z.number(),
+	texts: z.array(
+		z.object({
+			id: z.string(),
+			text: z.string(),
+			comp: z.string().optional(),
+			glyphs: z.boolean().optional(),
+		}),
+	),
+	colors: z.array(z.string()),
+	markers: z.array(z.object({ name: z.string(), startMs: z.number(), durationMs: z.number() })),
+	fonts: z.array(z.string()),
+	slots: z.array(z.string()).optional(),
+	images: z.number().optional(),
+	version: z.string().optional(),
+});
+
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a #rrggbb colour.");
+export const motionSettingsSchema = z.object({
+	loop: z.boolean().optional(),
+	text: z.record(z.string(), z.string().max(2000)).optional(),
+	colors: z.record(hexColor, hexColor).optional(),
+});
+
 const assetSchema = z.object({
 	id,
-	kind: z.enum(["video", "audio", "image", "adjustment"]),
+	kind: z.enum(["video", "audio", "image", "adjustment", "lottie"]),
 	name: z.string(),
 	path: z.string(),
 	relPath: z.string().optional(),
@@ -307,6 +334,7 @@ const assetSchema = z.object({
 	rating: z.number().int().min(0).max(5).optional(),
 	note: z.string().max(4000).optional(),
 	info: mediaInfoSchema.optional(),
+	motion: motionInfoSchema.optional(),
 	transcript: z
 		.object({
 			model: z.string(),
@@ -360,6 +388,7 @@ const mediaClipSchema = z.object({
 	key: keySchema.optional(),
 	effects: effectsSchema.optional(),
 	frame: frameSchema.optional(),
+	motion: motionSettingsSchema.optional(),
 	transitionIn: transitionSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),

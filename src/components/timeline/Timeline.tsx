@@ -69,7 +69,7 @@ import { clampLayout, layout } from "../../lib/workspace";
 import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
 import { IconButton, Segmented } from "../ui/controls";
-import { Filmstrip, Tiled, Waveform } from "./ClipVisuals";
+import { Filmstrip, MotionTiles, Tiled, Waveform } from "./ClipVisuals";
 import { KeyframeLanes } from "./KeyframeLanes";
 import { SequenceTabs } from "./SequenceTabs";
 
@@ -2014,7 +2014,7 @@ function ClipView({
 			? "text"
 			: asset?.kind === "adjustment"
 				? "adjustment"
-				: asset?.kind === "image"
+				: asset?.kind === "image" || asset?.kind === "lottie"
 					? "image"
 					: track?.kind === "video"
 						? "video"
@@ -2125,6 +2125,9 @@ function ClipView({
 			)}
 			{media && asset?.kind === "image" && (
 				<Tiled url={project.assetUrls[asset.id]} width={width} height={inner} />
+			)}
+			{media && asset?.kind === "lottie" && (
+				<MotionTiles asset={asset} url={project.assetUrls[asset.id]} width={width} height={inner} />
 			)}
 			{media && asset?.hasAudio && track?.kind === "audio" && (
 				<Waveform

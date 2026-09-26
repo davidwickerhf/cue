@@ -49,6 +49,7 @@ import { ProjectStore } from "./core/store";
 import type {
 	DenoiseMode,
 	EditorCommand,
+	MediaClip,
 	ProjectSnapshot,
 	RecorderStatus,
 	TextClip,
@@ -118,8 +119,9 @@ function askWindow<T>(
 }
 
 async function renderText(
-	clips: TextClip[],
+	clips: (TextClip | MediaClip)[],
 	canvas?: { width: number; height: number },
+	sizes?: Record<string, { width: number; height: number }>,
 ): Promise<Record<string, TextRender>> {
 	const fps = store.current.canvas.fps;
 	const images = await askWindow<Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }>>(
@@ -131,6 +133,7 @@ async function renderText(
 			clips,
 			fps,
 			...canvas,
+			...(sizes ? { sizes } : {}),
 		}),
 		300000,
 	);
@@ -535,10 +538,14 @@ function mayServe(file: string): boolean {
 	}
 	const snapshot = store.snapshot();
 	if (!snapshot) return false;
-	// Inside the project folder: pictures and sound only (caches, renders, takes), never other files.
-	if (resolved.startsWith(`${snapshot.dir}${path.sep}`))
-		return path.extname(resolved).toLowerCase() in MIME;
-	return snapshot.data.assets.some((a) => resolveInProject(snapshot.dir, a.path) === resolved);
+	// Media in the project (including motion graphics, which are JSON) is served wherever it is.
+	if (snapshot.data.assets.some((a) => resolveInProject(snapshot.dir, a.path) === resolved))
+		return true;
+	// Otherwise, inside the project folder: pictures and sound only (caches, renders, takes).
+	return (
+		resolved.startsWith(`${snapshot.dir}${path.sep}`) &&
+		path.extname(resolved).toLowerCase() in MIME
+	);
 }
 
 const MIME: Record<string, string> = {
@@ -564,7 +571,8 @@ async function serveMedia(request: Request): Promise<Response> {
 	if (!mayServe(file)) return new Response("Forbidden", { status: 403 });
 	const stat = await fs.stat(file).catch(() => null);
 	if (!stat?.isFile()) return new Response("Not found", { status: 404 });
-	const type = MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream";
+	const ext = path.extname(file).toLowerCase();
+	const type = MIME[ext] ?? (ext === ".json" ? "application/json" : "application/octet-stream");
 	const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get("range") ?? "");
 	const cors = { "access-control-allow-origin": "*" };
 	if (range) {
@@ -811,8 +819,11 @@ async function importDialog(place?: { trackId: string; startMs: number }) {
 					"jpeg",
 					"webp",
 					"gif",
+					"json",
+					"lottie",
 				],
 			},
+			{ name: "Motion graphics (Lottie from After Effects)", extensions: ["json", "lottie"] },
 		],
 	});
 	if (result.canceled || result.filePaths.length === 0) return [];

@@ -30,6 +30,7 @@ import {
 } from "../../../electron/core/bins";
 import type { Asset, Bin, ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
+import { motionPoster } from "../../lib/motion";
 import { playback } from "../../lib/playback";
 import { openSource } from "../../lib/source";
 import { createStore, editor, useProject } from "../../lib/state";
@@ -105,6 +106,17 @@ export function useThumb(asset: Asset, project: ProjectSnapshot): string | null 
 		};
 		// A new file (relinked, re-rendered) has new frames.
 	}, [asset.id, asset.kind, asset.path]);
+	// Motion graphics: a still drawn by the player.
+	useEffect(() => {
+		if (asset.kind !== "lottie" || !asset.motion || !url) return;
+		let alive = true;
+		void motionPoster(url, asset.motion)
+			.then((poster) => alive && setThumb(poster))
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	}, [asset.kind, asset.motion, url]);
 	return thumb;
 }
 
@@ -566,6 +578,7 @@ interface ItemProps {
 function KindIcon({ kind, className }: { kind: Asset["kind"]; className?: string }) {
 	if (kind === "audio") return <Waveform className={className} />;
 	if (kind === "image") return <ImageIcon className={className} />;
+	if (kind === "lottie") return <Sparkle className={className} />;
 	return <FilmSlate className={className} />;
 }
 

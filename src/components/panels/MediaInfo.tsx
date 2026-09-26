@@ -101,11 +101,29 @@ function detailRows(asset: Asset): [string, string][] {
 	const rows: [string, string | undefined][] = [
 		[
 			"Kind",
-			{ video: "Video", audio: "Audio", image: "Image", adjustment: "Adjustment" }[asset.kind],
+			{
+				video: "Video",
+				audio: "Audio",
+				image: "Image",
+				adjustment: "Adjustment",
+				lottie: "Motion graphic (Lottie)",
+			}[asset.kind],
 		],
 		["Duration", asset.kind === "image" ? undefined : formatTime(asset.durationMs)],
 		["Size", asset.width ? `${asset.width} × ${asset.height}` : undefined],
-		["Frame rate", info?.fps ? `${Math.round(info.fps * 100) / 100} fps` : undefined],
+		[
+			"Frame rate",
+			info?.fps || asset.motion?.fps
+				? `${Math.round((info?.fps ?? asset.motion?.fps ?? 0) * 100) / 100} fps`
+				: undefined,
+		],
+		["Text layers", asset.motion?.texts.length ? String(asset.motion.texts.length) : undefined],
+		["Colours", asset.motion?.colors.length ? String(asset.motion.colors.length) : undefined],
+		[
+			"Markers",
+			asset.motion?.markers.length ? asset.motion.markers.map((m) => m.name).join(", ") : undefined,
+		],
+		["Fonts", asset.motion?.fonts.length ? asset.motion.fonts.join(", ") : undefined],
 		[
 			"Video",
 			info?.videoCodec && asset.kind !== "audio"

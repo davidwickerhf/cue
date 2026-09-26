@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { Asset } from "../../../electron/core/types";
+import { motionPoster } from "../../lib/motion";
 
 const peaksCache = new Map<string, Promise<number[]>>();
 const thumbsCache = new Map<string, Promise<{ intervalMs: number; urls: string[] }>>();
@@ -170,4 +172,30 @@ export function Tiled({ url, width, height }: { url: string; width: number; heig
 			))}
 		</div>
 	);
+}
+
+/** A motion graphic's still, repeated along its clip like an image's. */
+export function MotionTiles({
+	asset,
+	url,
+	width,
+	height,
+}: {
+	asset: Asset;
+	url: string | undefined;
+	width: number;
+	height: number;
+}) {
+	const [poster, setPoster] = useState<string | null>(null);
+	useEffect(() => {
+		if (!url || !asset.motion) return;
+		let alive = true;
+		void motionPoster(url, asset.motion)
+			.then((p) => alive && setPoster(p))
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	}, [url, asset.motion]);
+	return poster ? <Tiled url={poster} width={width} height={height} /> : null;
 }

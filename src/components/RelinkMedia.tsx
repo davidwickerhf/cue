@@ -12,6 +12,7 @@ const EXTENSIONS: Record<Asset["kind"], string[]> = {
 	audio: ["wav", "mp3", "m4a", "aac", "flac", "ogg"],
 	image: ["png", "jpg", "jpeg", "webp", "gif"],
 	adjustment: [],
+	lottie: ["json", "lottie"],
 };
 
 type Result = { relinked: string[]; stillOffline: number };

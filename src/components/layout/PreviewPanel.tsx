@@ -698,7 +698,7 @@ function EmptyProject({ project }: { project: ProjectSnapshot }) {
 		let at = 0;
 		const clips = [];
 		for (const a of assets) {
-			if ((a.kind === "video" || a.kind === "image") && video) {
+			if ((a.kind === "video" || a.kind === "image" || a.kind === "lottie") && video) {
 				clips.push({ type: "media", trackId: video.id, assetId: a.id, startMs: at });
 				// Stills get the default five seconds.
 				at += a.kind === "image" ? 5000 : a.durationMs;

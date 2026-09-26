@@ -272,9 +272,10 @@ export async function extractThumbnails(
 	return { intervalMs, count };
 }
 
-/** Classifies a file by extension. */
-export function kindOf(file: string): "video" | "audio" | "image" | null {
+/** Classifies a file by extension. JSON files are taken to be motion graphics (Lottie). */
+export function kindOf(file: string): "video" | "audio" | "image" | "lottie" | null {
 	const ext = path.extname(file).toLowerCase();
+	if (ext === ".json" || ext === ".lottie") return "lottie";
 	if ([".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"].includes(ext)) return "video";
 	if ([".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aiff", ".aif"].includes(ext))
 		return "audio";

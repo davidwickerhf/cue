@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_CURVE, splitKeyframes, splitZooms, withKeyframe } from "./anim";
 import { binPath } from "./bins";
+import type { MotionSettings } from "./motion";
 import {
 	aiSchema,
 	assertUnique,
@@ -10,13 +11,13 @@ import {
 	colorSchema,
 	cropSchema,
 	curveSchema,
-	dataCalloutSchema,
 	DEFAULT_FRAME,
 	DEFAULT_KEY,
 	DEFAULT_MASK,
 	DEFAULT_SHAPE,
 	DEFAULT_TEXT_STYLE,
 	DEFAULT_TRANSFORM,
+	dataCalloutSchema,
 	defaultTracks,
 	denoiseSchema,
 	EASES,
@@ -29,6 +30,7 @@ import {
 	keySchema,
 	lineInputSchema,
 	maskSchema,
+	motionSettingsSchema,
 	NEUTRAL_COLOR,
 	NO_CROP,
 	NO_EFFECTS,
@@ -98,6 +100,8 @@ export const mediaClipInput = z.object({
 		.partial()
 		.optional(),
 	frame: frameSchema.partial().optional(),
+	/** Motion graphics: new text per text layer, colour swaps and looping. */
+	motion: motionSettingsSchema.optional(),
 });
 
 export const textClipInput = z.object({
@@ -146,6 +150,7 @@ export const clipPatch = z
 		key: keySchema.partial().nullable(),
 		effects: effectsSchema.partial().nullable(),
 		frame: frameSchema.partial().nullable(),
+		motion: motionSettingsSchema.nullable(),
 		wordStyle: wordStyleSchema.nullable(),
 		shape: shapeSchema.partial().nullable(),
 		infographic: infographicSchema.partial().nullable(),
@@ -687,13 +692,14 @@ function validateClip(data: ProjectData, c: Clip): Clip {
 	if (t.kind === "text") throw new Error(`Media clips cannot go on text track "${t.name}".`);
 	if (t.kind === "video" && a.kind === "audio")
 		throw new Error(`Audio "${a.name}" cannot go on video track "${t.name}".`);
-	if (t.kind === "audio" && a.kind === "image")
-		throw new Error(`Image "${a.name}" cannot go on audio track "${t.name}".`);
+	if (t.kind === "audio" && (a.kind === "image" || a.kind === "lottie"))
+		throw new Error(`"${a.name}" is a picture; it cannot go on audio track "${t.name}".`);
 	if (t.kind !== "video" && a.kind === "adjustment")
 		throw new Error("Adjustment layers go on video tracks.");
 	if (t.kind === "audio" && !a.hasAudio && a.kind === "video")
 		throw new Error(`"${a.name}" has no audio.`);
-	if (a.kind !== "image" && a.kind !== "adjustment") {
+	// Motion graphics can run past their end: they hold their last frame, or loop.
+	if (a.kind !== "image" && a.kind !== "adjustment" && a.kind !== "lottie") {
 		const available = a.durationMs - c.inMs;
 		if (available <= 0) throw new Error(`In-point is past the end of "${a.name}".`);
 		const maxDuration = available / c.speed;
@@ -769,7 +775,34 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 				}
 			: {}),
 		...(input.frame ? { frame: frameSchema.parse({ ...DEFAULT_FRAME, ...input.frame }) } : {}),
+		...(input.motion && a.kind === "lottie" ? { motion: input.motion } : {}),
 	});
+}
+
+/**
+ * A motion patch merges: text and colours add to (or replace) what the clip has,
+ * an empty string or colour removes that change, and null clears everything.
+ */
+function mergeMotion(
+	current: MotionSettings | undefined,
+	patch: MotionSettings | null,
+): MotionSettings | undefined {
+	if (patch === null) return undefined;
+	const text = { ...current?.text, ...patch.text };
+	for (const [k, v] of Object.entries(patch.text ?? {})) if (v === "") delete text[k];
+	const colors = { ...current?.colors };
+	for (const [from, to] of Object.entries(patch.colors ?? {})) {
+		const key = from.toLowerCase();
+		if (to.toLowerCase() === key) delete colors[key];
+		else colors[key] = to.toLowerCase();
+	}
+	const loop = patch.loop ?? current?.loop;
+	const next: MotionSettings = {
+		...(loop ? { loop: true } : {}),
+		...(Object.keys(text).length ? { text } : {}),
+		...(Object.keys(colors).length ? { colors } : {}),
+	};
+	return Object.keys(next).length ? next : undefined;
 }
 
 /** Adds every clip that shares a group with one of `ids`. */
@@ -1312,6 +1345,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				key,
 				effects,
 				frame,
+				motion,
 				wordStyle,
 				words,
 				shape,
@@ -1360,6 +1394,9 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 								return next.radius || next.shadow ? next : undefined;
 							})(),
 						}),
+				...(motion === undefined || current.type !== "media"
+					? {}
+					: { motion: mergeMotion(current.motion, motion) }),
 			};
 			const merged =
 				current.type === "media"
@@ -2286,6 +2323,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				if (c.type !== "media") return edge === "end" ? Number.POSITIVE_INFINITY : 0;
 				const a = asset(data, c.assetId);
 				if (a.kind === "image") return edge === "end" ? Number.POSITIVE_INFINITY : 0;
+				if (a.kind === "lottie" && edge === "end") return Number.POSITIVE_INFINITY;
 				return edge === "end"
 					? c.startMs + (a.durationMs - c.inMs) / c.speed
 					: c.startMs - c.inMs / c.speed;

@@ -21,7 +21,7 @@ import {
 	recordCursor,
 	studioDir,
 } from "./core/cursor";
-import type { TextRender } from "./core/exporter";
+import type { Rasteriser } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
 import { ffmpeg } from "./core/media";
 import { reviewEdit } from "./core/notes";
@@ -53,7 +53,6 @@ import type {
 	ProjectSummary,
 	RecentProject,
 	RecorderStatus,
-	TextClip,
 } from "./core/types";
 
 /** Calls that only read, so they never wait for a transaction. */
@@ -131,11 +130,8 @@ export interface CaptureResult {
 export interface ControllerHooks {
 	sendCommand: (command: EditorCommand) => boolean;
 	focusWindow: () => void;
-	/** Rasterise text clips to full-canvas PNGs (editor window). */
-	renderText: (
-		clips: TextClip[],
-		canvas?: { width: number; height: number },
-	) => Promise<Record<string, TextRender>>;
+	/** Rasterise text clips and motion graphics to PNGs (editor window). */
+	renderText: Rasteriser;
 	/** PNG of the preview at a moment (editor window). */
 	captureFrame: (atMs: number) => Promise<string>;
 	/** The generative runtime built from app settings, keys and local models. */
@@ -1764,6 +1760,22 @@ export class Controller extends EventEmitter {
 					? { fileBytes: a.size }
 					: undefined,
 			transcribed: !!a.transcript,
+			...(a.motion
+				? {
+						motion: {
+							fps: Math.round(a.motion.fps * 100) / 100,
+							texts: a.motion.texts.map((t) => ({
+								id: t.id,
+								text: t.text,
+								...(t.glyphs ? { onlyLettersInFile: true } : {}),
+							})),
+							colors: a.motion.colors,
+							markers: a.motion.markers,
+							fonts: a.motion.fonts,
+							...(a.motion.slots ? { slots: a.motion.slots } : {}),
+						},
+					}
+				: {}),
 		};
 	}
 

@@ -2,6 +2,7 @@ import { ArrowLeft, ClipboardText, Copy } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Asset, MediaClip, ProjectSnapshot } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
+import { motionPoster } from "../../lib/motion";
 import { cssFilter, playback } from "../../lib/playback";
 import { app, createStore, useApp } from "../../lib/state";
 import { cn } from "../../lib/utils";
@@ -197,6 +198,16 @@ function Shot({
 			alive = false;
 		};
 	}, [asset, middleMs]);
+	useEffect(() => {
+		if (asset?.kind !== "lottie" || !asset.motion || !url) return;
+		let alive = true;
+		void motionPoster(url, asset.motion)
+			.then((poster) => alive && setThumb(poster))
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	}, [asset, url]);
 	const graded = isGraded(clip);
 	return (
 		<button

@@ -8,10 +8,11 @@ import {
 	TextAlignRight,
 	Trash,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { valueAt } from "../../../electron/core/anim";
+import type { MotionSettings } from "../../../electron/core/motion";
 import { TRANSITIONS } from "../../../electron/core/transitions";
-import type { MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
+import type { Asset, MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
 import { isMac, keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
@@ -358,6 +359,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 				</p>
 			</Section>
 			<Timing clip={clip} />
+			{asset?.kind === "lottie" && <MotionSection clip={clip} asset={asset} />}
 			{adjustment && (
 				<Section>
 					<p className="text-[12px] leading-relaxed text-muted">
@@ -1769,6 +1771,118 @@ function EffectsSection({
 }
 
 /** Rounded corners and a drop shadow, as in the studio look of screen recordings. */
+/**
+ * A motion graphic's editable parts, like a template's Essential Graphics:
+ * its text layers, its colours (each swapped for another) and looping.
+ */
+function MotionSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
+	const info = asset.motion;
+	if (!info) return null;
+	const m = clip.motion ?? {};
+	const set = (motion: MotionSettings | null) =>
+		void run("update_clip", { id: clip.id, patch: { motion } });
+	const glyphs = info.texts.some((t) => t.glyphs);
+	return (
+		<Section
+			title="Motion graphic"
+			action={
+				clip.motion ? (
+					<Button size="sm" variant="ghost" className="h-6 text-[11px]" onPress={() => set(null)}>
+						Reset
+					</Button>
+				) : null
+			}
+		>
+			{info.texts.map((t) => (
+				<Field key={t.id} label={t.id}>
+					<TextInput
+						value={m.text?.[t.id] ?? t.text}
+						multiline={t.text.includes("\n") || (m.text?.[t.id] ?? "").includes("\n")}
+						rows={2}
+						// Back to the file's own text removes the change.
+						onCommit={(v) => set({ text: { [t.id]: v === t.text ? "" : v } })}
+					/>
+				</Field>
+			))}
+			{glyphs && (
+				<p className="text-[11px] text-muted">
+					This file draws its text from letter shapes stored in it, so only those letters show.
+				</p>
+			)}
+			{info.colors.length > 0 && (
+				<Field label="Colours">
+					<div className="flex flex-wrap gap-1.5">
+						{info.colors.map((from) => (
+							<Swatch
+								key={from}
+								from={from}
+								value={m.colors?.[from] ?? from}
+								onCommit={(to) => set({ colors: { [from]: to } })}
+							/>
+						))}
+					</div>
+				</Field>
+			)}
+			<Toggle label="Loop" checked={!!m.loop} onChange={(loop) => set({ loop })} />
+			<p className="text-[11px] text-muted">
+				{m.loop
+					? "Repeats for as long as the clip lasts."
+					: info.markers.some((k) => /^(out|outro|end|exit)/i.test(k.name))
+						? "A longer clip holds before the outro, which plays as the clip ends."
+						: "Holds its last frame when the clip runs past the animation."}
+			</p>
+		</Section>
+	);
+}
+
+/**
+ * One colour of a motion graphic: shows what it is now, and picks a replacement.
+ * Commits when the picker closes (not while dragging), so each change is one undo step.
+ */
+function Swatch({
+	from,
+	value,
+	onCommit,
+}: {
+	from: string;
+	value: string;
+	onCommit: (to: string) => void;
+}) {
+	const ref = useRef<HTMLInputElement>(null);
+	useEffect(() => {
+		const input = ref.current;
+		if (!input) return;
+		const change = () => input.value.toLowerCase() !== value && onCommit(input.value.toLowerCase());
+		input.addEventListener("change", change);
+		return () => input.removeEventListener("change", change);
+	}, [value, onCommit]);
+	const changed = value !== from;
+	return (
+		<label
+			title={changed ? `${from} → ${value}` : from}
+			className={cn(
+				"relative size-7 cursor-pointer overflow-hidden rounded-md border",
+				changed ? "border-accent" : "border-border",
+			)}
+			style={{ background: value }}
+		>
+			<input
+				ref={ref}
+				type="color"
+				defaultValue={value}
+				key={value}
+				className="absolute inset-0 cursor-pointer opacity-0"
+			/>
+			{changed && (
+				<span
+					className="absolute right-0 bottom-0 size-2.5 rounded-tl-sm border-t border-l border-border"
+					style={{ background: from }}
+				/>
+			)}
+		</label>
+	);
+}
+
 function FrameSection({ clip }: { clip: MediaClip }) {
 	const f = { radius: 0, shadow: 0, ...clip.frame };
 	const set = (frame: Record<string, number> | null) =>
