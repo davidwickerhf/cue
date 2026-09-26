@@ -223,6 +223,15 @@ export class Controller extends EventEmitter {
 				await this.afterOpen();
 				return { path: file };
 			}
+			case "relink_media": {
+				const { assetId, file } = parseInput("relink_media", params);
+				return this.store.relink(assetId, file, actor);
+			}
+			case "find_offline_media":
+				return this.store.findOffline(
+					parseInput("find_offline_media", params).folders ?? [],
+					actor,
+				);
 			case "import_timeline": {
 				const { file } = parseInput("import_timeline", params);
 				return this.job(`Importing ${path.basename(file)}`, () =>
@@ -804,6 +813,13 @@ export class Controller extends EventEmitter {
 					clips: data.clips.filter((c) => c.trackId === t.id).length,
 				})),
 				media: data.assets.length,
+				offlineMedia: this.store
+					.offline()
+					.map((id) => ({
+						id,
+						name: data.assets.find((a) => a.id === id)?.name,
+						path: data.assets.find((a) => a.id === id)?.path,
+					})),
 				clips: data.clips.length,
 				markers: data.markers,
 				lines: snapshot.lines.map((l) => ({

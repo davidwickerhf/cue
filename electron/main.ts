@@ -15,6 +15,13 @@ import {
 	systemPreferences,
 } from "electron";
 import { contract, type MethodName } from "./control/contract";
+import {
+	type ChatEvent,
+	detectHarnesses,
+	type HarnessId,
+	type HarnessInfo,
+	runHarness,
+} from "./agents/harness";
 import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
@@ -195,11 +202,29 @@ async function saveAppSettings(patch: Partial<AppSettings>) {
 	win?.webContents.send("cue:appSettings", appSettings);
 }
 
+let inventoryScan: Promise<LocalInventory> | null = null;
+
+function scanInventory(): Promise<LocalInventory> {
+	inventoryScan ??= detectLocal(dataDir)
+		.then((found) => {
+			inventory = found;
+			inventoryAt = Date.now();
+			return found;
+		})
+		.finally(() => {
+			inventoryScan = null;
+		});
+	return inventoryScan;
+}
+
+/**
+ * Local models and voices. Scanning takes most of a second (it asks macOS for
+ * its voices and probes Ollama and LM Studio), so the last result is returned
+ * straight away and refreshed in the background.
+ */
 async function localInventory(force = false): Promise<LocalInventory> {
-	if (!inventory || force || Date.now() - inventoryAt > 15000) {
-		inventory = await detectLocal(dataDir);
-		inventoryAt = Date.now();
-	}
+	if (force || !inventory) return scanInventory();
+	if (Date.now() - inventoryAt > 15000) void scanInventory();
 	return inventory;
 }
 
@@ -243,6 +268,46 @@ controller.on("state", () => {
 	}, 16);
 });
 store.on("error", (error: Error) => store.log("system", `Autosave failed: ${error.message}`));
+
+// ---------------------------------------------------------------------------
+// In-app agent chat through the user's own CLIs (Claude Code, Codex, Gemini)
+// ---------------------------------------------------------------------------
+
+const chats = new Map<string, { stop: () => void }>();
+let harnessCache: { at: number; list: Promise<HarnessInfo[]> } | null = null;
+
+function listHarnesses(force = false) {
+	if (!harnessCache || force || Date.now() - harnessCache.at > 30000)
+		harnessCache = { at: Date.now(), list: detectHarnesses() };
+	return harnessCache.list;
+}
+
+async function sendChat(
+	chatId: string,
+	input: { harness: HarnessId; prompt: string; sessionId?: string; model?: string },
+) {
+	if (!appSettings.agent.enabled)
+		throw new Error("Agent access is turned off in Settings → Agent.");
+	chats.get(chatId)?.stop();
+	const emit = (event: ChatEvent) => {
+		if (event.kind === "done") chats.delete(chatId);
+		if (win && !win.isDestroyed()) win.webContents.send("cue:chatEvent", chatId, event);
+	};
+	const handle = await runHarness(
+		{
+			...input,
+			// Cue's own runtime runs the MCP bridge, so no separate Node install is needed.
+			bridge: {
+				command: process.execPath,
+				args: [mcpScriptPath()],
+				env: { ELECTRON_RUN_AS_NODE: "1" },
+			},
+			workDir: path.join(dataDir, "agent", input.harness),
+		},
+		emit,
+	);
+	chats.set(chatId, handle);
+}
 
 function mcpScriptPath(): string {
 	return app.isPackaged
@@ -326,7 +391,7 @@ function createWindow() {
 		title: "Cue",
 		titleBarStyle: "hiddenInset",
 		trafficLightPosition: { x: 18, y: 15 },
-		backgroundColor: "#f4f4f5",
+		backgroundColor: "#0f0f11",
 		show: false,
 		webPreferences: {
 			preload: path.join(__dirname, "preload.cjs"),
@@ -594,6 +659,9 @@ function registerIpc() {
 		importDialog(place),
 	);
 	ipcMain.handle("cue:listProjects", () => controller.projects());
+	ipcMain.handle("cue:harnesses", (_event, force?: boolean) => listHarnesses(force));
+	ipcMain.handle("cue:chatSend", (_event, chatId: string, input) => sendChat(chatId, input));
+	ipcMain.handle("cue:chatStop", (_event, chatId: string) => chats.get(chatId)?.stop());
 	ipcMain.handle(
 		"cue:createProject",
 		async (
@@ -740,6 +808,16 @@ function registerIpc() {
 	);
 }
 
+// Development aid: log main-process stalls (they make menus and dialogs feel slow).
+if (process.env.CUE_LAG) {
+	let last = performance.now();
+	setInterval(() => {
+		const now = performance.now();
+		if (now - last > 80) console.log(`[lag] main blocked ${Math.round(now - last - 50)} ms`);
+		last = now;
+	}, 50);
+}
+
 /** Files opened from Finder before the app was ready. */
 let pendingOpen: string | null = null;
 
@@ -777,10 +855,13 @@ else {
 			() => appSettings.agent.enabled,
 		);
 		app.on("before-quit", () => {
+			for (const chat of chats.values()) chat.stop();
 			void control.close();
 			void store.flush();
 		});
 		createWindow();
+		// Warm up the model scan so Settings and the Generate panel open instantly.
+		void scanInventory().catch(() => {});
 		const initial =
 			pendingOpen ?? process.argv.find((arg) => isProject(arg)) ?? process.env.CUE_OPEN;
 		pendingOpen = null;

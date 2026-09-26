@@ -60,6 +60,16 @@ export const contract = {
 			"Save a copy of the project (.cueproj) at a new path and switch to it. Media stays where it is.",
 		input: { path: z.string() },
 	},
+	relink_media: {
+		description:
+			"Point offline media (moved, renamed or on a disconnected drive; see offlineMedia in get_state) at its new file. Other offline media in the same folder is relinked too.",
+		input: { assetId: z.string(), file: z.string() },
+	},
+	find_offline_media: {
+		description:
+			"Search near the project (and optionally in extra folders) for offline media that moved, and relink what is found.",
+		input: { folders: z.array(z.string()).optional() },
+	},
 	import_timeline: {
 		description:
 			"Import an OpenTimelineIO (.otio) timeline from DaVinci Resolve, Premiere, Kdenlive and others as new tracks. Media is linked in place.",

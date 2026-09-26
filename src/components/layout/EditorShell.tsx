@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useEditorCommands } from "../../hooks/useEditorCommands";
 import { useShortcuts } from "../../hooks/useShortcuts";
 import { editor } from "../../lib/state";
+import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
 import { EditorHeader } from "./EditorHeader";
 import { EditorSidebar } from "./EditorSidebar";
@@ -19,6 +20,7 @@ export function EditorShell() {
 	return (
 		<div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
 			<EditorHeader />
+			<OfflineBanner />
 			<div className="flex min-h-0 flex-1">
 				<EditorSidebar />
 				<PreviewPanel />
@@ -45,6 +47,7 @@ export function EditorShell() {
 			<div style={{ height: timelineHeight }} className="shrink-0">
 				<Timeline />
 			</div>
+			<RelinkDialog />
 		</div>
 	);
 }

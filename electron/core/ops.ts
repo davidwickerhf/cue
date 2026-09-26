@@ -246,7 +246,9 @@ type ParsedOp = z.output<typeof opSchema>;
 export type InternalOp =
 	| { type: "addAsset"; asset: Asset; placeOn?: { trackId: string; startMs: number } }
 	| { type: "addTake"; asset: Asset }
-	| { type: "setTranscript"; assetId: string; transcript: Asset["transcript"] };
+	| { type: "setTranscript"; assetId: string; transcript: Asset["transcript"] }
+	/** New file locations for media that moved (path as stored in the project). */
+	| { type: "relinkAssets"; paths: Record<string, { path: string; relPath: string }> };
 
 export interface OpResult {
 	data: ProjectData;
@@ -480,6 +482,16 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			created = [c.id];
 		}
 		return { data: next, summary: `Added ${rawOp.asset.kind} "${rawOp.asset.name}"`, created };
+	}
+	if (rawOp.type === "relinkAssets") {
+		const count = Object.keys(rawOp.paths).length;
+		return {
+			data: {
+				...data,
+				assets: data.assets.map((a) => (rawOp.paths[a.id] ? { ...a, ...rawOp.paths[a.id] } : a)),
+			},
+			summary: `Relinked ${count} media file${count === 1 ? "" : "s"}`,
+		};
 	}
 	if (rawOp.type === "setTranscript") {
 		asset(data, rawOp.assetId);

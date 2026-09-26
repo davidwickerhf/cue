@@ -2,6 +2,7 @@ import { Button } from "@heroui/react";
 import {
 	FilmSlate,
 	Image as ImageIcon,
+	LinkBreak,
 	MusicNotes,
 	Plus,
 	Sparkle,
@@ -12,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import type { Asset, ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
+import { locate } from "../RelinkMedia";
 import { playback } from "../../lib/playback";
 import { useProject } from "../../lib/state";
 import { cn, formatTime } from "../../lib/utils";
@@ -81,6 +83,7 @@ export function MediaPanel() {
 function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot }) {
 	const url = project.assetUrls[asset.id];
 	const used = project.data.clips.some((c) => c.type === "media" && c.assetId === asset.id);
+	const offline = project.offline.includes(asset.id);
 	const [thumb, setThumb] = useState<string | null>(asset.kind === "image" ? url : null);
 	useEffect(() => {
 		if (asset.kind !== "video") return;
@@ -132,6 +135,16 @@ function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot 
 				<span className="absolute bottom-1 left-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
 					{asset.kind === "image" ? "Image" : formatTime(asset.durationMs, false)}
 				</span>
+				{offline && (
+					<button
+						type="button"
+						onClick={() => void locate(asset)}
+						className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-background/80 text-[11px] font-medium text-warning"
+						title={`Offline. Was at ${asset.path}`}
+					>
+						<LinkBreak className="size-4" /> Offline · Locate…
+					</button>
+				)}
 				{asset.origin === "generated" || asset.origin === "tts" ? (
 					<span className="absolute top-1 left-1 flex items-center gap-1 rounded-md bg-violet-600/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
 						<Sparkle weight="fill" className="size-2.5" /> AI

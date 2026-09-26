@@ -673,12 +673,7 @@ export function Timeline() {
 					<AddTrackRow />
 
 					{/* Snap guide and playhead */}
-					{snapLine !== null && (
-						<div
-							className="pointer-events-none absolute top-0 bottom-0 z-20 w-px bg-warning"
-							style={{ left: HEADER_W + toX(snapLine) }}
-						/>
-					)}
+					{snapLine !== null && <SnapGuide x={HEADER_W + toX(snapLine)} scroller={scroller} />}
 					<Playhead pxPerMs={pxPerMs} scroller={scroller} />
 				</div>
 			</div>
@@ -990,13 +985,12 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 					)}
 				</IconButton>
 				<Dropdown>
-					<button
-						type="button"
+					<Dropdown.Trigger
 						aria-label="Track options"
 						className="flex size-7 opacity-0 group-hover:opacity-100 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
 					>
 						<CaretDown className="size-3" />
-					</button>
+					</Dropdown.Trigger>
 					<Dropdown.Popover placement="bottom start">
 						<Dropdown.Menu
 							aria-label="Track options"
@@ -1064,12 +1058,9 @@ function AddTrackRow() {
 				style={{ width: HEADER_W }}
 			>
 				<Dropdown>
-					<button
-						type="button"
-						className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-muted hover:bg-default hover:text-foreground"
-					>
+					<Dropdown.Trigger className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-muted hover:bg-default hover:text-foreground">
 						<Plus className="size-3.5" /> Add track
-					</button>
+					</Dropdown.Trigger>
 					<Dropdown.Popover placement="top start">
 						<Dropdown.Menu
 							aria-label="Add track"
@@ -1172,6 +1163,37 @@ function Ruler({
 	);
 }
 
+/** The timeline's horizontal scroll position, updated as it scrolls. */
+function useScrollLeft(scroller: React.RefObject<HTMLDivElement | null>) {
+	const [left, setLeft] = useState(0);
+	useEffect(() => {
+		const el = scroller.current;
+		if (!el) return;
+		const update = () => setLeft(el.scrollLeft);
+		update();
+		el.addEventListener("scroll", update, { passive: true });
+		return () => el.removeEventListener("scroll", update);
+	}, [scroller]);
+	return left;
+}
+
+function SnapGuide({
+	x,
+	scroller,
+}: {
+	x: number;
+	scroller: React.RefObject<HTMLDivElement | null>;
+}) {
+	const scrollLeft = useScrollLeft(scroller);
+	if (x < scrollLeft + HEADER_W) return null;
+	return (
+		<div
+			className="pointer-events-none absolute top-0 bottom-0 z-20 w-px bg-warning"
+			style={{ left: x }}
+		/>
+	);
+}
+
 function Playhead({
 	pxPerMs,
 	scroller,
@@ -1181,6 +1203,7 @@ function Playhead({
 }) {
 	const ms = playback.clock.use((s) => s.currentMs);
 	const playing = playback.clock.use((s) => s.playing);
+	const scrollLeft = useScrollLeft(scroller);
 	const x = HEADER_W + ms * pxPerMs;
 	useEffect(() => {
 		const el = scroller.current;
@@ -1189,6 +1212,8 @@ function Playhead({
 		const visibleEnd = el.scrollLeft + el.clientWidth;
 		if (x > visibleEnd - 60 || x < visibleStart) el.scrollLeft = x - HEADER_W - 80;
 	}, [x, playing, scroller]);
+	// Scrolled behind the track headers: out of view, like the clips there.
+	if (x < scrollLeft + HEADER_W) return null;
 	return (
 		<div
 			className="pointer-events-none absolute top-0 bottom-0 z-30 w-px bg-danger"

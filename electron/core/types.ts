@@ -14,6 +14,10 @@ export interface Asset {
 	name: string;
 	/** Relative to the project directory, or absolute when outside it. */
 	path: string;
+	/** Always relative to the project (may start with ../), used to find media that moved with the project. */
+	relPath?: string;
+	/** Bytes, to tell the right file from others with the same name when relinking. */
+	size?: number;
 	/** 0 for images. */
 	durationMs: number;
 	width: number;
@@ -330,6 +334,8 @@ export interface ProjectSnapshot {
 	canUndo: boolean;
 	canRedo: boolean;
 	dirty: boolean;
+	/** Media whose file can't be found (moved, renamed or on a disconnected drive). */
+	offline: string[];
 }
 
 export interface AgentStatus {

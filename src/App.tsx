@@ -4,6 +4,7 @@ import { NewProjectDialog } from "./components/NewProjectDialog";
 import { SettingsView } from "./components/settings/SettingsView";
 import { Toaster } from "./components/ui/Toaster";
 import { Welcome } from "./components/Welcome";
+import { startChatSync } from "./lib/chat";
 import { playback } from "./lib/playback";
 import { appSettings, startSettingsSync, startSync, useApp, useProject } from "./lib/state";
 
@@ -15,6 +16,7 @@ export function App() {
 		};
 	}, []);
 	useEffect(() => startSettingsSync(), []);
+	useEffect(() => startChatSync(), []);
 	const project = useProject();
 	const loaded = useApp(() => true);
 	const theme = appSettings.use((s) => s.settings?.theme ?? "dark");

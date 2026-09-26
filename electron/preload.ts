@@ -47,6 +47,31 @@ const api = {
 	importDialog: (place?: { trackId: string; startMs: number }) =>
 		ipcRenderer.invoke("cue:importDialog", place),
 	newProject: () => ipcRenderer.invoke("cue:newProject"),
+	harnesses: (force = false) =>
+		ipcRenderer.invoke("cue:harnesses", force) as Promise<import("./agents/harness").HarnessInfo[]>,
+	chatSend: (
+		chatId: string,
+		input: {
+			harness: import("./agents/harness").HarnessId;
+			prompt: string;
+			sessionId?: string;
+			model?: string;
+		},
+	) => ipcRenderer.invoke("cue:chatSend", chatId, input) as Promise<void>,
+	chatStop: (chatId: string) => ipcRenderer.invoke("cue:chatStop", chatId) as Promise<void>,
+	onChatEvent: (
+		listener: (chatId: string, event: import("./agents/harness").ChatEvent) => void,
+	) => {
+		const handler = (
+			_event: IpcRendererEvent,
+			chatId: string,
+			event: import("./agents/harness").ChatEvent,
+		) => listener(chatId, event);
+		ipcRenderer.on("cue:chatEvent", handler);
+		return () => {
+			ipcRenderer.removeListener("cue:chatEvent", handler);
+		};
+	},
 	listProjects: () => ipcRenderer.invoke("cue:listProjects") as Promise<ProjectSummary[]>,
 	createProject: (options: {
 		name: string;

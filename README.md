@@ -60,6 +60,12 @@ Try tools from the terminal with `node scripts/mcp-call.mjs list`.
 
 A project is a `.cueproj` file: plain JSON, so it diffs and versions well, and double-clicking one opens Cue. Older `.cue.json` projects still open. Takes go in `takes/`, generated media in `generated/`, and caches (waveforms, thumbnails, proxies, the overview poster, rendered text) in `.cue-cache/` next to it. Media paths are stored relative to the project when possible. New projects get their own folder in `~/Movies/Cue` (changeable in Settings), and the projects overview lists everything there plus recent projects.
 
+If media moves, Cue looks for it when the project opens: first where it would be if the project folder moved together with it, then for a file with the same name and size near the project. Anything still missing shows as offline with a Relink option; locating one file also finds the others in the same folder.
+
+## Agent chat
+
+The Agent panel chats with Claude Code, Codex or Gemini CLI, whichever is installed, signed in with your own account. Each run gets only Cue's tools (no shell, files or web), knows the playhead and selection, and keeps its session between messages. Outside agents can still connect over MCP (Agent → Connect & activity).
+
 ## Working with other editors
 
 File → Export Timeline (or the Export menu, or the `export` agent tool) writes the edit for another editor, linking the original media:

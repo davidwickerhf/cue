@@ -251,3 +251,49 @@ describe("project files and library", () => {
 		expect(summary).toMatchObject({ exists: true, durationMs: 2000, clipCount: 1 });
 	}, 30000);
 });
+
+describe("relinking moved media", () => {
+	it("finds media that moved and relinks siblings when one file is located", async () => {
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "cue-relink-"));
+		const media = path.join(root, "footage");
+		await fs.mkdir(media);
+		const make = (name: string, freq: number) =>
+			ffmpeg(["-f", "lavfi", "-i", `sine=frequency=${freq}:duration=1`, path.join(media, name)]);
+		await make("a.wav", 440);
+		await make("b.wav", 660);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(root, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: path.join(root, "proj") });
+		await store.importMedia([path.join(media, "a.wav"), path.join(media, "b.wav")], "user");
+		await store.flush();
+		const file = store.filePath as string;
+
+		// Move the project together with its media: found through the relative path.
+		const moved = path.join(root, "moved");
+		await fs.mkdir(moved);
+		await fs.rename(path.join(root, "proj"), path.join(moved, "proj"));
+		await fs.rename(media, path.join(moved, "footage"));
+		await store.close();
+		await store.open(path.join(moved, "proj", path.basename(file)));
+		expect(store.offline()).toEqual([]);
+		await store.flush();
+
+		// Move the media somewhere unrelated: offline until located.
+		const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), "cue-elsewhere-"));
+		await fs.rename(path.join(moved, "footage", "a.wav"), path.join(elsewhere, "a.wav"));
+		await fs.rename(path.join(moved, "footage", "b.wav"), path.join(elsewhere, "b.wav"));
+		await store.close();
+		await store.open(path.join(moved, "proj", path.basename(file)));
+		expect(store.offline()).toHaveLength(2);
+		const [first] = store.current.assets;
+		const result = await store.relink(first.id, path.join(elsewhere, first.name), "user");
+		expect(result).toMatchObject({ stillOffline: 0 });
+		expect(result.relinked.sort()).toEqual(["a.wav", "b.wav"]);
+		// One undo step puts both back.
+		store.undo("user");
+		expect(store.offline()).toHaveLength(2);
+	}, 30000);
+});

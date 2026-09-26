@@ -34,6 +34,7 @@ import {
 	toOtio,
 } from "./interchange";
 import { makePoster } from "./library";
+import { findMoved, isOffline } from "./relink";
 import { applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
@@ -154,6 +155,108 @@ export class ProjectStore extends EventEmitter {
 			canUndo: this.past.length > 0,
 			canRedo: this.future.length > 0,
 			dirty: this.dirty,
+			offline: this.offline(),
+		};
+	}
+
+	private offlineCache: { revision: number; ids: string[] } | null = null;
+
+	/** Media whose file is missing (checked once per change). */
+	offline(): string[] {
+		if (!this.data || !this.file) return [];
+		if (this.offlineCache?.revision !== this.revision) {
+			const dir = path.dirname(this.file);
+			this.offlineCache = {
+				revision: this.revision,
+				ids: this.data.assets.filter((a) => isOffline(dir, a)).map((a) => a.id),
+			};
+		}
+		return this.offlineCache.ids;
+	}
+
+	private stored(file: string) {
+		return {
+			path: relativeToProject(this.projectDir, file),
+			relPath: path.relative(this.projectDir, file),
+		};
+	}
+
+	/** Looks for moved media when a project opens; fixes what it can without an undo step. */
+	private async autoRelink(): Promise<void> {
+		if (!this.data || this.offline().length === 0) return;
+		const found = await findMoved(this.projectDir, this.data.assets);
+		const ids = Object.keys(found);
+		if (ids.length === 0 || !this.data) return;
+		this.data = applyOp(this.data, {
+			type: "relinkAssets",
+			paths: Object.fromEntries(ids.map((id) => [id, this.stored(found[id])])),
+		}).data;
+		this.touch();
+		this.log(
+			"system",
+			`Found ${ids.length} moved media file${ids.length === 1 ? "" : "s"} and relinked ${ids.length === 1 ? "it" : "them"}`,
+		);
+	}
+
+	/** Searches for offline media (near the project and in `folders`) and relinks what it finds. */
+	async findOffline(
+		folders: string[],
+		actor: Actor,
+	): Promise<{ relinked: string[]; stillOffline: number }> {
+		const found = await findMoved(
+			this.projectDir,
+			this.current.assets,
+			folders.map((f) => path.resolve(f)),
+		);
+		const ids = Object.keys(found);
+		if (ids.length)
+			this.apply(
+				{
+					type: "relinkAssets",
+					paths: Object.fromEntries(ids.map((id) => [id, this.stored(found[id])])),
+				},
+				actor,
+			);
+		return {
+			relinked: ids.map((id) => this.current.assets.find((a) => a.id === id)?.name ?? id),
+			stillOffline: this.offline().length,
+		};
+	}
+
+	/**
+	 * Points a media item at a new file, then looks in that folder for any
+	 * other offline media, like "Locate" in Premiere.
+	 */
+	async relink(
+		assetId: string,
+		file: string,
+		actor: Actor,
+	): Promise<{ relinked: string[]; stillOffline: number }> {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset) throw new Error(`No media "${assetId}".`);
+		const resolved = path.resolve(file);
+		if (!existsSync(resolved)) throw new Error(`${resolved} does not exist.`);
+		if (kindOf(resolved) !== asset.kind)
+			throw new Error(`${path.basename(resolved)} is not a ${asset.kind} file.`);
+		const others = await findMoved(
+			this.projectDir,
+			this.current.assets.filter((a) => a.id !== assetId),
+			[path.dirname(resolved)],
+		);
+		const paths = { [assetId]: resolved, ...others };
+		this.apply(
+			{
+				type: "relinkAssets",
+				paths: Object.fromEntries(Object.entries(paths).map(([id, f]) => [id, this.stored(f)])),
+			},
+			actor,
+		);
+		this.audioProxies.clear();
+		return {
+			relinked: Object.keys(paths).map(
+				(id) => this.current.assets.find((a) => a.id === id)?.name ?? id,
+			),
+			stillOffline: this.offline().length,
 		};
 	}
 
@@ -194,6 +297,7 @@ export class ProjectStore extends EventEmitter {
 		await this.remember();
 		this.log(actor, `Opened ${path.basename(target)}`);
 		this.emit("change");
+		await this.autoRelink();
 		this.autoBuildProxies();
 		this.refreshPoster();
 	}
@@ -329,6 +433,7 @@ export class ProjectStore extends EventEmitter {
 			assets: this.current.assets.map((a) => ({
 				...a,
 				path: relativeToProject(to, resolveInProject(from, a.path)),
+				relPath: path.relative(to, resolveInProject(from, a.path)),
 			})),
 		};
 		await fs.mkdir(to, { recursive: true });
@@ -539,12 +644,14 @@ export class ProjectStore extends EventEmitter {
 			const resolved = path.resolve(file);
 			const kind = kindOf(resolved);
 			if (!kind) throw new Error(`Unsupported file type: ${path.basename(resolved)}`);
-			const info = await probe(resolved);
+			const [info, stat] = await Promise.all([probe(resolved), fs.stat(resolved)]);
 			const asset: Asset = {
 				id: newId("a"),
 				kind,
 				name: path.basename(resolved),
 				path: relativeToProject(this.projectDir, resolved),
+				relPath: path.relative(this.projectDir, resolved),
+				size: stat.size,
 				durationMs: kind === "image" ? 0 : info.durationMs,
 				width: info.width,
 				height: info.height,

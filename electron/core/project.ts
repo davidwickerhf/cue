@@ -192,6 +192,8 @@ const assetSchema = z.object({
 	kind: z.enum(["video", "audio", "image"]),
 	name: z.string(),
 	path: z.string(),
+	relPath: z.string().optional(),
+	size: z.number().optional(),
 	durationMs: ms,
 	width: z.number().default(0),
 	height: z.number().default(0),
