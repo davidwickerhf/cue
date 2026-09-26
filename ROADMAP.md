@@ -58,7 +58,11 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [x] Media bins, tags and media info
 - [x] Scene detection (split at shot changes, from the clip menu or split_at_scenes)
 - [x] GIF, MP3 and AAC export (social formats: see one-click variants)
-- [ ] Auto-update, notarisation, Windows and Linux builds
+- [x] Auto-update: electron-updater from GitHub Releases, checked at launch and every 4 hours, downloaded in the background, "Update ready — restart to install" in the header, Check for Updates… in the menu, a Settings toggle. Skips (and logs why) in development, with `CUE_USER_DATA`, for the Linux .deb, and on Macs whose copy isn't signed with a Developer ID
+- [x] Notarisation setup: hardened runtime, `build/entitlements.mac.plist`, electron-builder notarisation from env credentials, `npm run release:mac`, docs/RELEASING.md. Mac zip + dmg for arm64 and x64 with latest-mac.yml
+- [ ] First signed and notarised release: needs the maintainer's Apple Developer Program membership, a Developer ID Application certificate, notarisation credentials and the repository secrets (docs/RELEASING.md). Until then Macs can't auto-update
+- [x] Windows and Linux builds: window chrome per platform, Ctrl shortcut labels, macOS-only features hidden or explained, ffmpeg per target, NSIS (x64), AppImage and deb (x64), release and CI workflows
+- [ ] Windows and Linux tested on real machines, and the release workflow's first run (the NSIS installer and AppImage can't be built on an Apple Silicon Mac without Rosetta; the test suite hasn't run on Windows)
 
 ## 5. UX and UI
 

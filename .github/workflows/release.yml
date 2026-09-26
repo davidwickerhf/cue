@@ -1,0 +1,144 @@
+# Builds Cue for macOS, Windows and Linux. On a version tag (v0.2.0, matching
+# package.json) every job uploads to one draft GitHub release, and the last job
+# publishes it once all platforms are there. Run by hand (workflow_dispatch) it
+# only builds and keeps the files as workflow artifacts.
+#
+# Repository secrets (all optional; see docs/RELEASING.md):
+#   MAC_CERTIFICATE_P12        base64 of the "Developer ID Application" .p12
+#   MAC_CERTIFICATE_PASSWORD   its password
+#   APPLE_API_KEY_P8           contents of the App Store Connect API key (.p8)
+#   APPLE_API_KEY_ID, APPLE_API_ISSUER
+#     or APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+#   WIN_CERTIFICATE_P12, WIN_CERTIFICATE_PASSWORD   Windows code signing
+# Without the macOS ones the Mac build is unsigned and not notarised (a warning
+# says so), and installed copies can't update themselves.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      # Each job installs the ffmpeg for its own OS (ffmpeg-static downloads the
+      # host's binary); the Intel Mac build swaps in the x64 one while packing.
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npx vitest run
+        # The suite has not been run on Windows yet; don't block the build on it.
+        continue-on-error: ${{ matrix.platform == 'win' }}
+      - run: npm run build
+
+      - name: Build (macOS)
+        if: matrix.platform == 'mac'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          npm run build:native
+          if [ -z "$CSC_LINK" ]; then
+            echo "::warning::No MAC_CERTIFICATE_P12 secret: the Mac build is unsigned and not notarised."
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+            export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
+          fi
+          notarize=false
+          if [ -n "$CSC_LINK" ] && { { [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; } || { [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; }; }; then
+            notarize=true
+          else
+            echo "::warning::No Apple notarisation credentials: the Mac build is not notarised."
+            unset APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+          npx electron-builder --mac --publish "$PUBLISH" -c.mac.notarize=$notarize
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Build (Windows)
+        if: matrix.platform == 'win'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CERTIFICATE_P12 }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERTIFICATE_PASSWORD }}
+        run: |
+          [ -n "$WIN_CSC_LINK" ] || echo "::warning::No WIN_CERTIFICATE_P12 secret: the installer is unsigned (SmartScreen warns)."
+          npx electron-builder --win --publish "$PUBLISH"
+
+      - name: Build (Linux)
+        if: matrix.platform == 'linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux --publish "$PUBLISH"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cue-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            release/*.zip
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+
+  publish:
+    name: Publish the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
