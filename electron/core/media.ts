@@ -14,7 +14,10 @@ function unpacked(binary: string): string {
 export function ffmpegPath(): string {
 	if (process.env.CUE_FFMPEG) return process.env.CUE_FFMPEG;
 	// Bundlers may hand the CommonJS export back as { default }.
-	const bin = typeof ffmpegStatic === "string" ? ffmpegStatic : (ffmpegStatic as unknown as { default?: string } | null)?.default;
+	const bin =
+		typeof ffmpegStatic === "string"
+			? ffmpegStatic
+			: (ffmpegStatic as unknown as { default?: string } | null)?.default;
 	if (!bin) throw new Error("ffmpeg-static has no binary for this platform.");
 	return unpacked(bin);
 }
@@ -22,7 +25,9 @@ export function ffmpegPath(): string {
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 export async function ffmpeg(args: string[]): Promise<string> {
-	const { stderr } = await run(ffmpegPath(), ["-hide_banner", "-y", ...args], { maxBuffer: MAX_BUFFER });
+	const { stderr } = await run(ffmpegPath(), ["-hide_banner", "-y", ...args], {
+		maxBuffer: MAX_BUFFER,
+	});
 	return stderr;
 }
 
@@ -49,7 +54,9 @@ export async function probe(file: string): Promise<ProbeResult> {
 	const video = /Stream #\S+.*Video:.*?, (\d{2,5})x(\d{2,5})/.exec(log);
 	return {
 		durationMs: duration
-			? Math.round(((Number(duration[1]) * 60 + Number(duration[2])) * 60 + Number(duration[3])) * 1000)
+			? Math.round(
+					((Number(duration[1]) * 60 + Number(duration[2])) * 60 + Number(duration[3])) * 1000,
+				)
 			: 0,
 		width: video ? Number(video[1]) : 0,
 		height: video ? Number(video[2]) : 0,
@@ -100,7 +107,9 @@ export async function analyseSpeech(file: string, silenceDb: number): Promise<Sp
 	let speechEndMs = durationMs;
 	const leading = silences.find((silence) => silence.start <= 30);
 	if (leading) speechStartMs = Math.min(leading.end, durationMs);
-	const trailing = silences.find((silence) => silence.end >= durationMs - 30 && silence.start > speechStartMs);
+	const trailing = silences.find(
+		(silence) => silence.end >= durationMs - 30 && silence.start > speechStartMs,
+	);
 	if (trailing) speechEndMs = trailing.start;
 	if (speechEndMs <= speechStartMs) {
 		speechStartMs = 0;
@@ -144,7 +153,11 @@ export async function computePeaks(file: string): Promise<number[]> {
 }
 
 /** A strip of small frames for the timeline, one every `intervalMs`. */
-export async function extractThumbnails(file: string, outDir: string, durationMs: number): Promise<{ intervalMs: number; count: number }> {
+export async function extractThumbnails(
+	file: string,
+	outDir: string,
+	durationMs: number,
+): Promise<{ intervalMs: number; count: number }> {
 	await fs.mkdir(outDir, { recursive: true });
 	const intervalMs = Math.max(1000, Math.ceil(durationMs / 160 / 500) * 500);
 	await ffmpeg([
@@ -164,7 +177,8 @@ export async function extractThumbnails(file: string, outDir: string, durationMs
 export function kindOf(file: string): "video" | "audio" | "image" | null {
 	const ext = path.extname(file).toLowerCase();
 	if ([".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"].includes(ext)) return "video";
-	if ([".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aiff", ".aif"].includes(ext)) return "audio";
+	if ([".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aiff", ".aif"].includes(ext))
+		return "audio";
 	if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext)) return "image";
 	return null;
 }
@@ -175,11 +189,20 @@ export async function detectSilences(
 	options: { thresholdDb: number; minSilenceMs: number; fromMs?: number; durationMs?: number },
 ): Promise<{ startMs: number; endMs: number }[]> {
 	const from = options.fromMs ?? 0;
-	const range = options.durationMs !== undefined ? ["-t", (options.durationMs / 1000).toFixed(3)] : [];
+	const range =
+		options.durationMs !== undefined ? ["-t", (options.durationMs / 1000).toFixed(3)] : [];
 	const log = await ffmpeg([
-		"-ss", (from / 1000).toFixed(3), ...range, "-i", file, "-vn",
-		"-af", `silencedetect=noise=${options.thresholdDb}dB:d=${(options.minSilenceMs / 1000).toFixed(3)}`,
-		"-f", "null", "-",
+		"-ss",
+		(from / 1000).toFixed(3),
+		...range,
+		"-i",
+		file,
+		"-vn",
+		"-af",
+		`silencedetect=noise=${options.thresholdDb}dB:d=${(options.minSilenceMs / 1000).toFixed(3)}`,
+		"-f",
+		"null",
+		"-",
 	]);
 	const out: { startMs: number; endMs: number }[] = [];
 	let open: number | null = null;
@@ -192,7 +215,8 @@ export async function detectSilences(
 			open = null;
 		}
 	}
-	if (open !== null && options.durationMs !== undefined) out.push({ startMs: from + open, endMs: from + options.durationMs });
+	if (open !== null && options.durationMs !== undefined)
+		out.push({ startMs: from + open, endMs: from + options.durationMs });
 	return out;
 }
 
@@ -223,7 +247,21 @@ export async function makeVideoProxy(input: string, output: string): Promise<voi
 		process.platform === "darwin"
 			? ["-c:v", "h264_videotoolbox", "-b:v", "2500k", "-realtime", "1"]
 			: ["-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-tune", "fastdecode"];
-	await ffmpeg(["-i", input, "-an", "-vf", "scale=-2:540:flags=bilinear", ...encoder, "-g", "15", "-pix_fmt", "yuv420p", "-movflags", "+faststart", tmp]);
+	await ffmpeg([
+		"-i",
+		input,
+		"-an",
+		"-vf",
+		"scale=-2:540:flags=bilinear",
+		...encoder,
+		"-g",
+		"15",
+		"-pix_fmt",
+		"yuv420p",
+		"-movflags",
+		"+faststart",
+		tmp,
+	]);
 	await fs.rename(tmp, output);
 }
 
@@ -236,6 +274,20 @@ export async function makeAudioProxy(input: string, output: string, speed: numbe
 	await fs.mkdir(path.dirname(output), { recursive: true });
 	const tmp = `${output}.part.m4a`;
 	const filters = speed === 1 ? [] : ["-af", atempoChain(speed)];
-	await ffmpeg(["-i", input, "-vn", ...filters, "-ac", "2", "-ar", "48000", "-c:a", "aac", "-b:a", "192k", tmp]);
+	await ffmpeg([
+		"-i",
+		input,
+		"-vn",
+		...filters,
+		"-ac",
+		"2",
+		"-ar",
+		"48000",
+		"-c:a",
+		"aac",
+		"-b:a",
+		"192k",
+		tmp,
+	]);
 	await fs.rename(tmp, output);
 }

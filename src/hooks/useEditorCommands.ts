@@ -31,11 +31,15 @@ export function useEditorCommands() {
 				case "record": {
 					const line = findLine(project, command.lineId);
 					if (!project || !line) {
-						if (command.requestId) window.cue.failRecording(command.requestId, `No line ${command.lineId}.`);
+						if (command.requestId)
+							window.cue.failRecording(command.requestId, `No line ${command.lineId}.`);
 						return;
 					}
 					window.cue.selectLine(line.id);
-					await recorder.record(project, line, { prerollMs: command.prerollMs, requestId: command.requestId });
+					await recorder.record(project, line, {
+						prerollMs: command.prerollMs,
+						requestId: command.requestId,
+					});
 					break;
 				}
 				case "renderText": {
@@ -44,7 +48,9 @@ export function useEditorCommands() {
 						const { width, height } = project.data.canvas;
 						const images: Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }> = {};
 						for (const id of command.clipIds) {
-							const clip = project.data.clips.find((c): c is TextClip => c.id === id && c.type === "text");
+							const clip = project.data.clips.find(
+								(c): c is TextClip => c.id === id && c.type === "text",
+							);
 							if (clip) images[id] = await rasterise(clip, width, height, command.fps);
 						}
 						window.cue.reply(command.requestId, null, images);
@@ -59,7 +65,12 @@ export function useEditorCommands() {
 						const frame = document.querySelector<HTMLElement>("[data-stage-frame]");
 						if (!frame) throw new Error("The preview is not visible.");
 						const r = frame.getBoundingClientRect();
-						window.cue.reply(command.requestId, null, { x: r.x, y: r.y, width: r.width, height: r.height });
+						window.cue.reply(command.requestId, null, {
+							x: r.x,
+							y: r.y,
+							width: r.width,
+							height: r.height,
+						});
 					} catch (error) {
 						window.cue.reply(command.requestId, (error as Error).message);
 					}

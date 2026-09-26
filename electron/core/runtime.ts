@@ -1,0 +1,249 @@
+import { z } from "zod";
+import {
+	type AiCredentials,
+	generateImage,
+	synthesizeSpeech,
+	type TranscriptSegment,
+	transcribe,
+} from "./ai";
+import { chat, type LocalInventory, speakMac, transcribeLocal } from "./local-ai";
+
+/** App-wide preferences (not per project). Stored in the app's data folder. */
+export const appSettingsSchema = z.object({
+	theme: z.enum(["dark", "light", "system"]).default("dark"),
+	projectsDir: z.string().default(""),
+	ai: z
+		.object({
+			tts: z.enum(["openai", "macos"]).default("openai"),
+			transcription: z.enum(["openai", "whisper"]).default("openai"),
+			text: z.enum(["openai", "ollama", "lmstudio", "none"]).default("openai"),
+			image: z.enum(["openai", "none"]).default("openai"),
+			macVoice: z.string().default("Samantha"),
+			macRate: z.number().min(80).max(400).optional(),
+			whisperModel: z.string().optional(),
+			textModel: z.string().optional(),
+		})
+		.default({
+			tts: "openai",
+			transcription: "openai",
+			text: "openai",
+			image: "openai",
+			macVoice: "Samantha",
+		}),
+	agent: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+	editor: z
+		.object({
+			snapping: z.boolean().default(true),
+			rippleByDefault: z.boolean().default(false),
+			autoProxies: z.boolean().default(true),
+		})
+		.default({ snapping: true, rippleByDefault: false, autoProxies: true }),
+});
+export type AppSettings = z.infer<typeof appSettingsSchema>;
+
+export type Capability = "tts" | "transcription" | "text" | "image";
+
+export interface ProviderStatus {
+	capability: Capability;
+	provider: string;
+	ready: boolean;
+	/** Why it is not ready, in words for the user. */
+	problem?: string;
+	model?: string;
+}
+
+/** Everything generative goes through this, whichever provider backs it. */
+export interface AiRuntime {
+	speak(
+		text: string,
+		options: { voice?: string; instructions?: string; model?: string },
+	): Promise<{ audio: Buffer; provider: string; model: string; voice: string }>;
+	transcribe(
+		file: string,
+		options: { language?: string; prompt?: string; model?: string },
+	): Promise<{ text: string; segments: TranscriptSegment[] }>;
+	image(
+		prompt: string,
+		options: { size: "1536x1024" | "1024x1536" | "1024x1024"; model?: string },
+	): Promise<Buffer>;
+	chat(system: string, prompt: string): Promise<string>;
+	status(): ProviderStatus[];
+}
+
+export function buildRuntime(
+	settings: AppSettings,
+	creds: AiCredentials | null,
+	local: LocalInventory,
+): AiRuntime {
+	const ai = settings.ai;
+	const whisperModel = ai.whisperModel ?? local.whisper.models[0]?.path;
+	const textModel =
+		ai.textModel ??
+		(ai.text === "ollama"
+			? local.ollama.models[0]
+			: ai.text === "lmstudio"
+				? local.lmStudio.models[0]
+				: "gpt-4.1-mini");
+
+	const status = (): ProviderStatus[] => [
+		ai.tts === "openai"
+			? {
+					capability: "tts",
+					provider: "OpenAI",
+					ready: !!creds,
+					problem: creds ? undefined : "Add an OpenAI API key",
+				}
+			: {
+					capability: "tts",
+					provider: "macOS voices",
+					ready: local.macVoices.length > 0,
+					model: ai.macVoice,
+					problem: local.macVoices.length ? undefined : "No system voices found",
+				},
+		ai.transcription === "openai"
+			? {
+					capability: "transcription",
+					provider: "OpenAI",
+					ready: !!creds,
+					problem: creds ? undefined : "Add an OpenAI API key",
+				}
+			: {
+					capability: "transcription",
+					provider: "whisper.cpp (on this Mac)",
+					ready: !!local.whisper.binary && !!whisperModel,
+					model: whisperModel?.split("/").pop(),
+					problem: !local.whisper.binary
+						? "Install whisper.cpp (brew install whisper-cpp)"
+						: !whisperModel
+							? "Download a whisper model"
+							: undefined,
+				},
+		ai.text === "openai"
+			? {
+					capability: "text",
+					provider: "OpenAI",
+					ready: !!creds,
+					model: textModel,
+					problem: creds ? undefined : "Add an OpenAI API key",
+				}
+			: ai.text === "ollama"
+				? {
+						capability: "text",
+						provider: "Ollama",
+						ready: local.ollama.running && !!textModel,
+						model: textModel,
+						problem: !local.ollama.installed
+							? "Install Ollama"
+							: !local.ollama.running
+								? "Start Ollama"
+								: !textModel
+									? "Pull a model in Ollama"
+									: undefined,
+					}
+				: ai.text === "lmstudio"
+					? {
+							capability: "text",
+							provider: "LM Studio",
+							ready: local.lmStudio.running && !!textModel,
+							model: textModel,
+							problem: local.lmStudio.running ? undefined : "Start the LM Studio server",
+						}
+					: { capability: "text", provider: "Off", ready: false, problem: "Text model turned off" },
+		ai.image === "openai"
+			? {
+					capability: "image",
+					provider: "OpenAI",
+					ready: !!creds,
+					problem: creds ? undefined : "Add an OpenAI API key",
+				}
+			: { capability: "image", provider: "Off", ready: false, problem: "Images turned off" },
+	];
+
+	const need = (capability: Capability) => {
+		const s = status().find((x) => x.capability === capability);
+		if (!s?.ready)
+			throw new Error(
+				`${capability === "tts" ? "Voice" : capability === "text" ? "Text model" : capability[0].toUpperCase() + capability.slice(1)} is not set up: ${s?.problem ?? "unavailable"}. Open Cue → Settings → AI.`,
+			);
+	};
+
+	return {
+		status,
+		async speak(text, options) {
+			need("tts");
+			if (ai.tts === "macos") {
+				const voice =
+					options.voice && local.macVoices.some((v) => v.name === options.voice)
+						? options.voice
+						: ai.macVoice;
+				return {
+					audio: await speakMac(text, voice, ai.macRate),
+					provider: "macos",
+					model: "say",
+					voice,
+				};
+			}
+			const model = options.model ?? "gpt-4o-mini-tts";
+			const voice = options.voice ?? "cedar";
+			return {
+				audio: await synthesizeSpeech(creds as AiCredentials, {
+					text,
+					model,
+					voice,
+					instructions: options.instructions,
+				}),
+				provider: "openai",
+				model,
+				voice,
+			};
+		},
+		async transcribe(file, options) {
+			need("transcription");
+			if (ai.transcription === "whisper")
+				return transcribeLocal(
+					local.whisper.binary as string,
+					whisperModel as string,
+					file,
+					options.language,
+				);
+			return transcribe(creds as AiCredentials, {
+				file,
+				model: options.model ?? "whisper-1",
+				language: options.language,
+				prompt: options.prompt,
+			});
+		},
+		async image(prompt, options) {
+			need("image");
+			return generateImage(creds as AiCredentials, {
+				prompt,
+				model: options.model ?? "gpt-image-1",
+				size: options.size,
+			});
+		},
+		async chat(system, prompt) {
+			need("text");
+			if (ai.text === "ollama")
+				return chat({
+					baseUrl: "http://127.0.0.1:11434/v1",
+					model: textModel as string,
+					system,
+					prompt,
+				});
+			if (ai.text === "lmstudio")
+				return chat({
+					baseUrl: "http://127.0.0.1:1234/v1",
+					model: textModel as string,
+					system,
+					prompt,
+				});
+			return chat({
+				baseUrl: creds?.baseUrl ?? "https://api.openai.com/v1",
+				apiKey: creds?.apiKey,
+				model: textModel as string,
+				system,
+				prompt,
+			});
+		},
+	};
+}

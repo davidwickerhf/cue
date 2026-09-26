@@ -1,10 +1,11 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_TEXT_STYLE, type LineInput, clipEnd, speechOf } from "./core/project";
-import { parseSrt } from "./core/srt";
-import type { AiCredentials } from "./core/ai";
+import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import type { TextRender } from "./core/exporter";
+import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
+import type { AiRuntime } from "./core/runtime";
+import { parseSrt } from "./core/srt";
 import type { ProjectStore } from "./core/store";
 import type {
 	Actor,
@@ -19,7 +20,6 @@ import type {
 	TextClip,
 	TextStyle,
 } from "./core/types";
-import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 
 interface PendingRecording {
 	lineId: string;
@@ -35,14 +35,32 @@ export interface ControllerHooks {
 	renderText: (clips: TextClip[]) => Promise<Record<string, TextRender>>;
 	/** PNG of the preview at a moment (editor window). */
 	captureFrame: (atMs: number) => Promise<string>;
-	credentials: () => Promise<AiCredentials | null>;
+	/** The generative runtime built from app settings, keys and local models. */
+	runtime: () => Promise<AiRuntime>;
 }
 
 const TEXT_PRESETS: Record<"title" | "lower-third" | "caption" | "label", Partial<TextStyle>> = {
 	title: { fontSize: 96, fontWeight: 800, y: 0.45, width: 0.8, background: null, shadow: true },
-	"lower-third": { fontSize: 44, fontWeight: 700, x: 0.3, y: 0.82, width: 0.5, align: "left", background: "rgba(15, 23, 42, 0.78)" },
+	"lower-third": {
+		fontSize: 44,
+		fontWeight: 700,
+		x: 0.3,
+		y: 0.82,
+		width: 0.5,
+		align: "left",
+		background: "rgba(15, 23, 42, 0.78)",
+	},
 	caption: { fontSize: 46, fontWeight: 600, y: 0.9, width: 0.86, padding: 14, radius: 10 },
-	label: { fontSize: 32, fontWeight: 600, x: 0.84, y: 0.1, width: 0.28, background: "rgba(37, 99, 235, 0.9)", radius: 999, padding: 12 },
+	label: {
+		fontSize: 32,
+		fontWeight: 600,
+		x: 0.84,
+		y: 0.1,
+		width: 0.28,
+		background: "rgba(37, 99, 235, 0.9)",
+		radius: 999,
+		padding: 12,
+	},
 };
 
 /**
@@ -52,9 +70,16 @@ const TEXT_PRESETS: Record<"title" | "lower-third" | "caption" | "label", Partia
 export class Controller extends EventEmitter {
 	selectedLineId: string | null = null;
 	selectedClipIds: string[] = [];
-	recorder: RecorderStatus = { uiReady: false, micReady: false, recordingLineId: null, playing: false, currentMs: 0 };
+	recorder: RecorderStatus = {
+		uiReady: false,
+		micReady: false,
+		recordingLineId: null,
+		playing: false,
+		currentMs: 0,
+	};
 	agent: AgentStatus = { connected: false, lastSeenAt: null, requests: 0, controlPort: null };
 	aiConfigured = false;
+	aiStatus: import("./core/runtime").ProviderStatus[] = [];
 	private recent: RecentProject[] = [];
 	private jobs: JobStatus[] = [];
 	private pending = new Map<string, PendingRecording>();
@@ -81,7 +106,11 @@ export class Controller extends EventEmitter {
 			activity: this.store.getActivity().slice(0, 80),
 			recent: this.recent,
 			jobs: this.jobs,
-			ai: { configured: this.aiConfigured, provider: this.aiConfigured ? "openai" : null },
+			ai: {
+				configured: this.aiConfigured,
+				provider: this.aiConfigured ? "openai" : null,
+				status: this.aiStatus,
+			},
 		};
 	}
 
@@ -90,12 +119,19 @@ export class Controller extends EventEmitter {
 	}
 
 	async refreshAi(): Promise<void> {
-		this.aiConfigured = Boolean(await this.hooks.credentials());
+		const runtime = await this.hooks.runtime();
+		this.aiStatus = runtime.status();
+		this.aiConfigured = this.aiStatus.some((s) => s.ready);
 		this.changed();
 	}
 
 	noteAgentRequest(): void {
-		this.agent = { ...this.agent, connected: true, lastSeenAt: new Date().toISOString(), requests: this.agent.requests + 1 };
+		this.agent = {
+			...this.agent,
+			connected: true,
+			lastSeenAt: new Date().toISOString(),
+			requests: this.agent.requests + 1,
+		};
 		this.changed();
 	}
 
@@ -103,7 +139,9 @@ export class Controller extends EventEmitter {
 		const before = this.recorder;
 		this.recorder = { ...before, ...patch };
 		// The playhead position is only for agents asking for it; don't rebroadcast state for it.
-		const meaningful = (Object.keys(patch) as (keyof RecorderStatus)[]).some((k) => k !== "currentMs" && k !== "playing" && before[k] !== patch[k]);
+		const meaningful = (Object.keys(patch) as (keyof RecorderStatus)[]).some(
+			(k) => k !== "currentMs" && k !== "playing" && before[k] !== patch[k],
+		);
 		if (meaningful) this.changed();
 	}
 
@@ -113,7 +151,13 @@ export class Controller extends EventEmitter {
 	}
 
 	/** Called by the editor window when a recording finishes. */
-	async saveRecording(input: { lineId: string; audio: Buffer; extension: string; recordedAtMs: number; requestId?: string }): Promise<Asset> {
+	async saveRecording(input: {
+		lineId: string;
+		audio: Buffer;
+		extension: string;
+		recordedAtMs: number;
+		requestId?: string;
+	}): Promise<Asset> {
 		const pending = input.requestId ? this.pending.get(input.requestId) : undefined;
 		const settle = (fn: () => void) => {
 			if (pending && input.requestId) {
@@ -147,7 +191,12 @@ export class Controller extends EventEmitter {
 			case "get_timeline": {
 				const { fromMs, toMs, trackId } = parseInput("get_timeline", params);
 				return this.store.current.clips
-					.filter((c) => (!trackId || c.trackId === trackId) && (fromMs === undefined || clipEnd(c) > fromMs) && (toMs === undefined || c.startMs < toMs))
+					.filter(
+						(c) =>
+							(!trackId || c.trackId === trackId) &&
+							(fromMs === undefined || clipEnd(c) > fromMs) &&
+							(toMs === undefined || c.startMs < toMs),
+					)
 					.sort((a, b) => a.startMs - b.startMs);
 			}
 			case "render_frame": {
@@ -166,39 +215,81 @@ export class Controller extends EventEmitter {
 				await this.store.create(parseInput("create_project", params), actor);
 				return this.afterOpen();
 			case "rename_project":
-				return this.store.apply({ type: "rename", name: parseInput("rename_project", params).name }, actor);
+				return this.store.apply(
+					{ type: "rename", name: parseInput("rename_project", params).name },
+					actor,
+				);
 			case "set_canvas":
-				return this.store.apply({ type: "setCanvas", canvas: parseInput("set_canvas", params) }, actor);
+				return this.store.apply(
+					{ type: "setCanvas", canvas: parseInput("set_canvas", params) },
+					actor,
+				);
 
 			case "import_media": {
 				const { files, trackId, startMs } = parseInput("import_media", params);
-				const assets = await this.job(`Importing ${files.length} file(s)`, () => this.store.importMedia(files, actor, trackId ? { trackId, startMs } : undefined));
+				const assets = await this.job(`Importing ${files.length} file(s)`, () =>
+					this.store.importMedia(files, actor, trackId ? { trackId, startMs } : undefined),
+				);
 				return assets.map((a) => this.describeAsset(a));
 			}
 			case "list_media":
 				return this.store.current.assets.map((a) => this.describeAsset(a));
 			case "remove_media":
-				return this.store.apply({ type: "removeAsset", id: parseInput("remove_media", params).id }, actor);
+				return this.store.apply(
+					{ type: "removeAsset", id: parseInput("remove_media", params).id },
+					actor,
+				);
 			case "add_track":
 				return this.store.apply({ type: "addTrack", ...parseInput("add_track", params) }, actor);
 			case "update_track":
-				return this.store.apply({ type: "updateTrack", ...parseInput("update_track", params) }, actor);
+				return this.store.apply(
+					{ type: "updateTrack", ...parseInput("update_track", params) },
+					actor,
+				);
 			case "remove_track":
-				return this.store.apply({ type: "removeTrack", id: parseInput("remove_track", params).id }, actor);
+				return this.store.apply(
+					{ type: "removeTrack", id: parseInput("remove_track", params).id },
+					actor,
+				);
 			case "move_track":
 				return this.store.apply({ type: "moveTrack", ...parseInput("move_track", params) }, actor);
 
 			case "add_clips":
-				return this.store.apply({ type: "addClips", clips: parseInput("add_clips", params).clips }, actor);
+				return this.store.apply(
+					{ type: "addClips", clips: parseInput("add_clips", params).clips },
+					actor,
+				);
 			case "add_text": {
 				const input = parseInput("add_text", params);
-				const trackId = input.trackId ?? this.store.current.tracks.find((t) => t.kind === "text")?.id ?? this.store.apply({ type: "addTrack", kind: "text", index: 0 }, actor).created?.[0];
+				const trackId =
+					input.trackId ??
+					this.store.current.tracks.find((t) => t.kind === "text")?.id ??
+					this.store.apply({ type: "addTrack", kind: "text", index: 0 }, actor).created?.[0];
 				if (!trackId) throw new Error("No text track.");
 				const style = { ...DEFAULT_TEXT_STYLE, ...TEXT_PRESETS[input.preset], ...input.style };
-				return this.store.apply({ type: "addClips", clips: [{ type: "text", trackId, startMs: input.startMs, durationMs: input.durationMs, text: input.text, style, name: input.preset }] }, actor);
+				return this.store.apply(
+					{
+						type: "addClips",
+						clips: [
+							{
+								type: "text",
+								trackId,
+								startMs: input.startMs,
+								durationMs: input.durationMs,
+								text: input.text,
+								style,
+								name: input.preset,
+							},
+						],
+					},
+					actor,
+				);
 			}
 			case "update_clip":
-				return this.store.apply({ type: "updateClip", ...parseInput("update_clip", params) }, actor);
+				return this.store.apply(
+					{ type: "updateClip", ...parseInput("update_clip", params) },
+					actor,
+				);
 			case "move_clips":
 				return this.store.apply({ type: "moveClips", ...parseInput("move_clips", params) }, actor);
 			case "trim_clip":
@@ -214,29 +305,156 @@ export class Controller extends EventEmitter {
 				return result;
 			}
 			case "detach_audio":
-				return this.store.apply({ type: "detachAudio", ...parseInput("detach_audio", params) }, actor);
+				return this.store.apply(
+					{ type: "detachAudio", ...parseInput("detach_audio", params) },
+					actor,
+				);
 			case "remove_ranges":
-				return this.store.apply({ type: "removeRanges", ...parseInput("remove_ranges", params) }, actor);
+				return this.store.apply(
+					{ type: "removeRanges", ...parseInput("remove_ranges", params) },
+					actor,
+				);
 			case "remove_silence": {
 				const input = parseInput("remove_silence", params);
-				return this.job(input.dryRun ? "Finding pauses" : "Removing pauses", () => this.store.removeSilence(actor, input));
+				return this.job(input.dryRun ? "Finding pauses" : "Removing pauses", () =>
+					this.store.removeSilence(actor, input),
+				);
 			}
+			case "slip_clip":
+				return this.store.apply({ type: "slipClip", ...parseInput("slip_clip", params) }, actor);
+			case "roll_edit":
+				return this.store.apply({ type: "rollEdit", ...parseInput("roll_edit", params) }, actor);
+			case "slide_clip":
+				return this.store.apply({ type: "slideClip", ...parseInput("slide_clip", params) }, actor);
+			case "group_clips":
+				return this.store.apply(
+					{ type: "groupClips", ...parseInput("group_clips", params) },
+					actor,
+				);
+			case "ungroup_clips":
+				return this.store.apply(
+					{ type: "ungroupClips", ...parseInput("ungroup_clips", params) },
+					actor,
+				);
+			case "add_transition": {
+				const { clipId, kind, durationMs } = parseInput("add_transition", params);
+				return this.store.apply(
+					{ type: "addTransition", clipId, transition: { kind, durationMs } },
+					actor,
+				);
+			}
+			case "remove_transition":
+				return this.store.apply(
+					{ type: "removeTransition", ...parseInput("remove_transition", params) },
+					actor,
+				);
+			case "set_keyframe": {
+				const { clipId, prop, atMs, value, ease } = parseInput("set_keyframe", params);
+				return this.store.apply(
+					{ type: "setKeyframe", clipId, prop, keyframe: { atMs, value, ease } },
+					actor,
+				);
+			}
+			case "remove_keyframe":
+				return this.store.apply(
+					{ type: "removeKeyframe", ...parseInput("remove_keyframe", params) },
+					actor,
+				);
+			case "clear_keyframes":
+				return this.store.apply(
+					{ type: "clearKeyframes", ...parseInput("clear_keyframes", params) },
+					actor,
+				);
+			case "add_zoom":
+				return this.store.apply({ type: "addZoom", ...parseInput("add_zoom", params) }, actor);
+			case "update_zoom":
+				return this.store.apply(
+					{ type: "updateZoom", ...parseInput("update_zoom", params) },
+					actor,
+				);
+			case "remove_zoom":
+				return this.store.apply(
+					{ type: "removeZoom", ...parseInput("remove_zoom", params) },
+					actor,
+				);
+			case "transcribe_media": {
+				const { assetId, language } = parseInput("transcribe_media", params);
+				const creds = await this.requireCredentials();
+				const transcript = await this.job("Transcribing", () =>
+					this.store.transcribeAsset(assetId, creds, actor, language),
+				);
+				return {
+					words: transcript.words.length,
+					text: transcript.words
+						.map((w) => w.text)
+						.join(" ")
+						.slice(0, 4000),
+				};
+			}
+			case "get_transcript": {
+				const { assetId, search } = parseInput("get_transcript", params);
+				const words = this.store.current.assets.find((a) => a.id === assetId)?.transcript?.words;
+				if (!words) throw new Error("Not transcribed yet. Call transcribe_media first.");
+				if (search) {
+					const target = search.toLowerCase().split(/\s+/).filter(Boolean);
+					const norm = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+					const hits: { from: number; to: number; text: string }[] = [];
+					for (let i = 0; i + target.length <= words.length; i++) {
+						if (target.every((t, j) => norm(words[i + j].text) === norm(t)))
+							hits.push({
+								from: i,
+								to: i + target.length - 1,
+								text: words
+									.slice(i, i + target.length)
+									.map((w) => w.text)
+									.join(" "),
+							});
+					}
+					return hits;
+				}
+				return words.map((w, i) => ({ i, text: w.text, startMs: w.startMs, endMs: w.endMs }));
+			}
+			case "cut_words": {
+				const { assetId, ranges } = parseInput("cut_words", params);
+				return this.store.cutWords(assetId, ranges, actor);
+			}
+			case "remove_filler_words": {
+				const { assetId, fillers } = parseInput("remove_filler_words", params);
+				return this.store.removeFillers(assetId, actor, fillers);
+			}
+			case "build_proxies":
+				this.store.buildProxies();
+				return { started: true };
 			case "duplicate_clips":
-				return this.store.apply({ type: "duplicateClips", ...parseInput("duplicate_clips", params) }, actor);
+				return this.store.apply(
+					{ type: "duplicateClips", ...parseInput("duplicate_clips", params) },
+					actor,
+				);
 			case "select_clips":
 				this.selectClips(parseInput("select_clips", params).ids);
 				return { selected: this.selectedClipIds };
 
 			case "set_lines":
-				return this.store.apply({ type: "setLines", lines: parseInput("set_lines", params).lines }, actor);
+				return this.store.apply(
+					{ type: "setLines", lines: parseInput("set_lines", params).lines },
+					actor,
+				);
 			case "import_script": {
 				const { file, replace } = parseInput("import_script", params);
 				const text = await fs.readFile(path.resolve(file), "utf8");
-				const lines = file.toLowerCase().endsWith(".srt") ? parseSrt(text) : (JSON.parse(text) as LineInput[]);
-				return this.store.apply({ type: "setLines", lines: replace ? lines : [...this.store.current.lines, ...lines] }, actor);
+				const lines = file.toLowerCase().endsWith(".srt")
+					? parseSrt(text)
+					: (JSON.parse(text) as LineInput[]);
+				return this.store.apply(
+					{ type: "setLines", lines: replace ? lines : [...this.store.current.lines, ...lines] },
+					actor,
+				);
 			}
 			case "add_line":
-				return this.store.apply({ type: "addLine", line: parseInput("add_line", params).line }, actor);
+				return this.store.apply(
+					{ type: "addLine", line: parseInput("add_line", params).line },
+					actor,
+				);
 			case "update_line": {
 				const { id, patch } = parseInput("update_line", params);
 				const result = this.store.apply({ type: "updateLine", id, patch }, actor);
@@ -244,9 +462,15 @@ export class Controller extends EventEmitter {
 				return result;
 			}
 			case "remove_line":
-				return this.store.apply({ type: "removeLine", id: parseInput("remove_line", params).id }, actor);
+				return this.store.apply(
+					{ type: "removeLine", id: parseInput("remove_line", params).id },
+					actor,
+				);
 			case "shift_lines":
-				return this.store.apply({ type: "shiftLines", ...parseInput("shift_lines", params), withClips: true }, actor);
+				return this.store.apply(
+					{ type: "shiftLines", ...parseInput("shift_lines", params), withClips: true },
+					actor,
+				);
 			case "select_line": {
 				const { id } = parseInput("select_line", params);
 				this.requireLine(id);
@@ -260,33 +484,65 @@ export class Controller extends EventEmitter {
 				return this.command({ type: "stop" });
 			case "import_take": {
 				const { lineId, file, recordedAtMs } = parseInput("import_take", params);
-				return this.describeTake(this.requireLine(lineId), await this.store.importTake(lineId, file, actor, recordedAtMs));
+				return this.describeTake(
+					this.requireLine(lineId),
+					await this.store.importTake(lineId, file, actor, recordedAtMs),
+				);
 			}
 			case "list_takes": {
 				const { lineId } = parseInput("list_takes", params);
 				const lines = this.lines().filter((l) => !lineId || l.id === lineId);
 				if (lineId && lines.length === 0) throw new Error(`No line "${lineId}".`);
-				return lines.map((l) => ({ lineId: l.id, chosen: l.chosenAssetId, status: l.status, takes: l.takes.map((t) => this.describeTake(l, t)) }));
+				return lines.map((l) => ({
+					lineId: l.id,
+					chosen: l.chosenAssetId,
+					status: l.status,
+					takes: l.takes.map((t) => this.describeTake(l, t)),
+				}));
 			}
 			case "choose_take":
-				return this.store.apply({ type: "chooseTake", ...parseInput("choose_take", params) }, actor);
+				return this.store.apply(
+					{ type: "chooseTake", ...parseInput("choose_take", params) },
+					actor,
+				);
 			case "delete_take":
-				return this.store.apply({ type: "deleteTake", assetId: parseInput("delete_take", params).assetId }, actor);
+				return this.store.apply(
+					{ type: "deleteTake", assetId: parseInput("delete_take", params).assetId },
+					actor,
+				);
 
 			case "generate_take": {
 				const { lineId, ...overrides } = parseInput("generate_take", params);
 				const creds = await this.requireCredentials();
-				const take = await this.job(`Generating voice for ${lineId}`, () => this.store.generateTake(lineId, creds, actor, overrides));
+				const take = await this.job(`Generating voice for ${lineId}`, () =>
+					this.store.generateTake(lineId, creds, actor, overrides),
+				);
 				return this.describeTake(this.requireLine(lineId), take);
 			}
+			case "rewrite_line": {
+				const { id, goal, instructions } = parseInput("rewrite_line", params);
+				const runtime = await this.requireCredentials();
+				return this.job(`Rewriting ${id}`, () =>
+					this.store.rewriteLine(id, runtime, actor, goal, instructions),
+				);
+			}
+			case "get_ai_status":
+				return (await this.hooks.runtime()).status();
 			case "generate_voiceover": {
 				const input = parseInput("generate_voiceover", params);
 				const creds = await this.requireCredentials();
-				const targets = this.lines().filter((l) => (!input.lineIds || input.lineIds.includes(l.id)) && (!input.onlyMissing || l.status === "empty"));
+				const targets = this.lines().filter(
+					(l) =>
+						(!input.lineIds || input.lineIds.includes(l.id)) &&
+						(!input.onlyMissing || l.status === "empty"),
+				);
 				const results: unknown[] = [];
 				await this.job(`Generating ${targets.length} voice take(s)`, async (progress) => {
 					for (const [i, l] of targets.entries()) {
-						const take = await this.store.generateTake(l.id, creds, actor, { voice: input.voice, instructions: input.instructions });
+						const take = await this.store.generateTake(l.id, creds, actor, {
+							voice: input.voice,
+							instructions: input.instructions,
+						});
 						results.push(this.describeTake(this.requireLine(l.id), take));
 						progress((i + 1) / targets.length);
 					}
@@ -296,18 +552,27 @@ export class Controller extends EventEmitter {
 			case "auto_captions": {
 				const input = parseInput("auto_captions", params);
 				const creds = await this.requireCredentials();
-				return this.job("Transcribing captions", () => this.store.autoCaptions(creds, actor, input));
+				return this.job("Transcribing captions", () =>
+					this.store.autoCaptions(creds, actor, input),
+				);
 			}
 			case "script_from_media": {
 				const { assetId, idPrefix, replace } = parseInput("script_from_media", params);
 				const creds = await this.requireCredentials();
-				const count = await this.job("Transcribing script", () => this.store.scriptFromMedia(assetId, creds, actor, { idPrefix, replace }));
+				const count = await this.job("Transcribing script", () =>
+					this.store.scriptFromMedia(assetId, creds, actor, { idPrefix, replace }),
+				);
 				return { lines: count };
 			}
 			case "generate_image": {
 				const { prompt, orientation, trackId, startMs } = parseInput("generate_image", params);
 				const creds = await this.requireCredentials();
-				const asset = await this.job("Generating image", () => this.store.generateImage(prompt, creds, actor, { orientation, place: trackId ? { trackId, startMs } : undefined }));
+				const asset = await this.job("Generating image", () =>
+					this.store.generateImage(prompt, creds, actor, {
+						orientation,
+						place: trackId ? { trackId, startMs } : undefined,
+					}),
+				);
 				return this.describeAsset(asset);
 			}
 
@@ -318,25 +583,42 @@ export class Controller extends EventEmitter {
 			case "pause":
 				return this.command({ type: "pause" });
 			case "preview_media":
-				return this.command({ type: "previewAsset", assetId: parseInput("preview_media", params).assetId });
+				return this.command({
+					type: "previewAsset",
+					assetId: parseInput("preview_media", params).assetId,
+				});
 
 			case "update_settings":
-				return this.store.apply({ type: "updateSettings", settings: parseInput("update_settings", params).settings }, actor);
+				return this.store.apply(
+					{ type: "updateSettings", settings: parseInput("update_settings", params).settings },
+					actor,
+				);
 			case "update_export":
-				return this.store.apply({ type: "updateExport", export: parseInput("update_export", params).export }, actor);
+				return this.store.apply(
+					{ type: "updateExport", export: parseInput("update_export", params).export },
+					actor,
+				);
 			case "update_ai":
-				return this.store.apply({ type: "updateAi", ai: parseInput("update_ai", params).ai }, actor);
+				return this.store.apply(
+					{ type: "updateAi", ai: parseInput("update_ai", params).ai },
+					actor,
+				);
 			case "add_marker":
 				return this.store.apply({ type: "addMarker", ...parseInput("add_marker", params) }, actor);
 			case "remove_marker":
-				return this.store.apply({ type: "removeMarker", id: parseInput("remove_marker", params).id }, actor);
+				return this.store.apply(
+					{ type: "removeMarker", id: parseInput("remove_marker", params).id },
+					actor,
+				);
 			case "undo":
 				return { undone: this.store.undo(actor) };
 			case "redo":
 				return { redone: this.store.redo(actor) };
 			case "export": {
 				const { kind, out } = parseInput("export", params);
-				return this.job(`Exporting ${kind}`, () => this.store.export(kind, out, actor, this.hooks.renderText));
+				return this.job(`Exporting ${kind}`, () =>
+					this.store.export(kind, out, actor, this.hooks.renderText),
+				);
 			}
 			case "focus_window":
 				this.hooks.focusWindow();
@@ -346,13 +628,19 @@ export class Controller extends EventEmitter {
 
 	// -------------------------------------------------------------------------
 
-	private async job<T>(label: string, run: (progress: (fraction: number) => void) => Promise<T>): Promise<T> {
+	private async job<T>(
+		label: string,
+		run: (progress: (fraction: number) => void) => Promise<T>,
+	): Promise<T> {
 		const id = `j${++this.seq}`;
 		const update = (patch: Partial<JobStatus>) => {
 			this.jobs = this.jobs.map((j) => (j.id === id ? { ...j, ...patch } : j));
 			this.changed();
 		};
-		this.jobs = [...this.jobs.filter((j) => j.state === "running"), { id, label, progress: null, state: "running" }];
+		this.jobs = [
+			...this.jobs.filter((j) => j.state === "running"),
+			{ id, label, progress: null, state: "running" },
+		];
 		this.changed();
 		try {
 			const result = await run((fraction) => update({ progress: fraction }));
@@ -369,10 +657,8 @@ export class Controller extends EventEmitter {
 		}
 	}
 
-	private async requireCredentials(): Promise<AiCredentials> {
-		const creds = await this.hooks.credentials();
-		if (!creds) throw new Error("No AI provider is set up. Add an OpenAI API key in Cue → Settings → AI.");
-		return creds;
+	private async requireCredentials(): Promise<AiRuntime> {
+		return this.hooks.runtime();
 	}
 
 	private command(command: EditorCommand) {
@@ -401,8 +687,10 @@ export class Controller extends EventEmitter {
 
 	private async recordLine(input: MethodInput<"record_line">) {
 		const l = this.requireLine(input.id);
-		if (!this.recorder.uiReady) throw new Error("The Cue window is not ready. Call focus_window and try again.");
-		if (this.recorder.recordingLineId) throw new Error(`Already recording ${this.recorder.recordingLineId}.`);
+		if (!this.recorder.uiReady)
+			throw new Error("The Cue window is not ready. Call focus_window and try again.");
+		if (this.recorder.recordingLineId)
+			throw new Error(`Already recording ${this.recorder.recordingLineId}.`);
 		const requestId = `r${++this.seq}`;
 		this.selectedLineId = l.id;
 		this.changed();
@@ -436,13 +724,16 @@ export class Controller extends EventEmitter {
 			hasAudio: a.hasAudio,
 			origin: a.origin,
 			lineId: a.lineId,
-			usedBy: this.store.current.clips.filter((c) => c.type === "media" && c.assetId === a.id).map((c) => c.id),
+			usedBy: this.store.current.clips
+				.filter((c) => c.type === "media" && c.assetId === a.id)
+				.map((c) => c.id),
 		};
 	}
 
 	private describeTake(l: LineView, take: Asset) {
 		const speech = speechOf(take);
-		const chosen = this.store.snapshot()?.lines.find((x) => x.id === l.id)?.chosenAssetId === take.id;
+		const chosen =
+			this.store.snapshot()?.lines.find((x) => x.id === l.id)?.chosenAssetId === take.id;
 		return {
 			assetId: take.id,
 			name: take.name,

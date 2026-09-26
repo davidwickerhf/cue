@@ -30,26 +30,72 @@ export const app = createStore<{ state: AppState | null }>({ state: null });
 /** Keeps object identity for parts that did not change, so React skips re-rendering them. */
 function merge(prev: AppState | null, next: AppState): AppState {
 	if (!prev) return next;
-	const sameProject = prev.project && next.project && prev.project.revision === next.project.revision && prev.project.path === next.project.path;
+	const sameProject =
+		prev.project &&
+		next.project &&
+		prev.project.revision === next.project.revision &&
+		prev.project.path === next.project.path;
 	return {
 		...next,
-		project: sameProject && prev.project ? (prev.project.dirty === next.project?.dirty ? prev.project : { ...prev.project, dirty: next.project?.dirty ?? false }) : next.project,
+		project:
+			sameProject && prev.project
+				? prev.project.dirty === next.project?.dirty
+					? prev.project
+					: { ...prev.project, dirty: next.project?.dirty ?? false }
+				: next.project,
 		activity: prev.activity[0]?.id === next.activity[0]?.id ? prev.activity : next.activity,
-		selectedClipIds: prev.selectedClipIds.join() === next.selectedClipIds.join() ? prev.selectedClipIds : next.selectedClipIds,
+		selectedClipIds:
+			prev.selectedClipIds.join() === next.selectedClipIds.join()
+				? prev.selectedClipIds
+				: next.selectedClipIds,
 		recent: JSON.stringify(prev.recent) === JSON.stringify(next.recent) ? prev.recent : next.recent,
 		jobs: JSON.stringify(prev.jobs) === JSON.stringify(next.jobs) ? prev.jobs : next.jobs,
 	};
 }
 
 export function startSync() {
-	void window.cue.getState().then((state) => app.set((current) => ({ state: merge(current.state, state) })));
-	return window.cue.onState((state) => app.set((current) => ({ state: merge(current.state, state) })));
+	void window.cue
+		.getState()
+		.then((state) => app.set((current) => ({ state: merge(current.state, state) })));
+	return window.cue.onState((state) =>
+		app.set((current) => ({ state: merge(current.state, state) })),
+	);
 }
 
-export const useApp = <S,>(selector: (state: AppState) => S): S | undefined =>
+// ---------------------------------------------------------------------------
+// App-wide settings (theme, AI providers, agent access)
+// ---------------------------------------------------------------------------
+
+type AppSettings = Awaited<ReturnType<typeof window.cue.getAppSettings>>;
+export const appSettings = createStore<{
+	settings: AppSettings | null;
+	open: boolean;
+	section: string;
+}>({ settings: null, open: false, section: "general" });
+
+export function startSettingsSync() {
+	void window.cue.getAppSettings().then((settings) => {
+		appSettings.set({ settings });
+		// The app-wide defaults decide how each editing session starts.
+		editor.set({ snapping: settings.editor.snapping, ripple: settings.editor.rippleByDefault });
+	});
+	const off = window.cue.onAppSettings((settings) => appSettings.set({ settings }));
+	const offOpen = window.cue.onOpenSettings(() => appSettings.set({ open: true }));
+	return () => {
+		off();
+		offOpen();
+	};
+}
+
+export function openSettings(section = "general") {
+	appSettings.set({ open: true, section });
+}
+
+export const useApp = <S>(selector: (state: AppState) => S): S | undefined =>
 	app.use((value) => (value.state ? selector(value.state) : undefined));
 
-export const useProject = (): ProjectSnapshot | null => app.use((value) => value.state?.project ?? null);
+export const useProject = (): ProjectSnapshot | null =>
+	app.use((value) => value.state?.project ?? null);
 
 export function findClip(project: ProjectSnapshot | null, id: string): Clip | undefined {
 	return project?.data.clips.find((clip) => clip.id === id);
@@ -63,8 +109,15 @@ export function findLine(project: ProjectSnapshot | null, id: string | null): Li
 // Editor-only state (not saved in the project)
 // ---------------------------------------------------------------------------
 
-export type SidebarPanel = "media" | "script" | "text" | "generate" | "agent" | "settings";
-export type Tool = "select" | "blade";
+export type SidebarPanel =
+	| "media"
+	| "script"
+	| "transcript"
+	| "text"
+	| "generate"
+	| "agent"
+	| "settings";
+export type Tool = "select" | "blade" | "slip" | "roll" | "slide";
 
 export const editor = createStore({
 	panel: "script" as SidebarPanel,

@@ -26,12 +26,20 @@ export function valueAt(keyframes: Keyframe[] | undefined, t: number, fallback: 
 }
 
 /** Zoom state at clip-local time `t`: scale 1 means no zoom. */
-export function zoomAt(zooms: Zoom[] | undefined, t: number): { scale: number; x: number; y: number } {
+export function zoomAt(
+	zooms: Zoom[] | undefined,
+	t: number,
+): { scale: number; x: number; y: number } {
 	if (zooms) {
 		for (const z of zooms) {
 			if (t < z.startMs || t > z.endMs) continue;
 			const ease = Math.max(1, Math.min(z.easeMs, (z.endMs - z.startMs) / 2));
-			const p = t < z.startMs + ease ? (t - z.startMs) / ease : t > z.endMs - ease ? (z.endMs - t) / ease : 1;
+			const p =
+				t < z.startMs + ease
+					? (t - z.startMs) / ease
+					: t > z.endMs - ease
+						? (z.endMs - t) / ease
+						: 1;
 			const k = smooth(Math.max(0, Math.min(1, p)));
 			return { scale: 1 + (z.scale - 1) * k, x: 0.5 + (z.x - 0.5) * k, y: 0.5 + (z.y - 0.5) * k };
 		}
@@ -41,7 +49,9 @@ export function zoomAt(zooms: Zoom[] | undefined, t: number): { scale: number; x
 
 /** Sorted, de-duplicated keyframes with `next` inserted (replacing one within 10 ms). */
 export function withKeyframe(list: Keyframe[] | undefined, next: Keyframe): Keyframe[] {
-	return [...(list ?? []).filter((k) => Math.abs(k.atMs - next.atMs) > 10), next].sort((a, b) => a.atMs - b.atMs);
+	return [...(list ?? []).filter((k) => Math.abs(k.atMs - next.atMs) > 10), next].sort(
+		(a, b) => a.atMs - b.atMs,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +61,11 @@ export function withKeyframe(list: Keyframe[] | undefined, next: Keyframe): Keyf
 const n = (v: number) => (Number.isFinite(v) ? Number(v.toFixed(5)).toString() : "0");
 
 /** Piecewise expression equal to `valueAt` for keyframes given in ms, over variable `T` in seconds. */
-export function keyframeExpr(keyframes: Keyframe[] | undefined, fallback: number, T: string): string {
+export function keyframeExpr(
+	keyframes: Keyframe[] | undefined,
+	fallback: number,
+	T: string,
+): string {
 	if (!keyframes || keyframes.length === 0) return n(fallback);
 	const pts = keyframes.map((k) => ({ ...k, s: k.atMs / 1000 }));
 	let expr = n(pts[pts.length - 1].value);
@@ -67,7 +81,10 @@ export function keyframeExpr(keyframes: Keyframe[] | undefined, fallback: number
 }
 
 /** Expressions for the zoom scale and focus over variable `T` (seconds). */
-export function zoomExprs(zooms: Zoom[] | undefined, T: string): { scale: string; x: string; y: string } | null {
+export function zoomExprs(
+	zooms: Zoom[] | undefined,
+	T: string,
+): { scale: string; x: string; y: string } | null {
 	if (!zooms || zooms.length === 0) return null;
 	let k = "0";
 	let fx = "0.5";

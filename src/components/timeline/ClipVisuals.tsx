@@ -24,7 +24,21 @@ function loadThumbs(assetId: string) {
 const PEAKS_PER_SECOND = 50;
 
 /** Waveform of the part of the source a clip plays. */
-export function Waveform({ assetId, inMs, spanMs, width, height, color = "rgba(255,255,255,0.85)" }: { assetId: string; inMs: number; spanMs: number; width: number; height: number; color?: string }) {
+export function Waveform({
+	assetId,
+	inMs,
+	spanMs,
+	width,
+	height,
+	color = "rgba(255,255,255,0.85)",
+}: {
+	assetId: string;
+	inMs: number;
+	spanMs: number;
+	width: number;
+	height: number;
+	color?: string;
+}) {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const [peaks, setPeaks] = useState<number[] | null>(null);
 	useEffect(() => {
@@ -58,11 +72,31 @@ export function Waveform({ assetId, inMs, spanMs, width, height, color = "rgba(2
 			ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
 		}
 	}, [peaks, inMs, spanMs, width, height, color]);
-	return <canvas ref={canvas} className="pointer-events-none absolute inset-x-0 bottom-0" style={{ width, height }} />;
+	return (
+		<canvas
+			ref={canvas}
+			className="pointer-events-none absolute inset-x-0 bottom-0"
+			style={{ width, height }}
+		/>
+	);
 }
 
 /** Frames from the source laid across a video clip. */
-export function Filmstrip({ assetId, inMs, speed, width, height, pxPerMs }: { assetId: string; inMs: number; speed: number; width: number; height: number; pxPerMs: number }) {
+export function Filmstrip({
+	assetId,
+	inMs,
+	speed,
+	width,
+	height,
+	pxPerMs,
+}: {
+	assetId: string;
+	inMs: number;
+	speed: number;
+	width: number;
+	height: number;
+	pxPerMs: number;
+}) {
 	const [thumbs, setThumbs] = useState<{ intervalMs: number; urls: string[] } | null>(null);
 	useEffect(() => {
 		let alive = true;
@@ -78,8 +112,20 @@ export function Filmstrip({ assetId, inMs, speed, width, height, pxPerMs }: { as
 		<div className="pointer-events-none absolute inset-0 flex overflow-hidden opacity-90">
 			{Array.from({ length: count }, (_, i) => {
 				const sourceMs = inMs + ((i * tileW) / pxPerMs) * speed;
-				const index = Math.min(thumbs.urls.length - 1, Math.max(0, Math.floor(sourceMs / thumbs.intervalMs)));
-				return <img key={i} src={thumbs.urls[index]} alt="" draggable={false} className="h-full shrink-0 object-cover" style={{ width: tileW }} />;
+				const index = Math.min(
+					thumbs.urls.length - 1,
+					Math.max(0, Math.floor(sourceMs / thumbs.intervalMs)),
+				);
+				return (
+					<img
+						key={i}
+						src={thumbs.urls[index]}
+						alt=""
+						draggable={false}
+						className="h-full shrink-0 object-cover"
+						style={{ width: tileW }}
+					/>
+				);
 			})}
 		</div>
 	);
@@ -91,7 +137,14 @@ export function Tiled({ url, width, height }: { url: string; width: number; heig
 	return (
 		<div className="pointer-events-none absolute inset-0 flex overflow-hidden opacity-90">
 			{Array.from({ length: count }, (_, i) => (
-				<img key={i} src={url} alt="" draggable={false} className="h-full shrink-0 object-cover" style={{ width: tileW }} />
+				<img
+					key={i}
+					src={url}
+					alt=""
+					draggable={false}
+					className="h-full shrink-0 object-cover"
+					style={{ width: tileW }}
+				/>
 			))}
 		</div>
 	);

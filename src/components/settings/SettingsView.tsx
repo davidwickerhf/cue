@@ -1,0 +1,629 @@
+import { Button, Spinner } from "@heroui/react";
+import {
+	ArrowClockwise,
+	CheckCircle,
+	Copy,
+	Cpu,
+	Info,
+	Keyboard,
+	Robot,
+	SlidersHorizontal,
+	Sparkle,
+	Warning,
+	X,
+} from "@phosphor-icons/react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { notify } from "../../lib/api";
+import { SHORTCUTS } from "../../lib/shortcuts";
+import { appSettings, useApp } from "../../lib/state";
+import { cn } from "../../lib/utils";
+import { Segmented, Toggle } from "../ui/controls";
+
+type Inventory = Awaited<ReturnType<typeof window.cue.localInventory>>;
+type Settings = NonNullable<ReturnType<typeof appSettings.get>["settings"]>;
+
+const SECTIONS = [
+	{ id: "general", label: "General", icon: SlidersHorizontal },
+	{ id: "ai", label: "AI & models", icon: Sparkle },
+	{ id: "agent", label: "Agent", icon: Robot },
+	{ id: "shortcuts", label: "Shortcuts", icon: Keyboard },
+	{ id: "about", label: "About", icon: Info },
+] as const;
+
+/** App-wide settings (⌘,), separate from per-project settings. */
+export function SettingsView() {
+	const { open, section, settings } = appSettings.use((s) => s);
+	useEffect(() => {
+		if (!open) return;
+		const onKey = (e: KeyboardEvent) => e.key === "Escape" && appSettings.set({ open: false });
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [open]);
+	if (!open || !settings) return null;
+	const save = (patch: Partial<Settings>) => void window.cue.setAppSettings(patch);
+	return (
+		<div
+			className="fixed inset-0 z-[150] flex bg-black/40 backdrop-blur-[2px]"
+			onPointerDown={() => appSettings.set({ open: false })}
+		>
+			<div
+				className="m-auto flex h-[min(760px,90vh)] w-[min(980px,92vw)] overflow-hidden rounded-xl border border-border bg-surface shadow-2xl shadow-black/50"
+				onPointerDown={(e) => e.stopPropagation()}
+				role="dialog"
+				aria-label="Settings"
+			>
+				<nav className="flex w-52 shrink-0 flex-col gap-0.5 border-r border-separator bg-background/40 p-2">
+					<p className="px-2.5 pt-2 pb-3 text-[13px] font-semibold">Settings</p>
+					{SECTIONS.map((s) => (
+						<button
+							key={s.id}
+							type="button"
+							onClick={() => appSettings.set({ section: s.id })}
+							className={cn(
+								"flex h-8 items-center gap-2 rounded-md px-2.5 text-left text-[13px]",
+								section === s.id
+									? "bg-default text-foreground"
+									: "text-muted hover:bg-default/60 hover:text-foreground",
+							)}
+						>
+							<s.icon className="size-4" />
+							{s.label}
+						</button>
+					))}
+				</nav>
+				<div className="flex min-w-0 flex-1 flex-col">
+					<header className="flex h-12 shrink-0 items-center justify-between border-b border-separator px-6">
+						<h2 className="text-[14px] font-semibold">
+							{SECTIONS.find((s) => s.id === section)?.label}
+						</h2>
+						<button
+							type="button"
+							aria-label="Close"
+							onClick={() => appSettings.set({ open: false })}
+							className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+						>
+							<X className="size-4" />
+						</button>
+					</header>
+					<div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5">
+						{section === "general" && <General settings={settings} save={save} />}
+						{section === "ai" && <AiSection settings={settings} save={save} />}
+						{section === "agent" && <AgentSection settings={settings} save={save} />}
+						{section === "shortcuts" && <Shortcuts />}
+						{section === "about" && <About />}
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function Group({
+	title,
+	description,
+	children,
+}: {
+	title: string;
+	description?: string;
+	children: ReactNode;
+}) {
+	return (
+		<section className="mb-7">
+			<h3 className="text-[13px] font-semibold">{title}</h3>
+			{description && <p className="mt-0.5 text-[12px] text-muted">{description}</p>}
+			<div className="mt-3 divide-y divide-separator rounded-lg border border-border bg-background/30">
+				{children}
+			</div>
+		</section>
+	);
+}
+
+function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+	return (
+		<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
+			<div className="min-w-0">
+				<p className="text-[13px]">{label}</p>
+				{hint && <p className="text-[11px] text-muted">{hint}</p>}
+			</div>
+			<div className="flex shrink-0 items-center gap-2">{children}</div>
+		</div>
+	);
+}
+
+function General({ settings, save }: { settings: Settings; save: (p: Partial<Settings>) => void }) {
+	return (
+		<>
+			<Group title="Appearance">
+				<Row label="Theme">
+					<Segmented
+						size="xs"
+						value={settings.theme}
+						onChange={(theme) => save({ theme })}
+						options={[
+							{ value: "dark", label: "Dark" },
+							{ value: "light", label: "Light" },
+							{ value: "system", label: "System" },
+						]}
+					/>
+				</Row>
+			</Group>
+			<Group title="Projects">
+				<Row label="Projects folder" hint={settings.projectsDir.replace(/^\/Users\/[^/]+/, "~")}>
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 text-[12px]"
+						onPress={async () => {
+							const dir = await window.cue.chooseFolder({
+								title: "Projects folder",
+								defaultPath: settings.projectsDir,
+							});
+							if (dir) save({ projectsDir: dir });
+						}}
+					>
+						Change…
+					</Button>
+				</Row>
+			</Group>
+			<Group
+				title="Editing"
+				description="Defaults for new sessions. Conventions follow Premiere Pro, DaVinci Resolve and Final Cut Pro."
+			>
+				<Row label="Snapping on by default">
+					<Toggle
+						label=""
+						checked={settings.editor.snapping}
+						onChange={(snapping) => save({ editor: { ...settings.editor, snapping } })}
+					/>
+				</Row>
+				<Row label="Delete closes gaps (ripple) by default" hint="⇧⌫ always ripple-deletes">
+					<Toggle
+						label=""
+						checked={settings.editor.rippleByDefault}
+						onChange={(rippleByDefault) =>
+							save({ editor: { ...settings.editor, rippleByDefault } })
+						}
+					/>
+				</Row>
+				<Row
+					label="Playback copies of large videos"
+					hint="Smoother playback and scrubbing. Exports always use the originals."
+				>
+					<Toggle
+						label=""
+						checked={settings.editor.autoProxies}
+						onChange={(autoProxies) => save({ editor: { ...settings.editor, autoProxies } })}
+					/>
+				</Row>
+			</Group>
+		</>
+	);
+}
+
+function StatusPill({ ready, text }: { ready: boolean; text: string }) {
+	return (
+		<span
+			className={cn("flex items-center gap-1 text-[11px]", ready ? "text-success" : "text-warning")}
+		>
+			{ready ? (
+				<CheckCircle weight="fill" className="size-3.5" />
+			) : (
+				<Warning weight="fill" className="size-3.5" />
+			)}
+			{text}
+		</span>
+	);
+}
+
+function AiSection({
+	settings,
+	save,
+}: {
+	settings: Settings;
+	save: (p: Partial<Settings>) => void;
+}) {
+	const status = useApp((s) => s.ai.status) ?? [];
+	const [inv, setInv] = useState<Inventory | null>(null);
+	const [busy, setBusy] = useState<string | null>(null);
+	const [progress, setProgress] = useState<Record<string, number>>({});
+	const [key, setKey] = useState("");
+	const refresh = useCallback(
+		async (force = false) => setInv(await window.cue.localInventory(force)),
+		[],
+	);
+	useEffect(() => {
+		void refresh(true);
+		return window.cue.onDownloadProgress((name, fraction) =>
+			setProgress((p) => ({ ...p, [name]: fraction })),
+		);
+	}, [refresh]);
+	const ai = settings.ai;
+	const set = (patch: Partial<Settings["ai"]>) => save({ ai: { ...ai, ...patch } });
+	const openaiReady =
+		status.some((s) => s.provider === "OpenAI" && s.ready) ||
+		status.every((s) => s.provider !== "OpenAI") === false;
+	const st = (c: string) => status.find((s) => s.capability === c);
+	const local = inv?.inventory;
+
+	return (
+		<>
+			<Group
+				title="Providers"
+				description="Choose, per task, whether Cue uses the cloud or models on this Mac."
+			>
+				<Row label="Voices" hint="Generated takes for script lines">
+					<StatusPill
+						ready={!!st("tts")?.ready}
+						text={st("tts")?.ready ? "Ready" : (st("tts")?.problem ?? "")}
+					/>
+					<Segmented
+						size="xs"
+						value={ai.tts}
+						onChange={(tts) => set({ tts })}
+						options={[
+							{ value: "openai", label: "OpenAI" },
+							{ value: "macos", label: "On this Mac" },
+						]}
+					/>
+				</Row>
+				<Row label="Transcription" hint="Captions, transcripts, script from footage">
+					<StatusPill
+						ready={!!st("transcription")?.ready}
+						text={st("transcription")?.ready ? "Ready" : (st("transcription")?.problem ?? "")}
+					/>
+					<Segmented
+						size="xs"
+						value={ai.transcription}
+						onChange={(transcription) => set({ transcription })}
+						options={[
+							{ value: "openai", label: "OpenAI" },
+							{ value: "whisper", label: "whisper.cpp" },
+						]}
+					/>
+				</Row>
+				<Row label="Text" hint="Rewriting lines to fit, suggestions">
+					<StatusPill
+						ready={!!st("text")?.ready}
+						text={st("text")?.ready ? (st("text")?.model ?? "Ready") : (st("text")?.problem ?? "")}
+					/>
+					<Segmented
+						size="xs"
+						value={ai.text}
+						onChange={(text) => set({ text, textModel: undefined })}
+						options={[
+							{ value: "openai", label: "OpenAI" },
+							{ value: "ollama", label: "Ollama" },
+							{ value: "lmstudio", label: "LM Studio" },
+							{ value: "none", label: "Off" },
+						]}
+					/>
+				</Row>
+				<Row label="Images" hint="Title cards and stills">
+					<StatusPill
+						ready={!!st("image")?.ready}
+						text={st("image")?.ready ? "Ready" : (st("image")?.problem ?? "")}
+					/>
+					<Segmented
+						size="xs"
+						value={ai.image}
+						onChange={(image) => set({ image })}
+						options={[
+							{ value: "openai", label: "OpenAI" },
+							{ value: "none", label: "Off" },
+						]}
+					/>
+				</Row>
+			</Group>
+
+			<Group title="OpenAI" description="The key is stored encrypted in your macOS keychain.">
+				{openaiReady && status.some((s) => s.provider === "OpenAI" && s.ready) ? (
+					<Row label="API key" hint="Connected">
+						<Button
+							size="sm"
+							variant="ghost"
+							className="h-7 text-[12px] text-danger"
+							onPress={() => void window.cue.setApiKey(null).then(() => notify("Key removed"))}
+						>
+							Remove
+						</Button>
+					</Row>
+				) : (
+					<Row label="API key">
+						<input
+							type="password"
+							value={key}
+							placeholder="sk-…"
+							onChange={(e) => setKey(e.target.value)}
+							onKeyDown={(e) => e.stopPropagation()}
+							className="h-7 w-64 rounded-md border border-border bg-field px-2 text-[12px] outline-none focus:border-accent"
+						/>
+						<Button
+							size="sm"
+							className="h-7 text-[12px]"
+							isDisabled={key.trim().length < 20}
+							onPress={() => void window.cue.setApiKey(key.trim()).then(() => setKey(""))}
+						>
+							Save
+						</Button>
+					</Row>
+				)}
+			</Group>
+
+			<Group
+				title="On this Mac"
+				description="Found automatically. Nothing leaves your computer when these are used."
+			>
+				<Row label="Scan again">
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-7 gap-1.5 text-[12px]"
+						onPress={() => void refresh(true)}
+					>
+						<ArrowClockwise className="size-3.5" /> Refresh
+					</Button>
+				</Row>
+				<Row
+					label="macOS voices"
+					hint={
+						local
+							? `${local.macVoices.length} installed. Add more in System Settings → Accessibility → Spoken Content.`
+							: "…"
+					}
+				>
+					<select
+						value={ai.macVoice}
+						onChange={(e) => set({ macVoice: e.target.value })}
+						className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+					>
+						{(local?.macVoices ?? [])
+							.filter((v) => v.locale.startsWith("en"))
+							.concat((local?.macVoices ?? []).filter((v) => !v.locale.startsWith("en")))
+							.map((v) => (
+								<option key={v.name} value={v.name}>
+									{v.name} · {v.locale}
+								</option>
+							))}
+					</select>
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 text-[12px]"
+						onPress={() => void window.cue.previewVoice(ai.macVoice)}
+					>
+						Listen
+					</Button>
+				</Row>
+				<Row
+					label="whisper.cpp"
+					hint={
+						local?.whisper.binary
+							? `${local.whisper.binary.includes("Recordly") ? "Using Recordly's copy" : local.whisper.binary}`
+							: "Not found. Install with: brew install whisper-cpp"
+					}
+				>
+					{local?.whisper.models.length ? (
+						<select
+							value={ai.whisperModel ?? local.whisper.models[0].path}
+							onChange={(e) => set({ whisperModel: e.target.value })}
+							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+						>
+							{local.whisper.models.map((m) => (
+								<option key={m.path} value={m.path}>
+									{m.name} · {m.sizeMb} MB
+								</option>
+							))}
+						</select>
+					) : (
+						<span className="text-[11px] text-muted">No model yet</span>
+					)}
+				</Row>
+				{local?.whisper.binary &&
+					Object.entries(inv?.downloads ?? {})
+						.filter(([name]) => !local.whisper.models.some((m) => m.name === name))
+						.map(([name, spec]) => (
+							<Row
+								key={name}
+								label={`Download ${name.replace("ggml-", "").replace(".bin", "")}`}
+								hint={`${spec.sizeMb} MB${name.includes(".en") ? " · English only, fastest" : name.includes("turbo") ? " · most accurate" : " · multilingual"}`}
+							>
+								{busy === name ? (
+									<span className="flex items-center gap-2 text-[11px] text-muted">
+										<Spinner size="sm" /> {Math.round((progress[name] ?? 0) * 100)}%
+									</span>
+								) : (
+									<Button
+										size="sm"
+										variant="secondary"
+										className="h-7 text-[12px]"
+										onPress={async () => {
+											setBusy(name);
+											try {
+												await window.cue.downloadWhisper(name);
+												notify("Model ready. Transcription now runs on this Mac.", "success");
+											} catch (error) {
+												notify((error as Error).message, "danger");
+											} finally {
+												setBusy(null);
+												void refresh(true);
+											}
+										}}
+									>
+										Download
+									</Button>
+								)}
+							</Row>
+						))}
+				<Row
+					label="Ollama"
+					hint={
+						!local
+							? "…"
+							: !local.ollama.installed
+								? "Not installed (ollama.com)"
+								: local.ollama.running
+									? `${local.ollama.models.length} model(s)`
+									: "Installed, not running"
+					}
+				>
+					{local?.ollama.running ? (
+						<select
+							value={ai.text === "ollama" ? (ai.textModel ?? local.ollama.models[0] ?? "") : ""}
+							onChange={(e) => set({ text: "ollama", textModel: e.target.value })}
+							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+						>
+							{ai.text !== "ollama" && <option value="">Use a model…</option>}
+							{local.ollama.models.map((m) => (
+								<option key={m} value={m}>
+									{m}
+								</option>
+							))}
+						</select>
+					) : local?.ollama.installed ? (
+						<Button
+							size="sm"
+							variant="secondary"
+							className="h-7 text-[12px]"
+							onPress={async () => {
+								setBusy("ollama");
+								await window.cue.startOllama().catch((e: Error) => notify(e.message, "danger"));
+								setBusy(null);
+								void refresh(true);
+							}}
+						>
+							{busy === "ollama" ? <Spinner size="sm" /> : "Start"}
+						</Button>
+					) : null}
+				</Row>
+				<Row
+					label="LM Studio"
+					hint={
+						local?.lmStudio.running
+							? `${local.lmStudio.models.length} model(s) served`
+							: "Start its local server to use it"
+					}
+				>
+					{local?.lmStudio.running && (
+						<select
+							value={ai.text === "lmstudio" ? (ai.textModel ?? local.lmStudio.models[0] ?? "") : ""}
+							onChange={(e) => set({ text: "lmstudio", textModel: e.target.value })}
+							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+						>
+							{ai.text !== "lmstudio" && <option value="">Use a model…</option>}
+							{local.lmStudio.models.map((m) => (
+								<option key={m} value={m}>
+									{m}
+								</option>
+							))}
+						</select>
+					)}
+				</Row>
+			</Group>
+			<p className="flex items-center gap-1.5 text-[11px] text-muted">
+				<Cpu className="size-3.5" /> Cue looks for whisper.cpp, Ollama, LM Studio and system voices
+				when you open this page.
+			</p>
+		</>
+	);
+}
+
+function AgentSection({
+	settings,
+	save,
+}: {
+	settings: Settings;
+	save: (p: Partial<Settings>) => void;
+}) {
+	const [command, setCommand] = useState("");
+	const agent = useApp((s) => s.agent);
+	useEffect(() => {
+		void window.cue.mcpCommand().then(setCommand);
+	}, []);
+	return (
+		<>
+			<Group title="Access">
+				<Row
+					label="Allow agents to control Cue"
+					hint="Over MCP, on this Mac only, with a token that changes every launch."
+				>
+					<Toggle
+						label=""
+						checked={settings.agent.enabled}
+						onChange={(enabled) => save({ agent: { enabled } })}
+					/>
+				</Row>
+				<Row
+					label="This session"
+					hint={agent?.requests ? `${agent.requests} requests` : "No requests yet"}
+				>
+					<span
+						className={cn(
+							"size-2 rounded-full",
+							agent?.lastSeenAt ? "bg-success" : "bg-foreground/25",
+						)}
+					/>
+				</Row>
+			</Group>
+			<Group
+				title="Connect Claude Code"
+				description="Run once in a terminal. Any MCP client can use the same command."
+			>
+				<div className="flex items-start gap-2 p-3">
+					<code className="min-w-0 flex-1 font-mono text-[11px] break-all select-text">
+						{command}
+					</code>
+					<Button
+						isIconOnly
+						size="sm"
+						variant="ghost"
+						aria-label="Copy"
+						onPress={() => {
+							void navigator.clipboard.writeText(command);
+							notify("Copied", "success");
+						}}
+					>
+						<Copy className="size-4" />
+					</Button>
+				</div>
+			</Group>
+		</>
+	);
+}
+
+function Shortcuts() {
+	return (
+		<>
+			{SHORTCUTS.map((group) => (
+				<Group key={group.title} title={group.title}>
+					{group.items.map((item) => (
+						<Row key={item.label} label={item.label} hint={item.note}>
+							<span className="flex gap-1">
+								{item.keys.map((k) => (
+									<kbd
+										key={k}
+										className="rounded-md border border-border bg-default px-1.5 py-0.5 font-sans text-[11px]"
+									>
+										{k}
+									</kbd>
+								))}
+							</span>
+						</Row>
+					))}
+				</Group>
+			))}
+		</>
+	);
+}
+
+function About() {
+	return (
+		<div className="flex flex-col gap-2 text-[13px]">
+			<p className="font-semibold">Cue</p>
+			<p className="text-muted">
+				A fast, AI-centred video editor. Projects are plain files you own; agents work through MCP
+				with every change attributed and undoable.
+			</p>
+			<p className="text-[12px] text-muted">Built with Electron, React, HeroUI and ffmpeg.</p>
+		</div>
+	);
+}

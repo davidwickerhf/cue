@@ -54,7 +54,14 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
 	return lines;
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	r: number,
+) {
 	const radius = Math.min(r, h / 2, w / 2);
 	ctx.beginPath();
 	ctx.roundRect(x, y, w, h, radius);
@@ -64,7 +71,13 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
  * Draws one text clip onto a canvas that represents the full output frame
  * (`width` × `height` in output pixels; scale the context for previews).
  */
-export function drawTextClip(ctx: CanvasRenderingContext2D, clip: TextClip, width: number, height: number, frame?: TextFrame) {
+export function drawTextClip(
+	ctx: CanvasRenderingContext2D,
+	clip: TextClip,
+	width: number,
+	height: number,
+	frame?: TextFrame,
+) {
 	const style = clip.style;
 	const f = frame ?? { alpha: 1, scale: 1, offsetY: 0, reveal: Number.POSITIVE_INFINITY };
 	if (f.alpha <= 0.001) return;
@@ -105,7 +118,12 @@ export function drawTextClip(ctx: CanvasRenderingContext2D, clip: TextClip, widt
 	}
 	ctx.fillStyle = style.color;
 	ctx.textAlign = style.align;
-	const x = style.align === "left" ? left + style.padding : style.align === "right" ? left + boxW - style.padding : 0;
+	const x =
+		style.align === "left"
+			? left + style.padding
+			: style.align === "right"
+				? left + boxW - style.padding
+				: 0;
 	lines.forEach((line, i) => {
 		ctx.fillText(line, x, top + style.padding + lineHeight * (i + 0.5));
 	});
@@ -122,8 +140,15 @@ async function png(canvas: HTMLCanvasElement): Promise<ArrayBuffer> {
  * Renders a text clip for export at the output size. Clips with animations
  * become a frame sequence so the exported motion matches the preview exactly.
  */
-export async function rasterise(clip: TextClip, width: number, height: number, fps: number): Promise<{ still?: ArrayBuffer; frames?: ArrayBuffer[] }> {
-	await document.fonts.load(`${clip.style.fontWeight} ${clip.style.fontSize}px "${clip.style.fontFamily}"`).catch(() => {});
+export async function rasterise(
+	clip: TextClip,
+	width: number,
+	height: number,
+	fps: number,
+): Promise<{ still?: ArrayBuffer; frames?: ArrayBuffer[] }> {
+	await document.fonts
+		.load(`${clip.style.fontWeight} ${clip.style.fontSize}px "${clip.style.fontFamily}"`)
+		.catch(() => {});
 	const canvas = document.createElement("canvas");
 	canvas.width = width;
 	canvas.height = height;

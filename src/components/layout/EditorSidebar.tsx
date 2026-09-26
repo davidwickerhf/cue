@@ -1,7 +1,7 @@
 import { Tooltip } from "@heroui/react";
-import { Gear, Images, Microphone, Robot, Sparkle, TextT } from "@phosphor-icons/react";
+import { Gear, Images, Microphone, Robot, Sparkle, Subtitles, TextT } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
-import { type SidebarPanel, editor, useApp } from "../../lib/state";
+import { editor, type SidebarPanel, useApp } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { AgentPanel } from "../panels/AgentPanel";
 import { GeneratePanel } from "../panels/GeneratePanel";
@@ -9,10 +9,12 @@ import { MediaPanel } from "../panels/MediaPanel";
 import { ScriptPanel } from "../panels/ScriptPanel";
 import { SettingsPanel } from "../panels/SettingsPanel";
 import { TextPanel } from "../panels/TextPanel";
+import { TranscriptPanel } from "../panels/TranscriptPanel";
 
 const ITEMS: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
 	{ id: "media", label: "Media", icon: <Images className="size-[18px]" /> },
 	{ id: "script", label: "Voiceover", icon: <Microphone className="size-[18px]" /> },
+	{ id: "transcript", label: "Transcript", icon: <Subtitles className="size-[18px]" /> },
 	{ id: "text", label: "Text", icon: <TextT className="size-[18px]" /> },
 	{ id: "generate", label: "Generate", icon: <Sparkle className="size-[18px]" /> },
 	{ id: "agent", label: "Agent", icon: <Robot className="size-[18px]" /> },
@@ -21,6 +23,7 @@ const ITEMS: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
 const TITLES: Record<SidebarPanel, string> = {
 	media: "Media",
 	script: "Voiceover",
+	transcript: "Transcript",
 	text: "Text",
 	generate: "Generate",
 	agent: "Agent",
@@ -32,14 +35,27 @@ export function EditorSidebar() {
 	const agentSeen = useApp((s) => s.agent.lastSeenAt);
 	return (
 		<div className="flex min-h-0 shrink-0 border-r border-separator bg-surface">
-			<nav className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-separator py-2" aria-label="Panels">
+			<nav
+				className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-separator py-2"
+				aria-label="Panels"
+			>
 				{ITEMS.map((item) => (
-					<RailButton key={item.id} label={item.label} active={panel === item.id} onPress={() => editor.set({ panel: item.id })} dot={item.id === "agent" && !!agentSeen}>
+					<RailButton
+						key={item.id}
+						label={item.label}
+						active={panel === item.id}
+						onPress={() => editor.set({ panel: item.id })}
+						dot={item.id === "agent" && !!agentSeen}
+					>
 						{item.icon}
 					</RailButton>
 				))}
 				<div className="mt-auto">
-					<RailButton label="Project settings" active={panel === "settings"} onPress={() => editor.set({ panel: "settings" })}>
+					<RailButton
+						label="Project settings"
+						active={panel === "settings"}
+						onPress={() => editor.set({ panel: "settings" })}
+					>
 						<Gear className="size-[18px]" />
 					</RailButton>
 				</div>
@@ -51,6 +67,7 @@ export function EditorSidebar() {
 				<div key={panel} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
 					{panel === "media" && <MediaPanel />}
 					{panel === "script" && <ScriptPanel />}
+					{panel === "transcript" && <TranscriptPanel />}
 					{panel === "text" && <TextPanel />}
 					{panel === "generate" && <GeneratePanel />}
 					{panel === "agent" && <AgentPanel />}
@@ -61,7 +78,19 @@ export function EditorSidebar() {
 	);
 }
 
-function RailButton({ label, active, onPress, children, dot }: { label: string; active: boolean; onPress: () => void; children: ReactNode; dot?: boolean }) {
+function RailButton({
+	label,
+	active,
+	onPress,
+	children,
+	dot,
+}: {
+	label: string;
+	active: boolean;
+	onPress: () => void;
+	children: ReactNode;
+	dot?: boolean;
+}) {
 	return (
 		<Tooltip delay={300} closeDelay={0}>
 			<Tooltip.Trigger>
@@ -72,7 +101,9 @@ function RailButton({ label, active, onPress, children, dot }: { label: string; 
 					onClick={onPress}
 					className={cn(
 						"relative flex size-8 items-center justify-center rounded-md transition-colors",
-						active ? "bg-default text-foreground" : "text-muted hover:bg-default/60 hover:text-foreground",
+						active
+							? "bg-default text-foreground"
+							: "text-muted hover:bg-default/60 hover:text-foreground",
 					)}
 				>
 					{children}

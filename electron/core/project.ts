@@ -132,7 +132,11 @@ export const settingsSchema = z.object({
 	useProxies: z.boolean(),
 });
 
-export const keyframeSchema = z.object({ atMs: z.number().min(0), value: z.number(), ease: z.enum(["linear", "ease", "hold"]).default("ease") });
+export const keyframeSchema = z.object({
+	atMs: z.number().min(0),
+	value: z.number(),
+	ease: z.enum(["linear", "ease", "hold"]).default("ease"),
+});
 export const zoomSchema = z.object({
 	id: z.string(),
 	startMs: z.number().min(0),
@@ -150,7 +154,10 @@ export const colorSchema = z.object({
 	lut: z.string().optional(),
 });
 export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temperature: 0 };
-export const transitionSchema = z.object({ kind: z.enum(["crossfade", "dip"]), durationMs: z.number().min(40).max(5000) });
+export const transitionSchema = z.object({
+	kind: z.enum(["crossfade", "dip"]),
+	durationMs: z.number().min(40).max(5000),
+});
 
 export const exportSchema = z.object({
 	stemsDir: z.string().min(1),
@@ -190,11 +197,20 @@ const assetSchema = z.object({
 	speechEndMs: z.number().optional(),
 	peakDb: z.number().nullable().optional(),
 	generation: z
-		.object({ provider: z.string(), model: z.string(), prompt: z.string(), voice: z.string().optional() })
+		.object({
+			provider: z.string(),
+			model: z.string(),
+			prompt: z.string(),
+			voice: z.string().optional(),
+		})
 		.optional(),
 	actor: z.enum(["user", "agent", "system"]).default("user"),
 	transcript: z
-		.object({ model: z.string(), createdAt: z.string(), words: z.array(z.object({ text: z.string(), startMs: z.number(), endMs: z.number() })) })
+		.object({
+			model: z.string(),
+			createdAt: z.string(),
+			words: z.array(z.object({ text: z.string(), startMs: z.number(), endMs: z.number() })),
+		})
 		.optional(),
 });
 
@@ -266,7 +282,14 @@ const projectSchema = z.object({
 	clips: z.array(clipSchema).default([]),
 	lines: z.array(lineInputSchema).default([]),
 	markers: z
-		.array(z.object({ id, atMs: ms, label: z.string().max(200), color: z.enum(["accent", "success", "warning", "danger"]) }))
+		.array(
+			z.object({
+				id,
+				atMs: ms,
+				label: z.string().max(200),
+				color: z.enum(["accent", "success", "warning", "danger"]),
+			}),
+		)
 		.default([]),
 	settings: settingsSchema.partial().default({}),
 	export: exportSchema.partial().default({}),
@@ -312,15 +335,44 @@ export function assertUnique(ids: string[], what: string): void {
 }
 
 function pick<T extends object>(defaults: T, raw: Partial<T>): T {
-	return { ...defaults, ...Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined)) } as T;
+	return {
+		...defaults,
+		...Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined)),
+	} as T;
 }
 
 export function defaultTracks(): Track[] {
 	return [
 		{ id: "T1", kind: "text", name: "Text", muted: false, locked: false, hidden: false, volume: 1 },
-		{ id: "V1", kind: "video", name: "Video", muted: false, locked: false, hidden: false, volume: 1 },
-		{ id: "A1", kind: "audio", name: "Voiceover", muted: false, locked: false, hidden: false, volume: 1, voiceover: true },
-		{ id: "A2", kind: "audio", name: "Music", muted: false, locked: false, hidden: false, volume: 0.6, duck: true },
+		{
+			id: "V1",
+			kind: "video",
+			name: "Video",
+			muted: false,
+			locked: false,
+			hidden: false,
+			volume: 1,
+		},
+		{
+			id: "A1",
+			kind: "audio",
+			name: "Voiceover",
+			muted: false,
+			locked: false,
+			hidden: false,
+			volume: 1,
+			voiceover: true,
+		},
+		{
+			id: "A2",
+			kind: "audio",
+			name: "Music",
+			muted: false,
+			locked: false,
+			hidden: false,
+			volume: 0.6,
+			duck: true,
+		},
 	];
 }
 
@@ -343,10 +395,22 @@ export function emptyProject(name: string): ProjectData {
 export function parseProject(raw: unknown): ProjectData {
 	const parsed = projectSchema.parse(raw);
 	const lines = sortLines(parsed.lines.map((line) => normaliseLine(line)));
-	assertUnique(lines.map((line) => line.id), "line");
-	assertUnique(parsed.assets.map((asset) => asset.id), "asset");
-	assertUnique(parsed.tracks.map((track) => track.id), "track");
-	assertUnique(parsed.clips.map((clip) => clip.id), "clip");
+	assertUnique(
+		lines.map((line) => line.id),
+		"line",
+	);
+	assertUnique(
+		parsed.assets.map((asset) => asset.id),
+		"asset",
+	);
+	assertUnique(
+		parsed.tracks.map((track) => track.id),
+		"track",
+	);
+	assertUnique(
+		parsed.clips.map((clip) => clip.id),
+		"clip",
+	);
 	return {
 		version: 2,
 		name: parsed.name,
@@ -372,7 +436,10 @@ export function projectDuration(data: ProjectData): number {
 }
 
 export function voiceoverTrack(data: ProjectData): Track | undefined {
-	return data.tracks.find((track) => track.voiceover) ?? data.tracks.find((track) => track.kind === "audio");
+	return (
+		data.tracks.find((track) => track.voiceover) ??
+		data.tracks.find((track) => track.kind === "audio")
+	);
 }
 
 export function lineStatus(line: ScriptLine, speechMs: number | null): LineStatus {
@@ -391,7 +458,10 @@ export function speechOf(asset: Asset) {
 export function deriveLines(data: ProjectData): LineView[] {
 	return data.lines.map((line, index) => {
 		const takes = data.assets.filter((asset) => asset.lineId === line.id);
-		const clip = data.clips.find((candidate): candidate is MediaClip => candidate.type === "media" && candidate.lineId === line.id);
+		const clip = data.clips.find(
+			(candidate): candidate is MediaClip =>
+				candidate.type === "media" && candidate.lineId === line.id,
+		);
 		const chosen = clip ? takes.find((asset) => asset.id === clip.assetId) : undefined;
 		const speech = chosen ? speechOf(chosen) : null;
 		return {
@@ -402,23 +472,33 @@ export function deriveLines(data: ProjectData): LineView[] {
 			clipId: clip?.id ?? null,
 			status: lineStatus(line, speech ? speech.lengthMs : null),
 			speechMs: speech ? speech.lengthMs : null,
-			placementMs: clip && speech ? clip.startMs + Math.max(0, speech.startMs - clip.inMs) / clip.speed : null,
+			placementMs:
+				clip && speech ? clip.startMs + Math.max(0, speech.startMs - clip.inMs) / clip.speed : null,
 		};
 	});
 }
 
 export function stemName(pattern: string, lineId: string, index: number): string {
-	return pattern.replaceAll("{id}", lineId).replaceAll("{index}", String(index + 1).padStart(2, "0"));
+	return pattern
+		.replaceAll("{id}", lineId)
+		.replaceAll("{index}", String(index + 1).padStart(2, "0"));
 }
 
 /** A media clip for a voiceover take, trimmed to the speech plus padding. */
-export function takeClip(asset: Asset, trackId: string, padMs: number, lineStartMs: number): MediaClip {
+export function takeClip(
+	asset: Asset,
+	trackId: string,
+	padMs: number,
+	lineStartMs: number,
+): MediaClip {
 	const speech = speechOf(asset);
 	const inMs = Math.max(0, speech.startMs - padMs);
 	const outMs = Math.min(asset.durationMs, speech.endMs + padMs);
 	// Recordings stay where they were spoken; generated takes start their speech on the line's start.
 	const startMs =
-		asset.recordedAtMs !== undefined ? asset.recordedAtMs + inMs : lineStartMs - (speech.startMs - inMs);
+		asset.recordedAtMs !== undefined
+			? asset.recordedAtMs + inMs
+			: lineStartMs - (speech.startMs - inMs);
 	return {
 		id: newId("c"),
 		type: "media",

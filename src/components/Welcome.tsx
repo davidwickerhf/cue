@@ -25,10 +25,19 @@ export function Welcome() {
 			<header className="app-drag flex h-11 shrink-0 items-center gap-2 border-b border-separator bg-surface pr-3 pl-[84px]">
 				<Logo />
 				<div className="flex-1" />
-				<Button size="sm" variant="secondary" className="h-7 gap-1.5 text-[12px]" onPress={() => void window.cue.openProject()}>
+				<Button
+					size="sm"
+					variant="secondary"
+					className="h-7 gap-1.5 text-[12px]"
+					onPress={() => void window.cue.openProject()}
+				>
 					<FolderOpen className="size-3.5" /> Open…
 				</Button>
-				<Button size="sm" className="h-7 gap-1.5 text-[12px] font-semibold" onPress={() => void window.cue.newProject()}>
+				<Button
+					size="sm"
+					className="h-7 gap-1.5 text-[12px] font-semibold"
+					onPress={() => void window.cue.newProject()}
+				>
 					<Plus weight="bold" className="size-3.5" /> New Project
 				</Button>
 			</header>
@@ -39,8 +48,14 @@ export function Welcome() {
 					{recent.length === 0 ? (
 						<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border p-8">
 							<FilmSlate className="size-6 text-muted" />
-							<p className="text-[13px]">No projects yet. Start one from a video, or from an empty timeline.</p>
-							<Button size="sm" className="h-7 text-[12px]" onPress={() => void window.cue.newProject()}>
+							<p className="text-[13px]">
+								No projects yet. Start one from a video, or from an empty timeline.
+							</p>
+							<Button
+								size="sm"
+								className="h-7 text-[12px]"
+								onPress={() => void window.cue.newProject()}
+							>
 								New Project
 							</Button>
 						</div>
@@ -56,7 +71,9 @@ export function Welcome() {
 									<FilmSlate className="size-4 text-muted" />
 									<span className="min-w-0">
 										<span className="block truncate text-[13px] font-medium">{item.name}</span>
-										<span className="block truncate text-[11px] text-muted">{item.path.replace(/^\/Users\/[^/]+/, "~")}</span>
+										<span className="block truncate text-[11px] text-muted">
+											{item.path.replace(/^\/Users\/[^/]+/, "~")}
+										</span>
 									</span>
 									<span className="text-[11px] text-muted">{ago(item.openedAt)}</span>
 								</button>
@@ -89,7 +106,12 @@ export function Logo() {
 		<div className="flex items-center gap-1.5">
 			<svg viewBox="0 0 20 20" className="size-[18px]" aria-hidden="true">
 				<rect width="20" height="20" rx="5" fill="currentColor" />
-				<path d="M6.5 7v6M10 5v10M13.5 8v4" stroke="var(--surface)" strokeWidth="2" strokeLinecap="round" />
+				<path
+					d="M6.5 7v6M10 5v10M13.5 8v4"
+					stroke="var(--surface)"
+					strokeWidth="2"
+					strokeLinecap="round"
+				/>
 			</svg>
 			<span className="text-[13px] font-semibold tracking-tight">Cue</span>
 		</div>

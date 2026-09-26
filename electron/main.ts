@@ -2,20 +2,48 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { BrowserWindow, Menu, app, dialog, ipcMain, protocol, safeStorage, session, shell, systemPreferences } from "electron";
+import {
+	app,
+	BrowserWindow,
+	dialog,
+	ipcMain,
+	Menu,
+	protocol,
+	safeStorage,
+	session,
+	shell,
+	systemPreferences,
+} from "electron";
 import { contract, type MethodName } from "./control/contract";
 import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
 import type { TextRender } from "./core/exporter";
+import {
+	detectLocal,
+	downloadWhisperModel,
+	type LocalInventory,
+	startOllama,
+	WHISPER_DOWNLOADS,
+} from "./core/local-ai";
 import { resolveInProject } from "./core/paths";
+import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtime";
 import { ProjectStore } from "./core/store";
 import type { EditorCommand, RecorderStatus, TextClip } from "./core/types";
 
 app.setName("Cue");
 const MEDIA_SCHEME = "cue-media";
 protocol.registerSchemesAsPrivileged([
-	{ scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } },
+	{
+		scheme: MEDIA_SCHEME,
+		privileges: {
+			standard: true,
+			secure: true,
+			stream: true,
+			supportFetchAPI: true,
+			corsEnabled: true,
+		},
+	},
 ]);
 
 let win: BrowserWindow | null = null;
@@ -27,10 +55,16 @@ const mediaUrl = (file: string) => `${MEDIA_SCHEME}://local/${encodeURIComponent
 // Window round-trips (text rasterising and frame capture happen in the editor)
 // ---------------------------------------------------------------------------
 
-const waiting = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+const waiting = new Map<
+	string,
+	{ resolve: (value: unknown) => void; reject: (error: Error) => void }
+>();
 let requestSeq = 0;
 
-function askWindow<T>(command: (requestId: string) => EditorCommand, timeoutMs = 60000): Promise<T> {
+function askWindow<T>(
+	command: (requestId: string) => EditorCommand,
+	timeoutMs = 60000,
+): Promise<T> {
 	if (!win || win.isDestroyed()) return Promise.reject(new Error("The Cue window is not open."));
 	const requestId = `w${++requestSeq}`;
 	return new Promise<T>((resolve, reject) => {
@@ -65,7 +99,11 @@ async function renderText(clips: TextClip[]): Promise<Record<string, TextRender>
 			const dir = path.join(root, id);
 			await fs.rm(dir, { recursive: true, force: true });
 			await fs.mkdir(dir, { recursive: true });
-			await Promise.all(image.frames.map((frame, i) => fs.writeFile(path.join(dir, `${String(i).padStart(5, "0")}.png`), Buffer.from(frame))));
+			await Promise.all(
+				image.frames.map((frame, i) =>
+					fs.writeFile(path.join(dir, `${String(i).padStart(5, "0")}.png`), Buffer.from(frame)),
+				),
+			);
 			out[id] = { kind: "sequence", pattern: path.join(dir, "%05d.png"), fps };
 		} else if (image.still) {
 			await fs.mkdir(root, { recursive: true });
@@ -78,9 +116,16 @@ async function renderText(clips: TextClip[]): Promise<Record<string, TextRender>
 }
 
 async function captureFrame(atMs: number): Promise<string> {
-	const rect = await askWindow<{ x: number; y: number; width: number; height: number }>((requestId) => ({ type: "captureFrame", requestId, atMs }));
+	const rect = await askWindow<{ x: number; y: number; width: number; height: number }>(
+		(requestId) => ({ type: "captureFrame", requestId, atMs }),
+	);
 	if (!win) throw new Error("The Cue window is not open.");
-	const image = await win.webContents.capturePage({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) });
+	const image = await win.webContents.capturePage({
+		x: Math.round(rect.x),
+		y: Math.round(rect.y),
+		width: Math.round(rect.width),
+		height: Math.round(rect.height),
+	});
 	const dir = path.join(store.cacheDir(), "frames");
 	await fs.mkdir(dir, { recursive: true });
 	const file = path.join(dir, `frame-${Math.round(atMs)}.png`);
@@ -106,14 +151,67 @@ async function saveApiKey(key: string | null): Promise<void> {
 		await fs.rm(secretsFile, { force: true });
 		return;
 	}
-	if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure storage is not available on this system.");
+	if (!safeStorage.isEncryptionAvailable())
+		throw new Error("Secure storage is not available on this system.");
 	await fs.mkdir(dataDir, { recursive: true });
-	await fs.writeFile(secretsFile, safeStorage.encryptString(JSON.stringify({ openai: key.trim() })), { mode: 0o600 });
+	await fs.writeFile(
+		secretsFile,
+		safeStorage.encryptString(JSON.stringify({ openai: key.trim() })),
+		{ mode: 0o600 },
+	);
+}
+
+// ---------------------------------------------------------------------------
+// App settings and local models
+// ---------------------------------------------------------------------------
+
+const settingsFile = path.join(dataDir, "settings.json");
+let appSettings: AppSettings = appSettingsSchema.parse({});
+let inventory: LocalInventory | null = null;
+let inventoryAt = 0;
+
+async function loadAppSettings() {
+	try {
+		appSettings = appSettingsSchema.parse(JSON.parse(await fs.readFile(settingsFile, "utf8")));
+	} catch {
+		appSettings = appSettingsSchema.parse({});
+	}
+	if (!appSettings.projectsDir) appSettings.projectsDir = path.join(app.getPath("videos"), "Cue");
+}
+
+async function saveAppSettings(patch: Partial<AppSettings>) {
+	appSettings = appSettingsSchema.parse({
+		...appSettings,
+		...patch,
+		ai: { ...appSettings.ai, ...patch.ai },
+		agent: { ...appSettings.agent, ...patch.agent },
+		editor: { ...appSettings.editor, ...patch.editor },
+	});
+	await fs.mkdir(dataDir, { recursive: true });
+	await fs.writeFile(settingsFile, JSON.stringify(appSettings, null, 2));
+	await controller.refreshAi();
+	win?.webContents.send("cue:appSettings", appSettings);
+}
+
+async function localInventory(force = false): Promise<LocalInventory> {
+	if (!inventory || force || Date.now() - inventoryAt > 15000) {
+		inventory = await detectLocal(dataDir);
+		inventoryAt = Date.now();
+	}
+	return inventory;
+}
+
+async function runtime() {
+	return buildRuntime(appSettings, await credentials(), await localInventory());
 }
 
 // ---------------------------------------------------------------------------
 
-const store = new ProjectStore({ mediaUrl, recentFile: path.join(dataDir, "recent.json") });
+const store = new ProjectStore({
+	mediaUrl,
+	recentFile: path.join(dataDir, "recent.json"),
+	autoProxies: () => appSettings.editor.autoProxies,
+});
 const controller = new Controller(store, {
 	sendCommand: (command) => {
 		if (!win || win.isDestroyed()) return false;
@@ -130,7 +228,7 @@ const controller = new Controller(store, {
 	},
 	renderText,
 	captureFrame,
-	credentials,
+	runtime,
 });
 
 let stateTimer: NodeJS.Timeout | null = null;
@@ -144,7 +242,9 @@ controller.on("state", () => {
 store.on("error", (error: Error) => store.log("system", `Autosave failed: ${error.message}`));
 
 function mcpScriptPath(): string {
-	return app.isPackaged ? path.join(process.resourcesPath, "mcp", "cue-mcp.mjs") : path.join(app.getAppPath(), "dist-mcp", "cue-mcp.mjs");
+	return app.isPackaged
+		? path.join(process.resourcesPath, "mcp", "cue-mcp.mjs")
+		: path.join(app.getAppPath(), "dist-mcp", "cue-mcp.mjs");
 }
 
 /** Only the open project's folder and its media may be streamed to the window. */
@@ -187,11 +287,22 @@ async function serveMedia(request: Request): Promise<Response> {
 		const end = range[2] ? Math.min(Number(range[2]), stat.size - 1) : stat.size - 1;
 		return new Response(Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream, {
 			status: 206,
-			headers: { ...cors, "content-type": type, "content-length": String(end - start + 1), "content-range": `bytes ${start}-${end}/${stat.size}`, "accept-ranges": "bytes" },
+			headers: {
+				...cors,
+				"content-type": type,
+				"content-length": String(end - start + 1),
+				"content-range": `bytes ${start}-${end}/${stat.size}`,
+				"accept-ranges": "bytes",
+			},
 		});
 	}
 	return new Response(Readable.toWeb(createReadStream(file)) as ReadableStream, {
-		headers: { ...cors, "content-type": type, "content-length": String(stat.size), "accept-ranges": "bytes" },
+		headers: {
+			...cors,
+			"content-type": type,
+			"content-length": String(stat.size),
+			"accept-ranges": "bytes",
+		},
 	});
 }
 
@@ -206,12 +317,21 @@ function createWindow() {
 		trafficLightPosition: { x: 18, y: 20 },
 		backgroundColor: "#f4f4f5",
 		show: false,
-		webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true },
+		webPreferences: {
+			preload: path.join(__dirname, "preload.cjs"),
+			contextIsolation: true,
+			sandbox: true,
+		},
 	});
 	win.once("ready-to-show", () => win?.show());
 	win.on("closed", () => {
 		win = null;
-		controller.updateRecorder({ uiReady: false, micReady: false, recordingLineId: null, playing: false });
+		controller.updateRecorder({
+			uiReady: false,
+			micReady: false,
+			recordingLineId: null,
+			playing: false,
+		});
 	});
 	win.webContents.setWindowOpenHandler(({ url }) => {
 		void shell.openExternal(url);
@@ -232,7 +352,9 @@ async function newProjectDialog() {
 	const source = video.canceled ? undefined : video.filePaths[0];
 	const target = await dialog.showSaveDialog(win, {
 		title: "Save the Cue project",
-		defaultPath: source ? path.join(path.dirname(source), `${path.parse(source).name}.cue.json`) : path.join(app.getPath("documents"), "Untitled.cue.json"),
+		defaultPath: source
+			? path.join(path.dirname(source), `${path.parse(source).name}.cue.json`)
+			: path.join(app.getPath("documents"), "Untitled.cue.json"),
 	});
 	if (target.canceled || !target.filePath) return;
 	await controller.call("create_project", { path: target.filePath, video: source }, "user");
@@ -240,8 +362,13 @@ async function newProjectDialog() {
 
 async function openProjectDialog() {
 	if (!win) return;
-	const result = await dialog.showOpenDialog(win, { title: "Open a Cue project", properties: ["openFile"], filters: [{ name: "Cue project", extensions: ["json"] }] });
-	if (!result.canceled && result.filePaths[0]) await controller.call("open_project", { path: result.filePaths[0] }, "user");
+	const result = await dialog.showOpenDialog(win, {
+		title: "Open a Cue project",
+		properties: ["openFile"],
+		filters: [{ name: "Cue project", extensions: ["json"] }],
+	});
+	if (!result.canceled && result.filePaths[0])
+		await controller.call("open_project", { path: result.filePaths[0] }, "user");
 }
 
 async function importDialog(place?: { trackId: string; startMs: number }) {
@@ -249,23 +376,68 @@ async function importDialog(place?: { trackId: string; startMs: number }) {
 	const result = await dialog.showOpenDialog(win, {
 		title: "Import media",
 		properties: ["openFile", "multiSelections"],
-		filters: [{ name: "Media", extensions: ["mp4", "mov", "m4v", "webm", "wav", "mp3", "m4a", "aac", "flac", "ogg", "png", "jpg", "jpeg", "webp", "gif"] }],
+		filters: [
+			{
+				name: "Media",
+				extensions: [
+					"mp4",
+					"mov",
+					"m4v",
+					"webm",
+					"wav",
+					"mp3",
+					"m4a",
+					"aac",
+					"flac",
+					"ogg",
+					"png",
+					"jpg",
+					"jpeg",
+					"webp",
+					"gif",
+				],
+			},
+		],
 	});
 	if (result.canceled || result.filePaths.length === 0) return [];
 	return controller.call("import_media", { files: result.filePaths, ...place }, "user");
 }
 
 function buildMenu() {
-	const guard = (fn: () => Promise<unknown>) => () => void fn().catch((error: Error) => win && dialog.showErrorBox("Cue", error.message));
+	const guard = (fn: () => Promise<unknown>) => () =>
+		void fn().catch((error: Error) => win && dialog.showErrorBox("Cue", error.message));
 	Menu.setApplicationMenu(
 		Menu.buildFromTemplate([
-			{ role: "appMenu" },
+			{
+				label: app.name,
+				submenu: [
+					{ role: "about" },
+					{ type: "separator" },
+					{
+						label: "Settings…",
+						accelerator: "CmdOrCtrl+,",
+						click: () => win?.webContents.send("cue:openSettings"),
+					},
+					{ type: "separator" },
+					{ role: "services" },
+					{ type: "separator" },
+					{ role: "hide" },
+					{ role: "hideOthers" },
+					{ role: "unhide" },
+					{ type: "separator" },
+					{ role: "quit" },
+				],
+			},
 			{
 				label: "File",
 				submenu: [
 					{ label: "New Project…", accelerator: "CmdOrCtrl+N", click: guard(newProjectDialog) },
 					{ label: "Open Project…", accelerator: "CmdOrCtrl+O", click: guard(openProjectDialog) },
-					{ label: "Import Media…", accelerator: "CmdOrCtrl+I", click: guard(() => importDialog()) },
+					{
+						label: "Import Media…",
+						accelerator: "CmdOrCtrl+I",
+						click: guard(() => importDialog()),
+					},
 					{ type: "separator" },
 					{ label: "Save", accelerator: "CmdOrCtrl+S", click: guard(() => store.flush()) },
 					{ type: "separator" },
@@ -275,8 +447,16 @@ function buildMenu() {
 			{
 				label: "Edit",
 				submenu: [
-					{ label: "Undo", accelerator: "CmdOrCtrl+Z", click: guard(() => controller.call("undo", {}, "user")) },
-					{ label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", click: guard(() => controller.call("redo", {}, "user")) },
+					{
+						label: "Undo",
+						accelerator: "CmdOrCtrl+Z",
+						click: guard(() => controller.call("undo", {}, "user")),
+					},
+					{
+						label: "Redo",
+						accelerator: "CmdOrCtrl+Shift+Z",
+						click: guard(() => controller.call("redo", {}, "user")),
+					},
 					{ type: "separator" },
 					{ role: "cut" },
 					{ role: "copy" },
@@ -296,7 +476,9 @@ function registerIpc() {
 		if (!(method in contract)) throw new Error(`Unknown method ${method}`);
 		return controller.call(method as MethodName, params, "user");
 	});
-	ipcMain.on("cue:recorder", (_event, status: Partial<RecorderStatus>) => controller.updateRecorder(status));
+	ipcMain.on("cue:recorder", (_event, status: Partial<RecorderStatus>) =>
+		controller.updateRecorder(status),
+	);
 	ipcMain.on("cue:selectClips", (_event, ids: string[]) => controller.selectClips(ids));
 	ipcMain.on("cue:selectLine", (_event, id: string | null) => {
 		controller.selectedLineId = id;
@@ -309,25 +491,93 @@ function registerIpc() {
 		if (error) pending.reject(new Error(error));
 		else pending.resolve(value);
 	});
-	ipcMain.handle("cue:saveRecording", (_event, input) => controller.saveRecording({ ...input, audio: Buffer.from(input.audio) }));
-	ipcMain.on("cue:failRecording", (_event, requestId: string, message: string) => controller.failRecording(requestId, message));
-	ipcMain.handle("cue:requestMicrophone", () => (process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : true));
+	ipcMain.handle("cue:saveRecording", (_event, input) =>
+		controller.saveRecording({ ...input, audio: Buffer.from(input.audio) }),
+	);
+	ipcMain.on("cue:failRecording", (_event, requestId: string, message: string) =>
+		controller.failRecording(requestId, message),
+	);
+	ipcMain.handle("cue:requestMicrophone", () =>
+		process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : true,
+	);
 	ipcMain.handle("cue:peaks", (_event, assetId: string) => store.peaks(assetId));
 	ipcMain.handle("cue:thumbnails", (_event, assetId: string) => store.thumbnails(assetId));
-	ipcMain.handle("cue:importDialog", (_event, place?: { trackId: string; startMs: number }) => importDialog(place));
+	ipcMain.handle("cue:audioProxy", async (_event, assetId: string, speed: number) =>
+		mediaUrl(await store.audioProxy(assetId, speed)),
+	);
+	ipcMain.handle("cue:importDialog", (_event, place?: { trackId: string; startMs: number }) =>
+		importDialog(place),
+	);
 	ipcMain.handle("cue:newProject", () => newProjectDialog());
 	ipcMain.handle("cue:openProject", () => openProjectDialog());
 	ipcMain.handle("cue:reveal", (_event, file: string) => shell.showItemInFolder(file));
 	ipcMain.handle("cue:setApiKey", async (_event, key: string | null) => {
 		await saveApiKey(key);
+		await localInventory(true);
 		await controller.refreshAi();
 	});
-	ipcMain.handle("cue:mcpCommand", () => `claude mcp add --scope user cue -- node "${mcpScriptPath()}"`);
-	ipcMain.handle("cue:chooseFile", async (_event, options: { title: string; extensions?: string[] }) => {
-		if (!win) return null;
-		const result = await dialog.showOpenDialog(win, { title: options.title, properties: ["openFile"], filters: options.extensions ? [{ name: "Files", extensions: options.extensions }] : undefined });
-		return result.canceled ? null : (result.filePaths[0] ?? null);
+	ipcMain.handle("cue:getAppSettings", () => appSettings);
+	ipcMain.handle("cue:setAppSettings", (_event, patch: Partial<AppSettings>) =>
+		saveAppSettings(patch),
+	);
+	ipcMain.handle("cue:localInventory", async (_event, force: boolean) => ({
+		inventory: await localInventory(force),
+		downloads: WHISPER_DOWNLOADS,
+	}));
+	ipcMain.handle("cue:previewVoice", async (_event, voice: string) => {
+		const { execFile } = await import("node:child_process");
+		execFile("say", ["-v", voice, "This is how the voiceover will sound."]);
 	});
+	ipcMain.handle("cue:startOllama", async () => {
+		startOllama();
+		for (let i = 0; i < 20; i++) {
+			await new Promise((r) => setTimeout(r, 500));
+			const next = await localInventory(true);
+			if (next.ollama.running) break;
+		}
+		await controller.refreshAi();
+		return localInventory();
+	});
+	ipcMain.handle("cue:downloadWhisper", async (_event, name: string) => {
+		const file = await downloadWhisperModel(dataDir, name, (fraction) =>
+			win?.webContents.send("cue:downloadProgress", name, fraction),
+		);
+		await saveAppSettings({
+			ai: { ...appSettings.ai, whisperModel: file, transcription: "whisper" },
+		});
+		await localInventory(true);
+		return file;
+	});
+	ipcMain.handle(
+		"cue:mcpCommand",
+		() => `claude mcp add --scope user cue -- node "${mcpScriptPath()}"`,
+	);
+	ipcMain.handle(
+		"cue:chooseFolder",
+		async (_event, options: { title: string; defaultPath?: string }) => {
+			if (!win) return null;
+			const result = await dialog.showOpenDialog(win, {
+				title: options.title,
+				defaultPath: options.defaultPath,
+				properties: ["openDirectory", "createDirectory"],
+			});
+			return result.canceled ? null : (result.filePaths[0] ?? null);
+		},
+	);
+	ipcMain.handle(
+		"cue:chooseFile",
+		async (_event, options: { title: string; extensions?: string[] }) => {
+			if (!win) return null;
+			const result = await dialog.showOpenDialog(win, {
+				title: options.title,
+				properties: ["openFile"],
+				filters: options.extensions
+					? [{ name: "Files", extensions: options.extensions }]
+					: undefined,
+			});
+			return result.canceled ? null : (result.filePaths[0] ?? null);
+		},
+	);
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -339,22 +589,34 @@ else {
 	});
 
 	app.whenReady().then(async () => {
+		await loadAppSettings();
 		protocol.handle(MEDIA_SCHEME, serveMedia);
-		session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === "media" || permission === "clipboard-sanitized-write"));
+		session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
+			callback(permission === "media" || permission === "clipboard-sanitized-write"),
+		);
 		session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
 		registerIpc();
 		buildMenu();
-		const control = await startControlServer(controller, dataDir, app.getVersion());
+		const control = await startControlServer(
+			controller,
+			dataDir,
+			app.getVersion(),
+			() => appSettings.agent.enabled,
+		);
 		app.on("before-quit", () => {
 			void control.close();
 			void store.flush();
 		});
 		createWindow();
 		const initial = process.argv.find((arg) => arg.endsWith(".cue.json")) ?? process.env.CUE_OPEN;
-		if (initial) await controller.call("open_project", { path: initial }, "user").catch((error) => store.log("system", String(error)));
+		if (initial)
+			await controller
+				.call("open_project", { path: initial }, "user")
+				.catch((error) => store.log("system", String(error)));
 		else {
 			const [last] = await store.recent();
-			if (last) await controller.call("open_project", { path: last.path }, "system").catch(() => {});
+			if (last)
+				await controller.call("open_project", { path: last.path }, "system").catch(() => {});
 		}
 	});
 

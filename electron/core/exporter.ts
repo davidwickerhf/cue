@@ -4,6 +4,7 @@ import path from "node:path";
 import { keyframeExpr, zoomExprs } from "./anim";
 import { toSrt, toVtt } from "./captions";
 import { ffmpeg } from "./media";
+import { resolveInProject } from "./paths";
 import {
 	clipEnd,
 	deriveLines,
@@ -12,11 +13,12 @@ import {
 	stemName,
 	voiceoverTrack,
 } from "./project";
-import { resolveInProject } from "./paths";
 import type { Asset, Clip, MediaClip, ProjectData, TextClip, Track } from "./types";
 
 /** A text clip rendered by the editor window: one still, or a frame sequence for animated text. */
-export type TextRender = { kind: "still"; file: string } | { kind: "sequence"; pattern: string; fps: number };
+export type TextRender =
+	| { kind: "still"; file: string }
+	| { kind: "sequence"; pattern: string; fps: number };
 
 export interface ExportContext {
 	dir: string;
@@ -34,7 +36,8 @@ export interface ExportReport {
 }
 
 const s = (msValue: number) => (msValue / 1000).toFixed(3);
-const fileName = (data: ProjectData, pattern: string) => pattern.replaceAll("{name}", data.name.replace(/[^\w.-]+/g, "-"));
+const fileName = (data: ProjectData, pattern: string) =>
+	pattern.replaceAll("{name}", data.name.replace(/[^\w.-]+/g, "-"));
 
 function assetOf(data: ProjectData, id: string): Asset {
 	const found = data.assets.find((a) => a.id === id);
@@ -78,7 +81,13 @@ interface AudioSource {
 /** How long a clip's sound should fade out: its own fade, or the crossfade overlap with the next clip. */
 function effectiveFadeOut(data: ProjectData, clip: MediaClip): number {
 	const next = data.clips.find(
-		(x) => x.type === "media" && x.id !== clip.id && x.trackId === clip.trackId && x.transitionIn?.kind === "crossfade" && x.startMs < clipEnd(clip) && x.startMs > clip.startMs,
+		(x) =>
+			x.type === "media" &&
+			x.id !== clip.id &&
+			x.trackId === clip.trackId &&
+			x.transitionIn?.kind === "crossfade" &&
+			x.startMs < clipEnd(clip) &&
+			x.startMs > clip.startMs,
 	);
 	return Math.max(clip.fadeOutMs, next ? clipEnd(clip) - next.startMs : 0);
 }
@@ -92,8 +101,25 @@ function audibleClips(ctx: ExportContext, onlyTracks?: Set<string>): AudioSource
 		.flatMap((c) => {
 			const t = trackOf(data, c.trackId);
 			const a = assetOf(data, c.assetId);
-			if (t.muted || t.hidden || !a.hasAudio || a.kind === "image" || c.volume === 0 || t.volume === 0) return [];
-			return [{ clip: c, file: resolveInProject(ctx.dir, a.path), gain: c.volume * t.volume, voiceover: !!t.voiceover, duck: !!t.duck && !t.voiceover, fadeOutMs: effectiveFadeOut(data, c) }];
+			if (
+				t.muted ||
+				t.hidden ||
+				!a.hasAudio ||
+				a.kind === "image" ||
+				c.volume === 0 ||
+				t.volume === 0
+			)
+				return [];
+			return [
+				{
+					clip: c,
+					file: resolveInProject(ctx.dir, a.path),
+					gain: c.volume * t.volume,
+					voiceover: !!t.voiceover,
+					duck: !!t.duck && !t.voiceover,
+					fadeOutMs: effectiveFadeOut(data, c),
+				},
+			];
 		});
 }
 
@@ -102,10 +128,14 @@ function audioChain(input: string, src: AudioSource, label: string): string {
 	const { clip } = src;
 	const fades = [
 		clip.fadeInMs > 0 ? `afade=t=in:st=0:d=${s(clip.fadeInMs)}` : "",
-		src.fadeOutMs > 0 ? `afade=t=out:st=${s(clip.durationMs - src.fadeOutMs)}:d=${s(src.fadeOutMs)}` : "",
+		src.fadeOutMs > 0
+			? `afade=t=out:st=${s(clip.durationMs - src.fadeOutMs)}:d=${s(src.fadeOutMs)}`
+			: "",
 	].filter(Boolean);
 	const keyed = clip.keyframes?.volume?.length;
-	const volume = keyed ? `volume='${src.gain.toFixed(4)}*(${keyframeExpr(clip.keyframes?.volume, 1, "t*1000")})':eval=frame` : `volume=${src.gain.toFixed(3)}`;
+	const volume = keyed
+		? `volume='${src.gain.toFixed(4)}*(${keyframeExpr(clip.keyframes?.volume, 1, "t*1000")})':eval=frame`
+		: `volume=${src.gain.toFixed(3)}`;
 	return (
 		`${input}atrim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},asetpts=PTS-STARTPTS${tempo(clip.speed)}` +
 		`,aresample=48000,aformat=channel_layouts=stereo${clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : ""},${volume}` +
@@ -118,23 +148,38 @@ function audioChain(input: string, src: AudioSource, label: string): string {
  * Mixes audio sources into [label]. Tracks marked `duck` are compressed by
  * the voiceover (sidechain), so music dips while someone is speaking.
  */
-function mixGraph(sources: AudioSource[], firstInput: number, lengthMs: number, normalize: boolean, label: string): string[] {
-	const chains = sources.map((src, i) => audioChain(`[${firstInput + i}:a]`, src, `a${firstInput + i}`));
+function mixGraph(
+	sources: AudioSource[],
+	firstInput: number,
+	lengthMs: number,
+	normalize: boolean,
+	label: string,
+): string[] {
+	const chains = sources.map((src, i) =>
+		audioChain(`[${firstInput + i}:a]`, src, `a${firstInput + i}`),
+	);
 	const pad = `apad,atrim=0:${s(lengthMs)}`;
 	const post = normalize ? ",loudnorm=I=-16:TP=-1.5:LRA=11" : ",alimiter=limit=0.97";
-	const labels = (list: AudioSource[]) => list.map((src) => `[a${firstInput + sources.indexOf(src)}]`).join("");
+	const labels = (list: AudioSource[]) =>
+		list.map((src) => `[a${firstInput + sources.indexOf(src)}]`).join("");
 	const ducked = sources.filter((x) => x.duck);
 	const voice = sources.filter((x) => x.voiceover);
 	if (ducked.length && voice.length) {
 		const rest = sources.filter((x) => !x.duck && !x.voiceover);
-		chains.push(`${labels(voice)}amix=inputs=${voice.length}:normalize=0,${pad},asplit=2[vo_mix][vo_key]`);
+		chains.push(
+			`${labels(voice)}amix=inputs=${voice.length}:normalize=0,${pad},asplit=2[vo_mix][vo_key]`,
+		);
 		chains.push(`${labels(ducked)}amix=inputs=${ducked.length}:normalize=0,${pad}[duck_in]`);
-		chains.push("[duck_in][vo_key]sidechaincompress=threshold=0.03:ratio=6:attack=30:release=450:makeup=1[ducked]");
+		chains.push(
+			"[duck_in][vo_key]sidechaincompress=threshold=0.03:ratio=6:attack=30:release=450:makeup=1[ducked]",
+		);
 		const parts = ["[vo_mix]", "[ducked]", ...(rest.length ? [labels(rest)] : [])];
 		const count = 2 + rest.length;
 		chains.push(`${parts.join("")}amix=inputs=${count}:normalize=0,${pad}${post}[${label}]`);
 	} else {
-		chains.push(`${labels(sources)}amix=inputs=${sources.length}:normalize=0,${pad}${post}[${label}]`);
+		chains.push(
+			`${labels(sources)}amix=inputs=${sources.length}:normalize=0,${pad}${post}[${label}]`,
+		);
 	}
 	return chains;
 }
@@ -144,7 +189,18 @@ async function mixAudio(sources: AudioSource[], out: string, lengthMs: number, n
 	await fs.mkdir(path.dirname(out), { recursive: true });
 	const inputs = sources.flatMap((src) => ["-i", src.file]);
 	const chains = mixGraph(sources, 0, lengthMs, normalize, "out");
-	await ffmpeg([...inputs, "-filter_complex", chains.join(";"), "-map", "[out]", "-ac", "2", "-ar", "48000", out]);
+	await ffmpeg([
+		...inputs,
+		"-filter_complex",
+		chains.join(";"),
+		"-map",
+		"[out]",
+		"-ac",
+		"2",
+		"-ar",
+		"48000",
+		out,
+	]);
 }
 
 /**
@@ -167,9 +223,21 @@ export async function exportStems(ctx: ExportContext, outDir?: string): Promise<
 		const out = path.join(target, stemName(ctx.data.export.stemPattern, line.id, line.index));
 		const clean = clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : "";
 		await ffmpeg([
-			"-ss", s(clip.inMs), "-t", s(sourceSpan(clip)), "-i", resolveInProject(ctx.dir, a.path),
-			"-af", `volume=${clip.volume.toFixed(3)}${tempo(clip.speed)}${clean}${ctx.data.export.normalize ? ",loudnorm=I=-18:TP=-2:LRA=11" : ""}`,
-			"-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", out,
+			"-ss",
+			s(clip.inMs),
+			"-t",
+			s(sourceSpan(clip)),
+			"-i",
+			resolveInProject(ctx.dir, a.path),
+			"-af",
+			`volume=${clip.volume.toFixed(3)}${tempo(clip.speed)}${clean}${ctx.data.export.normalize ? ",loudnorm=I=-18:TP=-2:LRA=11" : ""}`,
+			"-ac",
+			"1",
+			"-ar",
+			"48000",
+			"-c:a",
+			"pcm_s16le",
+			out,
 		]);
 		outputs.push(out);
 		durations[line.id] = Number((clip.durationMs / 1000).toFixed(3));
@@ -188,7 +256,9 @@ export async function exportVoiceover(ctx: ExportContext, outFile?: string): Pro
 	const out = outFile ?? resolveInProject(ctx.dir, ctx.data.export.voiceoverFile);
 	const lengthMs = projectDuration(ctx.data);
 	await mixAudio(audibleClips(ctx, new Set([track.id])), out, lengthMs, ctx.data.export.normalize);
-	const missing = deriveLines(ctx.data).filter((l) => !l.clipId).map((l) => l.id);
+	const missing = deriveLines(ctx.data)
+		.filter((l) => !l.clipId)
+		.map((l) => l.id);
 	return { kind: "voiceover", outputs: [out], missing, durationMs: lengthMs };
 }
 
@@ -202,9 +272,17 @@ export async function exportAudioMix(ctx: ExportContext, outFile: string): Promi
 /** Caption clips (the Captions track, or every text clip made from speech) as SRT and VTT. */
 export async function exportCaptions(ctx: ExportContext, outFile?: string): Promise<ExportReport> {
 	const { data } = ctx;
-	const captionTrack = data.tracks.find((t) => t.kind === "text" && /caption|subtitle/i.test(t.name));
-	const clips = data.clips.filter((c): c is TextClip => c.type === "text" && (c.source?.kind === "caption" || c.trackId === captionTrack?.id));
-	if (clips.length === 0) throw new Error("There are no captions. Add them with Generate → Captions, or put text clips on a track named Captions.");
+	const captionTrack = data.tracks.find(
+		(t) => t.kind === "text" && /caption|subtitle/i.test(t.name),
+	);
+	const clips = data.clips.filter(
+		(c): c is TextClip =>
+			c.type === "text" && (c.source?.kind === "caption" || c.trackId === captionTrack?.id),
+	);
+	if (clips.length === 0)
+		throw new Error(
+			"There are no captions. Add them with Generate → Captions, or put text clips on a track named Captions.",
+		);
 	const srt = outFile ?? resolveInProject(ctx.dir, fileName(data, data.export.captionsFile));
 	const vtt = srt.replace(/\.srt$/i, "") + ".vtt";
 	await fs.mkdir(path.dirname(srt), { recursive: true });
@@ -216,16 +294,43 @@ export async function exportCaptions(ctx: ExportContext, outFile?: string): Prom
 function encoder(data: ProjectData): string[] {
 	const { codec, hardware, videoQuality } = data.export;
 	const mac = process.platform === "darwin";
-	if (codec === "prores") return ["-c:v", "prores_ks", "-profile:v", videoQuality === "draft" ? "0" : videoQuality === "standard" ? "2" : "3", "-pix_fmt", "yuv422p10le"];
+	if (codec === "prores")
+		return [
+			"-c:v",
+			"prores_ks",
+			"-profile:v",
+			videoQuality === "draft" ? "0" : videoQuality === "standard" ? "2" : "3",
+			"-pix_fmt",
+			"yuv422p10le",
+		];
 	const bitrate = { draft: "4M", standard: "10M", high: "20M" }[videoQuality];
 	if (hardware && mac) {
 		const name = codec === "hevc" ? "hevc_videotoolbox" : "h264_videotoolbox";
-		return ["-c:v", name, "-b:v", bitrate, "-pix_fmt", "yuv420p", ...(codec === "hevc" ? ["-tag:v", "hvc1"] : [])];
+		return [
+			"-c:v",
+			name,
+			"-b:v",
+			bitrate,
+			"-pix_fmt",
+			"yuv420p",
+			...(codec === "hevc" ? ["-tag:v", "hvc1"] : []),
+		];
 	}
 	const crf = { draft: "28", standard: "20", high: "16" }[videoQuality];
 	const preset = { draft: "veryfast", standard: "medium", high: "slow" }[videoQuality];
 	return codec === "hevc"
-		? ["-c:v", "libx265", "-preset", preset, "-crf", String(Number(crf) + 4), "-tag:v", "hvc1", "-pix_fmt", "yuv420p"]
+		? [
+				"-c:v",
+				"libx265",
+				"-preset",
+				preset,
+				"-crf",
+				String(Number(crf) + 4),
+				"-tag:v",
+				"hvc1",
+				"-pix_fmt",
+				"yuv420p",
+			]
 		: ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p"];
 }
 
@@ -240,13 +345,24 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	await fs.mkdir(path.dirname(out), { recursive: true });
 
 	// Tracks are listed top to bottom in the editor; draw the bottom ones first.
-	const visualTracks = [...data.tracks].reverse().filter((t) => (t.kind === "video" || t.kind === "text") && !t.hidden);
-	const layers: Clip[] = visualTracks.flatMap((t) => data.clips.filter((c) => c.trackId === t.id).sort((a, b) => a.startMs - b.startMs));
-	const textClips = layers.filter((c): c is TextClip => c.type === "text" && c.text.trim().length > 0);
-	const rendered = textClips.length ? await (ctx.renderText?.(textClips) ?? Promise.reject(new Error("Open the Cue window to render text."))) : {};
+	const visualTracks = [...data.tracks]
+		.reverse()
+		.filter((t) => (t.kind === "video" || t.kind === "text") && !t.hidden);
+	const layers: Clip[] = visualTracks.flatMap((t) =>
+		data.clips.filter((c) => c.trackId === t.id).sort((a, b) => a.startMs - b.startMs),
+	);
+	const textClips = layers.filter(
+		(c): c is TextClip => c.type === "text" && c.text.trim().length > 0,
+	);
+	const rendered = textClips.length
+		? await (ctx.renderText?.(textClips) ??
+				Promise.reject(new Error("Open the Cue window to render text.")))
+		: {};
 
 	const inputs: string[] = [];
-	const chains: string[] = [`color=c=${background}:s=${W}x${H}:r=${fps}:d=${s(lengthMs)},format=yuva420p[base]`];
+	const chains: string[] = [
+		`color=c=${background}:s=${W}x${H}:r=${fps}:d=${s(lengthMs)},format=yuva420p[base]`,
+	];
 	let current = "base";
 	let n = 0;
 	const addInput = (args: string[]) => {
@@ -263,10 +379,21 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			if (!render) continue;
 			const index =
 				render.kind === "still"
-					? addInput(["-loop", "1", "-framerate", String(fps), "-t", s(clip.durationMs), "-i", render.file])
+					? addInput([
+							"-loop",
+							"1",
+							"-framerate",
+							String(fps),
+							"-t",
+							s(clip.durationMs),
+							"-i",
+							render.file,
+						])
 					: addInput(["-framerate", String(render.fps), "-i", render.pattern]);
 			chains.push(`[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS+${start}/TB[${label}]`);
-			chains.push(`[${current}][${label}]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass[o${index}]`);
+			chains.push(
+				`[${current}][${label}]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
+			);
 			current = `o${index}`;
 			continue;
 		}
@@ -289,15 +416,22 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const grade = clip.color;
 		const colorChain = grade
 			? [
-					grade.brightness !== 0 || grade.contrast !== 1 || grade.saturation !== 1 ? `eq=brightness=${grade.brightness.toFixed(3)}:contrast=${grade.contrast.toFixed(3)}:saturation=${grade.saturation.toFixed(3)}` : "",
-					grade.temperature !== 0 ? `colortemperature=temperature=${Math.round(6500 - grade.temperature * 2500)}` : "",
+					grade.brightness !== 0 || grade.contrast !== 1 || grade.saturation !== 1
+						? `eq=brightness=${grade.brightness.toFixed(3)}:contrast=${grade.contrast.toFixed(3)}:saturation=${grade.saturation.toFixed(3)}`
+						: "",
+					grade.temperature !== 0
+						? `colortemperature=temperature=${Math.round(6500 - grade.temperature * 2500)}`
+						: "",
 					grade.lut ? `lut3d=file='${grade.lut.replace(/'/g, "\\'")}'` : "",
 				]
 					.filter(Boolean)
 					.map((f) => `,${f}`)
 					.join("")
 			: "";
-		const crop = c.left || c.top || c.right || c.bottom ? `,crop=w=iw*${cropW.toFixed(4)}:h=ih*${cropH.toFixed(4)}:x=iw*${c.left.toFixed(4)}:y=ih*${c.top.toFixed(4)}` : "";
+		const crop =
+			c.left || c.top || c.right || c.bottom
+				? `,crop=w=iw*${cropW.toFixed(4)}:h=ih*${cropH.toFixed(4)}:x=iw*${c.left.toFixed(4)}:y=ih*${c.top.toFixed(4)}`
+				: "";
 		const baseW = sw * cropW * fitBase;
 		const baseH = sh * cropH * fitBase;
 		const size = kf.scale?.length
@@ -306,18 +440,31 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const opacity = t.opacity < 1 ? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}` : "";
 		const fades = [
 			clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",
-			clip.fadeOutMs > 0 ? `fade=t=out:st=${s(clip.durationMs - clip.fadeOutMs)}:d=${s(clip.fadeOutMs)}:alpha=1` : "",
+			clip.fadeOutMs > 0
+				? `fade=t=out:st=${s(clip.durationMs - clip.fadeOutMs)}:d=${s(clip.fadeOutMs)}:alpha=1`
+				: "",
 		].filter(Boolean);
 		let index: number;
 		let source: string;
 		if (a.kind === "image") {
-			index = addInput(["-loop", "1", "-framerate", String(fps), "-t", s(clip.durationMs), "-i", file]);
+			index = addInput([
+				"-loop",
+				"1",
+				"-framerate",
+				String(fps),
+				"-t",
+				s(clip.durationMs),
+				"-i",
+				file,
+			]);
 			source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS`;
 		} else if (a.kind === "video") {
 			index = addInput(["-i", file]);
 			source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
 		} else continue;
-		chains.push(`${source}${zoomChain}${colorChain}${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`);
+		chains.push(
+			`${source}${zoomChain}${colorChain}${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`,
+		);
 		// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
 		const local = `(t-${start})*1000`;
 		const X = kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x);
@@ -325,7 +472,9 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const Sg = kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale);
 		const dx = `${(((c.left - c.right) / 2) * sw * fitBase).toFixed(3)}*(${Sg})`;
 		const dy = `${(((c.top - c.bottom) / 2) * sh * fitBase).toFixed(3)}*(${Sg})`;
-		chains.push(`[${current}][${label}]overlay=x='${W}*(${X})+${dx}-w/2':y='${H}*(${Y})+${dy}-h/2':enable='between(t,${start},${end})':eof_action=pass[o${index}]`);
+		chains.push(
+			`[${current}][${label}]overlay=x='${W}*(${X})+${dx}-w/2':y='${H}*(${Y})+${dy}-h/2':enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
+		);
 		current = `o${index}`;
 	}
 	const scale = data.export.scale;
@@ -339,7 +488,13 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const first = n;
 		for (const src of audio) addInput(["-i", src.file]);
 		chains.push(...mixGraph(audio, first, lengthMs, data.export.normalize, "aout"));
-		audioMaps.push("-map", "[aout]", "-c:a", data.export.codec === "prores" ? "pcm_s16le" : "aac", ...(data.export.codec === "prores" ? [] : ["-b:a", "192k"]));
+		audioMaps.push(
+			"-map",
+			"[aout]",
+			"-c:a",
+			data.export.codec === "prores" ? "pcm_s16le" : "aac",
+			...(data.export.codec === "prores" ? [] : ["-b:a", "192k"]),
+		);
 	}
 
 	const graph = path.join(os.tmpdir(), `cue-graph-${Date.now()}.txt`);
@@ -347,10 +502,18 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	try {
 		await ffmpeg([
 			...inputs,
-			"-filter_complex_script", graph,
-			"-map", "[vout]", ...audioMaps,
+			"-filter_complex_script",
+			graph,
+			"-map",
+			"[vout]",
+			...audioMaps,
 			...encoder(data),
-			"-r", String(fps), "-t", s(lengthMs), ...(out.endsWith(".mp4") ? ["-movflags", "+faststart"] : []), out,
+			"-r",
+			String(fps),
+			"-t",
+			s(lengthMs),
+			...(out.endsWith(".mp4") ? ["-movflags", "+faststart"] : []),
+			out,
 		]);
 	} finally {
 		await fs.rm(graph, { force: true });

@@ -16,7 +16,10 @@ export function Toaster() {
 		return onNotify((message, tone) => {
 			const toast = { id: ++id, message, tone };
 			setToasts((list) => [...list.slice(-3), toast]);
-			setTimeout(() => setToasts((list) => list.filter((t) => t.id !== toast.id)), tone === "danger" ? 7000 : 3500);
+			setTimeout(
+				() => setToasts((list) => list.filter((t) => t.id !== toast.id)),
+				tone === "danger" ? 7000 : 3500,
+			);
 		});
 	}, []);
 	return (
@@ -29,9 +32,17 @@ export function Toaster() {
 						"animate-in fade-in slide-in-from-bottom-2",
 					)}
 				>
-					{toast.tone === "danger" ? <WarningCircle weight="fill" className="mt-0.5 size-4 shrink-0 text-danger" /> : <CheckCircle weight="fill" className="mt-0.5 size-4 shrink-0 text-success" />}
+					{toast.tone === "danger" ? (
+						<WarningCircle weight="fill" className="mt-0.5 size-4 shrink-0 text-danger" />
+					) : (
+						<CheckCircle weight="fill" className="mt-0.5 size-4 shrink-0 text-success" />
+					)}
 					<p className="flex-1 leading-snug select-text">{toast.message}</p>
-					<button type="button" onClick={() => setToasts((list) => list.filter((t) => t.id !== toast.id))} className="text-muted hover:text-foreground">
+					<button
+						type="button"
+						onClick={() => setToasts((list) => list.filter((t) => t.id !== toast.id))}
+						className="text-muted hover:text-foreground"
+					>
 						<X className="size-3.5" />
 					</button>
 				</div>

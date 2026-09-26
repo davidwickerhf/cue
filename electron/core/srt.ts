@@ -14,16 +14,29 @@ function toMs(stamp: string): number {
  * gap until the next cue becomes the maximum, so a slower read still fits.
  */
 export function parseSrt(text: string, idPrefix = "L"): LineInput[] {
-	const blocks = text.replace(/\r/g, "").trim().split(/\n\s*\n/);
+	const blocks = text
+		.replace(/\r/g, "")
+		.trim()
+		.split(/\n\s*\n/);
 	const cues = blocks
 		.map((block) => block.split("\n"))
 		.map((rows) => {
 			const timeRow = rows.findIndex((row) => row.includes("-->"));
 			if (timeRow < 0) return null;
 			const [start, end] = rows[timeRow].split("-->").map((part) => toMs(part.trim()));
-			return { start, end, text: rows.slice(timeRow + 1).join(" ").trim() };
+			return {
+				start,
+				end,
+				text: rows
+					.slice(timeRow + 1)
+					.join(" ")
+					.trim(),
+			};
 		})
-		.filter((cue): cue is { start: number; end: number; text: string } => cue !== null && cue.text.length > 0)
+		.filter(
+			(cue): cue is { start: number; end: number; text: string } =>
+				cue !== null && cue.text.length > 0,
+		)
 		.sort((a, b) => a.start - b.start);
 
 	return cues.map((cue, index) => {

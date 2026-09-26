@@ -21,7 +21,21 @@ async function failure(res: Response): Promise<Error> {
 	return new Error(`OpenAI ${res.status}: ${detail}`);
 }
 
-export const TTS_VOICES = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "fable", "marin", "nova", "onyx", "sage", "shimmer", "verse"];
+export const TTS_VOICES = [
+	"alloy",
+	"ash",
+	"ballad",
+	"cedar",
+	"coral",
+	"echo",
+	"fable",
+	"marin",
+	"nova",
+	"onyx",
+	"sage",
+	"shimmer",
+	"verse",
+];
 
 /** Speech for one line of text, as WAV bytes. */
 export async function synthesizeSpeech(
@@ -77,11 +91,20 @@ export async function transcribe(
 		segments?: { start: number; end: number; text: string }[];
 		words?: { start: number; end: number; word: string }[];
 	};
-	const words = (body.words ?? []).map((w) => ({ startMs: Math.round(w.start * 1000), endMs: Math.round(w.end * 1000), word: w.word }));
+	const words = (body.words ?? []).map((w) => ({
+		startMs: Math.round(w.start * 1000),
+		endMs: Math.round(w.end * 1000),
+		word: w.word,
+	}));
 	const segments = (body.segments ?? []).map((s) => {
 		const startMs = Math.round(s.start * 1000);
 		const endMs = Math.round(s.end * 1000);
-		return { startMs, endMs, text: s.text.trim(), words: words.filter((w) => w.startMs >= startMs - 50 && w.endMs <= endMs + 50) };
+		return {
+			startMs,
+			endMs,
+			text: s.text.trim(),
+			words: words.filter((w) => w.startMs >= startMs - 50 && w.endMs <= endMs + 50),
+		};
 	});
 	return { text: body.text, segments };
 }
@@ -109,14 +132,26 @@ export async function generateImage(
  * Splits transcript words into caption-sized chunks: at most `maxChars`
  * characters, breaking early at sentence ends and long pauses.
  */
-export function chunkCaptions(segments: TranscriptSegment[], maxChars = 42): { startMs: number; endMs: number; text: string }[] {
+export function chunkCaptions(
+	segments: TranscriptSegment[],
+	maxChars = 42,
+): { startMs: number; endMs: number; text: string }[] {
 	const chunks: { startMs: number; endMs: number; text: string }[] = [];
 	for (const segment of segments) {
-		const words = segment.words?.length ? segment.words : [{ startMs: segment.startMs, endMs: segment.endMs, word: segment.text }];
+		const words = segment.words?.length
+			? segment.words
+			: [{ startMs: segment.startMs, endMs: segment.endMs, word: segment.text }];
 		let current: typeof words = [];
 		const flush = () => {
 			if (current.length === 0) return;
-			chunks.push({ startMs: current[0].startMs, endMs: current.at(-1)?.endMs ?? current[0].endMs, text: current.map((w) => w.word.trim()).join(" ").replace(/\s+([,.!?;:])/g, "$1") });
+			chunks.push({
+				startMs: current[0].startMs,
+				endMs: current.at(-1)?.endMs ?? current[0].endMs,
+				text: current
+					.map((w) => w.word.trim())
+					.join(" ")
+					.replace(/\s+([,.!?;:])/g, "$1"),
+			});
 			current = [];
 		};
 		for (const word of words) {
@@ -124,7 +159,11 @@ export function chunkCaptions(segments: TranscriptSegment[], maxChars = 42): { s
 			const gap = current.length ? word.startMs - (current.at(-1)?.endMs ?? word.startMs) : 0;
 			if (current.length && (text.length > maxChars || gap > 600)) flush();
 			current.push(word);
-			if (/[.!?]$/.test(word.word.trim()) && current.map((w) => w.word).join(" ").length > maxChars * 0.5) flush();
+			if (
+				/[.!?]$/.test(word.word.trim()) &&
+				current.map((w) => w.word).join(" ").length > maxChars * 0.5
+			)
+				flush();
 		}
 		flush();
 	}

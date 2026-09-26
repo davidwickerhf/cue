@@ -17,14 +17,22 @@ export interface ControlInfo {
  * are written to `control.json` (mode 600) in the app's data folder; requests
  * without the token are rejected.
  */
-export async function startControlServer(controller: Controller, dataDir: string, version: string) {
+export async function startControlServer(
+	controller: Controller,
+	dataDir: string,
+	version: string,
+	enabled: () => boolean = () => true,
+) {
 	const token = randomBytes(24).toString("hex");
 	const server = http.createServer(async (req, res) => {
 		const reply = (status: number, body: unknown) => {
 			res.writeHead(status, { "content-type": "application/json" });
 			res.end(JSON.stringify(body));
 		};
-		if (req.headers.authorization !== `Bearer ${token}`) return reply(401, { error: "Unauthorised" });
+		if (req.headers.authorization !== `Bearer ${token}`)
+			return reply(401, { error: "Unauthorised" });
+		if (!enabled())
+			return reply(403, { error: "Agent access is turned off in Cue → Settings → Agent." });
 		if (req.method === "GET" && req.url === "/health") return reply(200, { ok: true, version });
 		if (req.method !== "POST" || req.url !== "/rpc") return reply(404, { error: "Not found" });
 		let body = "";
@@ -40,7 +48,9 @@ export async function startControlServer(controller: Controller, dataDir: string
 			reply(200, { result: result ?? null });
 		} catch (error) {
 			const err = error as Error & { issues?: unknown };
-			reply(200, { error: err.issues ? `Invalid input: ${JSON.stringify(err.issues)}` : err.message });
+			reply(200, {
+				error: err.issues ? `Invalid input: ${JSON.stringify(err.issues)}` : err.message,
+			});
 		}
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

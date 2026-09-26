@@ -31,14 +31,29 @@ class Recorder {
 
 	async ensureMic(): Promise<MediaStream> {
 		const { deviceId } = this.status.get();
-		if (this.stream?.active && (!deviceId || this.stream.getAudioTracks()[0]?.getSettings().deviceId === deviceId)) return this.stream;
+		if (
+			this.stream?.active &&
+			(!deviceId || this.stream.getAudioTracks()[0]?.getSettings().deviceId === deviceId)
+		)
+			return this.stream;
 		const allowed = await window.cue.requestMicrophone();
-		if (!allowed) throw new Error("Microphone access is off. Allow Cue in System Settings → Privacy & Security → Microphone.");
+		if (!allowed)
+			throw new Error(
+				"Microphone access is off. Allow Cue in System Settings → Privacy & Security → Microphone.",
+			);
 		this.stream?.getTracks().forEach((t) => t.stop());
 		this.stream = await navigator.mediaDevices.getUserMedia({
-			audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+			audio: {
+				deviceId: deviceId ? { exact: deviceId } : undefined,
+				echoCancellation: false,
+				noiseSuppression: false,
+				autoGainControl: false,
+				channelCount: 1,
+			},
 		});
-		const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+		const devices = (await navigator.mediaDevices.enumerateDevices()).filter(
+			(d) => d.kind === "audioinput",
+		);
 		this.status.set({ micReady: true, devices, error: null });
 		window.cue.reportRecorder({ micReady: true });
 		this.startMeter(this.stream);
@@ -70,7 +85,11 @@ class Recorder {
 		loop();
 	}
 
-	async record(project: ProjectSnapshot, line: LineView, options: { prerollMs?: number; requestId?: string } = {}) {
+	async record(
+		project: ProjectSnapshot,
+		line: LineView,
+		options: { prerollMs?: number; requestId?: string } = {},
+	) {
 		if (this.status.get().phase !== "idle") return;
 		this.requestId = options.requestId;
 		try {
@@ -78,8 +97,14 @@ class Recorder {
 			const settings = project.data.settings;
 			const preroll = options.prerollMs ?? settings.prerollMs;
 			const from = Math.max(0, line.startMs - preroll);
-			const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
-			const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 256000 } : undefined);
+			const mime =
+				["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) =>
+					MediaRecorder.isTypeSupported(m),
+				) ?? "";
+			const recorder = new MediaRecorder(
+				stream,
+				mime ? { mimeType: mime, audioBitsPerSecond: 256000 } : undefined,
+			);
 			this.recorder = recorder;
 			this.chunks = [];
 			recorder.ondataavailable = (event) => {
@@ -99,7 +124,8 @@ class Recorder {
 			});
 			const stopAt = line.startMs + line.maxMs + settings.postrollMs;
 			const unsubscribe = playback.onTick((ms) => {
-				if (ms >= line.startMs && this.status.get().phase === "countdown") this.status.set({ phase: "recording" });
+				if (ms >= line.startMs && this.status.get().phase === "countdown")
+					this.status.set({ phase: "recording" });
 				if (settings.autoStop && ms >= stopAt) void this.stop();
 			});
 			this.stopTimer = unsubscribe;
@@ -128,7 +154,13 @@ class Recorder {
 		const blob = new Blob(this.chunks, { type: recorder.mimeType });
 		const extension = recorder.mimeType.includes("mp4") ? "m4a" : "webm";
 		try {
-			await window.cue.saveRecording({ lineId, audio: await blob.arrayBuffer(), extension, recordedAtMs: this.recordedAtMs, requestId: this.requestId });
+			await window.cue.saveRecording({
+				lineId,
+				audio: await blob.arrayBuffer(),
+				extension,
+				recordedAtMs: this.recordedAtMs,
+				requestId: this.requestId,
+			});
 			notify(`Saved a take for ${lineId}`, "success");
 		} catch (error) {
 			notify(`Could not save the take: ${(error as Error).message}`, "danger");
@@ -146,7 +178,8 @@ class Recorder {
 			this.recorder.stop();
 		}
 		playback.pause();
-		if (this.requestId) window.cue.failRecording(this.requestId, "The user cancelled the recording.");
+		if (this.requestId)
+			window.cue.failRecording(this.requestId, "The user cancelled the recording.");
 		this.reset();
 	}
 

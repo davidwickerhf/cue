@@ -1,7 +1,18 @@
 import { Button, Dropdown } from "@heroui/react";
-import { DotsThree, FileArrowUp, Microphone, Play, Plus, Sparkle, Stop, Trash, UploadSimple, UserSound } from "@phosphor-icons/react";
+import {
+	DotsThree,
+	FileArrowUp,
+	Microphone,
+	Play,
+	Plus,
+	Sparkle,
+	Stop,
+	Trash,
+	UploadSimple,
+	UserSound,
+} from "@phosphor-icons/react";
 import type { Asset, LineView } from "../../../electron/core/types";
-import { run } from "../../lib/api";
+import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { useApp, useProject } from "../../lib/state";
@@ -18,7 +29,7 @@ export const STATUS_STYLE = {
 export function ScriptPanel() {
 	const project = useProject();
 	const selectedId = useApp((s) => s.selectedLineId);
-	const aiReady = useApp((s) => s.ai.configured);
+	const aiReady = useApp((s) => s.ai.status.some((x) => x.capability === "tts" && x.ready));
 	const phase = recorder.status.use((s) => s.phase);
 	if (!project) return null;
 	const lines = project.lines;
@@ -26,7 +37,10 @@ export function ScriptPanel() {
 	const selected = lines.find((l) => l.id === selectedId) ?? lines[0];
 
 	const importScript = async () => {
-		const file = await window.cue.chooseFile({ title: "Import a script (.srt or .json)", extensions: ["srt", "json"] });
+		const file = await window.cue.chooseFile({
+			title: "Import a script (.srt or .json)",
+			extensions: ["srt", "json"],
+		});
 		if (file) await run("import_script", { file, replace: lines.length === 0 });
 	};
 
@@ -34,7 +48,9 @@ export function ScriptPanel() {
 		const at = Math.round(playback.currentMs);
 		let n = lines.length + 1;
 		while (lines.some((l) => l.id === `L${String(n).padStart(2, "0")}`)) n++;
-		void run("add_line", { line: { id: `L${String(n).padStart(2, "0")}`, text: "New line", startMs: at, targetMs: 4000 } });
+		void run("add_line", {
+			line: { id: `L${String(n).padStart(2, "0")}`, text: "New line", startMs: at, targetMs: 4000 },
+		});
 	};
 
 	return (
@@ -55,7 +71,10 @@ export function ScriptPanel() {
 			>
 				{lines.length > 0 && (
 					<div className="h-1 overflow-hidden rounded-full bg-default">
-						<div className="h-full rounded-full bg-success transition-all" style={{ width: `${(done / lines.length) * 100}%` }} />
+						<div
+							className="h-full rounded-full bg-success transition-all"
+							style={{ width: `${(done / lines.length) * 100}%` }}
+						/>
 					</div>
 				)}
 				{lines.length === 0 ? (
@@ -65,7 +84,13 @@ export function ScriptPanel() {
 				) : (
 					<ol className="-mx-2 flex flex-col">
 						{lines.map((line) => (
-							<LineRow key={line.id} line={line} selected={line.id === selected?.id} aiReady={!!aiReady} busy={phase !== "idle"} />
+							<LineRow
+								key={line.id}
+								line={line}
+								selected={line.id === selected?.id}
+								aiReady={!!aiReady}
+								busy={phase !== "idle"}
+							/>
 						))}
 					</ol>
 				)}
@@ -87,18 +112,34 @@ function MicBar() {
 				type="button"
 				aria-label={recording ? "Stop recording" : "Record the selected line"}
 				disabled={!line && !recording}
-				onClick={() => (recording ? void recorder.stop() : project && line && void recorder.record(project, line))}
+				onClick={() =>
+					recording ? void recorder.stop() : project && line && void recorder.record(project, line)
+				}
 				className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-field transition-colors hover:border-danger/60 disabled:opacity-40"
 			>
-				{recording ? <Stop weight="fill" className="rec-pulse size-3.5 text-danger" /> : <span className="size-3.5 rounded-full bg-danger" />}
+				{recording ? (
+					<Stop weight="fill" className="rec-pulse size-3.5 text-danger" />
+				) : (
+					<span className="size-3.5 rounded-full bg-danger" />
+				)}
 			</button>
 			<div className="min-w-0 flex-1">
 				<p className="truncate text-[12px] font-medium">
-					{recording ? `${status.phase === "countdown" ? "Get ready" : status.phase === "saving" ? "Saving" : "Recording"} · ${status.lineId}` : line ? `Record ${line.id}` : "Record"}
+					{recording
+						? `${status.phase === "countdown" ? "Get ready" : status.phase === "saving" ? "Saving" : "Recording"} · ${status.lineId}`
+						: line
+							? `Record ${line.id}`
+							: "Record"}
 				</p>
 				<div className="mt-1.5 flex items-center gap-2">
 					<div className="h-1.5 flex-1 overflow-hidden rounded-full bg-default">
-						<div className={cn("h-full rounded-full transition-[width] duration-75", status.level > 0.9 ? "bg-danger" : status.level > 0.6 ? "bg-warning" : "bg-success")} style={{ width: `${status.level * 100}%` }} />
+						<div
+							className={cn(
+								"h-full rounded-full transition-[width] duration-75",
+								status.level > 0.9 ? "bg-danger" : status.level > 0.6 ? "bg-warning" : "bg-success",
+							)}
+							style={{ width: `${status.level * 100}%` }}
+						/>
 					</div>
 					{status.micReady ? (
 						<select
@@ -115,7 +156,11 @@ function MicBar() {
 							))}
 						</select>
 					) : (
-						<button type="button" onClick={() => void recorder.ensureMic().catch(() => {})} className="text-[11px] font-medium text-accent">
+						<button
+							type="button"
+							onClick={() => void recorder.ensureMic().catch(() => {})}
+							className="text-[11px] font-medium text-accent"
+						>
 							Enable mic
 						</button>
 					)}
@@ -125,7 +170,17 @@ function MicBar() {
 	);
 }
 
-function LineRow({ line, selected, aiReady, busy }: { line: LineView; selected: boolean; aiReady: boolean; busy: boolean }) {
+function LineRow({
+	line,
+	selected,
+	aiReady,
+	busy,
+}: {
+	line: LineView;
+	selected: boolean;
+	aiReady: boolean;
+	busy: boolean;
+}) {
 	const project = useProject();
 	const status = STATUS_STYLE[line.status];
 	return (
@@ -143,7 +198,10 @@ function LineRow({ line, selected, aiReady, busy }: { line: LineView; selected: 
 					selected ? "bg-default" : "hover:bg-default/50",
 				)}
 			>
-				<span className={cn("mt-1.5 size-2 shrink-0 rounded-full", status.dot)} title={status.label} />
+				<span
+					className={cn("mt-1.5 size-2 shrink-0 rounded-full", status.dot)}
+					title={status.label}
+				/>
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-1.5 text-[11px] text-muted">
 						<span className="font-semibold text-foreground/80">{line.id}</span>
@@ -154,14 +212,34 @@ function LineRow({ line, selected, aiReady, busy }: { line: LineView; selected: 
 							</span>
 						)}
 					</div>
-					<p className={cn("mt-0.5 text-[12px] leading-snug text-foreground/90", selected ? "" : "line-clamp-2")}>{line.text}</p>
+					<p
+						className={cn(
+							"mt-0.5 text-[12px] leading-snug text-foreground/90",
+							selected ? "" : "line-clamp-2",
+						)}
+					>
+						{line.text}
+					</p>
 				</div>
-				<div className={cn("flex shrink-0 flex-col gap-0.5 opacity-0 transition group-hover:opacity-100", selected && "opacity-100")}>
-					<IconButton label="Record this line" shortcut="R" disabled={busy} onPress={() => project && void recorder.record(project, line)}>
+				<div
+					className={cn(
+						"flex shrink-0 flex-col gap-0.5 opacity-0 transition group-hover:opacity-100",
+						selected && "opacity-100",
+					)}
+				>
+					<IconButton
+						label="Record this line"
+						shortcut="R"
+						disabled={busy}
+						onPress={() => project && void recorder.record(project, line)}
+					>
 						<Microphone className="size-3.5" />
 					</IconButton>
 					{aiReady && (
-						<IconButton label="Generate a voice take" onPress={() => void run("generate_take", { lineId: line.id })}>
+						<IconButton
+							label="Generate a voice take"
+							onPress={() => void run("generate_take", { lineId: line.id })}
+						>
 							<Sparkle className="size-3.5" />
 						</IconButton>
 					)}
@@ -172,9 +250,11 @@ function LineRow({ line, selected, aiReady, busy }: { line: LineView; selected: 
 }
 
 function LineDetail({ line, aiReady }: { line: LineView; aiReady: boolean }) {
+	const textReady = useApp((s) => s.ai.status.some((x) => x.capability === "text" && x.ready));
 	const project = useProject();
 	if (!project) return null;
-	const update = (patch: Record<string, unknown>) => void run("update_line", { id: line.id, patch });
+	const update = (patch: Record<string, unknown>) =>
+		void run("update_line", { id: line.id, patch });
 	return (
 		<div className="border-t border-separator">
 			<Section
@@ -188,12 +268,26 @@ function LineDetail({ line, aiReady }: { line: LineView; aiReady: boolean }) {
 							<Dropdown.Menu
 								aria-label="Line actions"
 								onAction={async (key) => {
-									if (key === "play") playback.play({ fromMs: Math.max(0, line.startMs - 500), toMs: line.startMs + line.maxMs + 500 });
+									if (key === "play")
+										playback.play({
+											fromMs: Math.max(0, line.startMs - 500),
+											toMs: line.startMs + line.maxMs + 500,
+										});
 									if (key === "import") {
-										const file = await window.cue.chooseFile({ title: `Audio for ${line.id}`, extensions: ["wav", "mp3", "m4a", "aac", "flac", "ogg"] });
+										const file = await window.cue.chooseFile({
+											title: `Audio for ${line.id}`,
+											extensions: ["wav", "mp3", "m4a", "aac", "flac", "ogg"],
+										});
 										if (file) void run("import_take", { lineId: line.id, file });
 									}
 									if (key === "delete") void run("remove_line", { id: line.id });
+									if (key === "fit" || key === "shorter" || key === "clearer") {
+										const r = await run<{ before: string; after: string }>("rewrite_line", {
+											id: line.id,
+											goal: key,
+										});
+										if (r) notify("Line rewritten. Undo (⌘Z) to go back.", "success");
+									}
 								}}
 							>
 								<Dropdown.Item id="play" textValue="Play">
@@ -202,6 +296,21 @@ function LineDetail({ line, aiReady }: { line: LineView; aiReady: boolean }) {
 								<Dropdown.Item id="import" textValue="Import">
 									Use an audio file as a take…
 								</Dropdown.Item>
+								{textReady && (
+									<Dropdown.Item id="fit" textValue="Fit">
+										Rewrite to fit {(line.maxMs / 1000).toFixed(1)} s
+									</Dropdown.Item>
+								)}
+								{textReady && (
+									<Dropdown.Item id="shorter" textValue="Shorter">
+										Rewrite shorter
+									</Dropdown.Item>
+								)}
+								{textReady && (
+									<Dropdown.Item id="clearer" textValue="Clearer">
+										Rewrite clearer
+									</Dropdown.Item>
+								)}
 								<Dropdown.Item id="delete" textValue="Delete" className="text-danger">
 									Delete line
 								</Dropdown.Item>
@@ -213,13 +322,37 @@ function LineDetail({ line, aiReady }: { line: LineView; aiReady: boolean }) {
 				<TextInput multiline rows={3} value={line.text} onCommit={(text) => update({ text })} />
 				<div className="grid grid-cols-3 gap-2">
 					<Field label="Starts">
-						<NumberInput value={line.startMs} scale={1000} digits={2} step={0.1} min={0} suffix="s" onCommit={(v) => update({ startMs: Math.round(v) })} />
+						<NumberInput
+							value={line.startMs}
+							scale={1000}
+							digits={2}
+							step={0.1}
+							min={0}
+							suffix="s"
+							onCommit={(v) => update({ startMs: Math.round(v) })}
+						/>
 					</Field>
 					<Field label="Target">
-						<NumberInput value={line.targetMs} scale={1000} digits={1} step={0.1} min={0} suffix="s" onCommit={(v) => update({ targetMs: Math.round(v) })} />
+						<NumberInput
+							value={line.targetMs}
+							scale={1000}
+							digits={1}
+							step={0.1}
+							min={0}
+							suffix="s"
+							onCommit={(v) => update({ targetMs: Math.round(v) })}
+						/>
 					</Field>
 					<Field label="Max">
-						<NumberInput value={line.maxMs} scale={1000} digits={1} step={0.1} min={100} suffix="s" onCommit={(v) => update({ maxMs: Math.round(v) })} />
+						<NumberInput
+							value={line.maxMs}
+							scale={1000}
+							digits={1}
+							step={0.1}
+							min={100}
+							suffix="s"
+							onCommit={(v) => update({ maxMs: Math.round(v) })}
+						/>
 					</Field>
 				</div>
 			</Section>
@@ -227,14 +360,22 @@ function LineDetail({ line, aiReady }: { line: LineView; aiReady: boolean }) {
 				title={`Takes · ${line.takes.length}`}
 				action={
 					aiReady ? (
-						<Button size="sm" variant="secondary" className="h-7 gap-1.5 text-[12px]" onPress={() => void run("generate_take", { lineId: line.id })}>
+						<Button
+							size="sm"
+							variant="secondary"
+							className="h-7 gap-1.5 text-[12px]"
+							onPress={() => void run("generate_take", { lineId: line.id })}
+						>
 							<Sparkle className="size-3.5" /> Generate
 						</Button>
 					) : null
 				}
 			>
 				{line.takes.length === 0 ? (
-					<p className="text-[12px] text-muted">Press record (R) and read the line when the countdown reaches it. Recording stops on its own after the max length.</p>
+					<p className="text-[12px] text-muted">
+						Press record (R) and read the line when the countdown reaches it. Recording stops on its
+						own after the max length.
+					</p>
 				) : (
 					<ul className="-mx-1 flex flex-col gap-1">
 						{[...line.takes].reverse().map((take) => (
@@ -251,7 +392,14 @@ function TakeRow({ take, line, url }: { take: Asset; line: LineView; url: string
 	const chosen = line.chosenAssetId === take.id;
 	const speech = (take.speechEndMs ?? take.durationMs) - (take.speechStartMs ?? 0);
 	const fit = speech > line.maxMs ? "over" : speech > line.maxMs - 300 ? "tight" : "ok";
-	const Icon = take.origin === "tts" ? Sparkle : take.origin === "import" ? UploadSimple : take.actor === "agent" ? UserSound : Microphone;
+	const Icon =
+		take.origin === "tts"
+			? Sparkle
+			: take.origin === "import"
+				? UploadSimple
+				: take.actor === "agent"
+					? UserSound
+					: Microphone;
 	return (
 		<li
 			className={cn(
@@ -262,7 +410,10 @@ function TakeRow({ take, line, url }: { take: Asset; line: LineView; url: string
 			<button
 				type="button"
 				onClick={() => void run("choose_take", { lineId: line.id, assetId: take.id })}
-				className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border-2", chosen ? "border-accent" : "border-foreground/25")}
+				className={cn(
+					"flex size-4 shrink-0 items-center justify-center rounded-full border-2",
+					chosen ? "border-accent" : "border-foreground/25",
+				)}
 				aria-label={chosen ? "In use" : "Use this take"}
 			>
 				{chosen && <span className="size-2 rounded-full bg-accent" />}
@@ -272,13 +423,19 @@ function TakeRow({ take, line, url }: { take: Asset; line: LineView; url: string
 				<p className="truncate text-[12px]">{take.name}</p>
 				<p className={cn("text-[11px] tabular-nums", STATUS_STYLE[fit].text)}>
 					{formatSeconds(speech)} of {formatSeconds(line.maxMs)}
-					{take.peakDb !== undefined && take.peakDb !== null && <span className="text-muted"> · peak {take.peakDb.toFixed(0)} dB</span>}
+					{take.peakDb !== undefined && take.peakDb !== null && (
+						<span className="text-muted"> · peak {take.peakDb.toFixed(0)} dB</span>
+					)}
 				</p>
 			</div>
 			<IconButton label="Listen" onPress={() => playback.previewAsset(url)}>
 				<Play weight="fill" className="size-3.5" />
 			</IconButton>
-			<IconButton label="Delete take" onPress={() => void run("delete_take", { assetId: take.id })} className="opacity-0 group-hover:opacity-100">
+			<IconButton
+				label="Delete take"
+				onPress={() => void run("delete_take", { assetId: take.id })}
+				className="opacity-0 group-hover:opacity-100"
+			>
 				<Trash className="size-3.5" />
 			</IconButton>
 		</li>

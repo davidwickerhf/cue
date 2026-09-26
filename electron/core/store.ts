@@ -1,25 +1,52 @@
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { type AiCredentials, chunkCaptions, generateImage, synthesizeSpeech, transcribe } from "./ai";
-import { exportAudioMix, exportCaptions, exportStems, exportVideo, exportVoiceover, type ExportReport, type TextRender } from "./exporter";
-import { existsSync } from "node:fs";
-import { analyseSpeech, computePeaks, detectSilences, extractThumbnails, kindOf, makeAudioProxy, makeVideoProxy, probe, toWav } from "./media";
-import { type InternalOp, type Op, applyOp } from "./ops";
+import { chunkCaptions } from "./ai";
+import {
+	type ExportReport,
+	exportAudioMix,
+	exportCaptions,
+	exportStems,
+	exportVideo,
+	exportVoiceover,
+	type TextRender,
+} from "./exporter";
+import {
+	analyseSpeech,
+	computePeaks,
+	detectSilences,
+	extractThumbnails,
+	kindOf,
+	makeAudioProxy,
+	makeVideoProxy,
+	probe,
+	toWav,
+} from "./media";
+import { applyOp, type InternalOp, type Op } from "./ops";
+import { relativeToProject, resolveInProject } from "./paths";
 import {
 	DEFAULT_TEXT_STYLE,
-	type LineInput,
-	PROJECT_EXTENSION,
 	deriveLines,
 	emptyProject,
+	type LineInput,
 	newId,
+	PROJECT_EXTENSION,
 	parseProject,
 	projectDuration,
 } from "./project";
-import { resolveInProject, relativeToProject } from "./paths";
+import type { AiRuntime } from "./runtime";
 import { parseSrt } from "./srt";
-import type { ActivityEntry, Actor, Asset, ProjectData, ProjectSnapshot, RecentProject, TextClip } from "./types";
+import type {
+	ActivityEntry,
+	Actor,
+	Asset,
+	ProjectData,
+	ProjectSnapshot,
+	RecentProject,
+	TextClip,
+} from "./types";
 
 const HISTORY_LIMIT = 150;
 const ACTIVITY_LIMIT = 200;
@@ -41,6 +68,8 @@ export interface StoreOptions {
 	/** Turns an absolute path into a URL the editor window can load. */
 	mediaUrl: (file: string) => string;
 	recentFile: string;
+	/** Whether proxies are built automatically on open and import (app setting). */
+	autoProxies?: () => boolean;
 }
 
 type TextRenderer = (clips: TextClip[]) => Promise<Record<string, TextRender>>;
@@ -90,9 +119,13 @@ export class ProjectStore extends EventEmitter {
 			path: this.file,
 			dir,
 			data: this.data,
-			assetUrls: Object.fromEntries(this.data.assets.map((a) => [a.id, this.options.mediaUrl(resolveInProject(dir, a.path))])),
+			assetUrls: Object.fromEntries(
+				this.data.assets.map((a) => [a.id, this.options.mediaUrl(resolveInProject(dir, a.path))]),
+			),
 			proxyUrls: this.data.settings.useProxies
-				? Object.fromEntries([...this.proxies].map((id) => [id, this.options.mediaUrl(this.proxyPath(id))]))
+				? Object.fromEntries(
+						[...this.proxies].map((id) => [id, this.options.mediaUrl(this.proxyPath(id))]),
+					)
 				: {},
 			durationMs: projectDuration(this.data),
 			lines: deriveLines(this.data),
@@ -107,7 +140,10 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	log(actor: Actor, summary: string): void {
-		this.activity = [{ id: ++this.activityId, at: new Date().toISOString(), actor, summary }, ...this.activity].slice(0, ACTIVITY_LIMIT);
+		this.activity = [
+			{ id: ++this.activityId, at: new Date().toISOString(), actor, summary },
+			...this.activity,
+		].slice(0, ACTIVITY_LIMIT);
 		this.emit("activity");
 	}
 
@@ -128,22 +164,31 @@ export class ProjectStore extends EventEmitter {
 		this.future = [];
 		this.dirty = false;
 		this.revision++;
-		this.proxies = new Set(data.assets.filter((a) => existsSync(this.proxyPath(a.id))).map((a) => a.id));
+		this.proxies = new Set(
+			data.assets.filter((a) => existsSync(this.proxyPath(a.id))).map((a) => a.id),
+		);
 		this.audioProxies.clear();
 		await this.remember();
 		this.log(actor, `Opened ${path.basename(target)}`);
 		this.emit("change");
-		this.buildProxies();
+		this.autoBuildProxies();
 	}
 
 	private proxyPath(assetId: string): string {
 		return path.join(this.projectDir, CACHE_DIR, "proxy", `${assetId}.mp4`);
 	}
 
+	private autoBuildProxies() {
+		if (this.options.autoProxies?.() ?? true) this.buildProxies();
+	}
+
 	/** Builds missing playback proxies in the background, one at a time. */
 	buildProxies(): void {
 		if (!this.data?.settings.useProxies) return;
-		const pending = this.data.assets.filter((a) => a.kind === "video" && !this.proxies.has(a.id) && (a.height > 720 || a.durationMs > 20000));
+		const pending = this.data.assets.filter(
+			(a) =>
+				a.kind === "video" && !this.proxies.has(a.id) && (a.height > 720 || a.durationMs > 20000),
+		);
 		for (const asset of pending) {
 			this.proxyQueue = this.proxyQueue.then(async () => {
 				if (!this.data?.assets.some((a) => a.id === asset.id) || this.proxies.has(asset.id)) return;
@@ -153,7 +198,10 @@ export class ProjectStore extends EventEmitter {
 					this.revision++;
 					this.emit("change");
 				} catch (error) {
-					this.log("system", `Could not build a playback copy of ${asset.name}: ${(error as Error).message}`);
+					this.log(
+						"system",
+						`Could not build a playback copy of ${asset.name}: ${(error as Error).message}`,
+					);
 				}
 			});
 		}
@@ -164,12 +212,19 @@ export class ProjectStore extends EventEmitter {
 		const asset = this.current.assets.find((a) => a.id === assetId);
 		if (!asset) return Promise.reject(new Error(`No media "${assetId}".`));
 		const rounded = Math.round(speed * 1000) / 1000;
-		if (rounded === 1 && asset.kind === "audio" && /\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(asset.path)) return Promise.resolve(this.assetPath(assetId));
+		if (
+			rounded === 1 &&
+			asset.kind === "audio" &&
+			/\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(asset.path)
+		)
+			return Promise.resolve(this.assetPath(assetId));
 		const key = `${assetId}@${rounded}`;
 		let pending = this.audioProxies.get(key);
 		if (!pending) {
 			const file = path.join(this.projectDir, CACHE_DIR, "audio", `${assetId}@${rounded}.m4a`);
-			pending = existsSync(file) ? Promise.resolve(file) : makeAudioProxy(this.assetPath(assetId), file, rounded).then(() => file);
+			pending = existsSync(file)
+				? Promise.resolve(file)
+				: makeAudioProxy(this.assetPath(assetId), file, rounded).then(() => file);
 			pending.catch(() => this.audioProxies.delete(key));
 			this.audioProxies.set(key, pending);
 		}
@@ -178,10 +233,17 @@ export class ProjectStore extends EventEmitter {
 
 	async create(options: CreateProjectOptions, actor: Actor = "user"): Promise<void> {
 		let target = path.resolve(options.path);
-		const name = options.name ?? path.basename(target).replace(PROJECT_EXTENSION, "").replace(/\.json$/, "");
-		const isDir = (await fs.stat(target).catch(() => null))?.isDirectory() || !target.endsWith(".json");
+		const name =
+			options.name ??
+			path
+				.basename(target)
+				.replace(PROJECT_EXTENSION, "")
+				.replace(/\.json$/, "");
+		const isDir =
+			(await fs.stat(target).catch(() => null))?.isDirectory() || !target.endsWith(".json");
 		if (isDir) target = path.join(target, `${slug(name)}${PROJECT_EXTENSION}`);
-		if (await fs.stat(target).catch(() => null)) throw new Error(`${target} already exists. Open it instead.`);
+		if (await fs.stat(target).catch(() => null))
+			throw new Error(`${target} already exists. Open it instead.`);
 		await fs.mkdir(path.dirname(target), { recursive: true });
 		let data = emptyProject(name);
 		if (options.srt) {
@@ -194,7 +256,11 @@ export class ProjectStore extends EventEmitter {
 		await this.open(target, actor);
 		if (options.video) {
 			const [asset] = await this.importMedia([options.video], actor, { trackId: "V1", startMs: 0 });
-			if (asset.width && asset.height) this.apply({ type: "setCanvas", canvas: { width: asset.width, height: asset.height } }, "system");
+			if (asset.width && asset.height)
+				this.apply(
+					{ type: "setCanvas", canvas: { width: asset.width, height: asset.height } },
+					"system",
+				);
 		}
 		this.past = [];
 		this.log(actor, `Created "${name}"`);
@@ -216,7 +282,9 @@ export class ProjectStore extends EventEmitter {
 
 	async recent(): Promise<RecentProject[]> {
 		try {
-			const list = JSON.parse(await fs.readFile(this.options.recentFile, "utf8")) as RecentProject[];
+			const list = JSON.parse(
+				await fs.readFile(this.options.recentFile, "utf8"),
+			) as RecentProject[];
 			return Array.isArray(list) ? list : [];
 		} catch {
 			return [];
@@ -271,7 +339,11 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/** Adds files to the media library, optionally placing them one after another on a track. */
-	async importMedia(files: string[], actor: Actor, place?: { trackId: string; startMs: number }): Promise<Asset[]> {
+	async importMedia(
+		files: string[],
+		actor: Actor,
+		place?: { trackId: string; startMs: number },
+	): Promise<Asset[]> {
 		const added: Asset[] = [];
 		let at = place?.startMs ?? 0;
 		for (const file of files) {
@@ -292,22 +364,38 @@ export class ProjectStore extends EventEmitter {
 				createdAt: new Date().toISOString(),
 				actor,
 			};
-			this.apply({ type: "addAsset", asset, placeOn: place ? { trackId: place.trackId, startMs: at } : undefined }, actor);
+			this.apply(
+				{
+					type: "addAsset",
+					asset,
+					placeOn: place ? { trackId: place.trackId, startMs: at } : undefined,
+				},
+				actor,
+			);
 			at += kind === "image" ? 5000 : asset.durationMs;
 			added.push(asset);
 		}
-		this.buildProxies();
+		this.autoBuildProxies();
 		return added;
 	}
 
 	/** Turns a finished microphone recording into a take for a line. */
-	async addRecording(input: { lineId: string; audio: Buffer; extension: string; recordedAtMs: number; actor: Actor }): Promise<Asset> {
+	async addRecording(input: {
+		lineId: string;
+		audio: Buffer;
+		extension: string;
+		recordedAtMs: number;
+		actor: Actor;
+	}): Promise<Asset> {
 		const line = this.requireLine(input.lineId);
 		const count = this.current.assets.filter((a) => a.lineId === line.id).length + 1;
 		const folder = path.join(this.projectDir, "takes", safeSegment(line.id));
 		await fs.mkdir(folder, { recursive: true });
 		const base = `${safeSegment(line.id)}-take${String(count).padStart(2, "0")}-${Date.now().toString(36)}`;
-		const raw = path.join(folder, `${base}.source.${input.extension.replace(/[^a-z0-9]/gi, "") || "webm"}`);
+		const raw = path.join(
+			folder,
+			`${base}.source.${input.extension.replace(/[^a-z0-9]/gi, "") || "webm"}`,
+		);
 		const wav = path.join(folder, `${base}.wav`);
 		await fs.writeFile(raw, input.audio);
 		try {
@@ -315,37 +403,101 @@ export class ProjectStore extends EventEmitter {
 		} finally {
 			await fs.rm(raw, { force: true });
 		}
-		return this.addTakeFile(line.id, wav, "recording", input.actor, { recordedAtMs: Math.round(input.recordedAtMs), name: `Take ${count}` });
-	}
-
-	/** Generates a spoken take for a line with text-to-speech. */
-	async generateTake(lineId: string, creds: AiCredentials, actor: Actor, overrides: { voice?: string; instructions?: string; text?: string } = {}): Promise<Asset> {
-		const line = this.requireLine(lineId);
-		const ai = this.current.ai;
-		const voice = overrides.voice ?? ai.voice;
-		const text = overrides.text ?? line.text;
-		if (!text.trim()) throw new Error(`Line ${lineId} has no text.`);
-		const audio = await synthesizeSpeech(creds, { text, model: ai.ttsModel, voice, instructions: overrides.instructions ?? ai.voiceInstructions });
-		const folder = path.join(this.projectDir, "takes", safeSegment(line.id));
-		await fs.mkdir(folder, { recursive: true });
-		const count = this.current.assets.filter((a) => a.lineId === line.id).length + 1;
-		const wav = path.join(folder, `${safeSegment(line.id)}-ai-${voice}-${Date.now().toString(36)}.wav`);
-		await fs.writeFile(wav, audio);
-		return this.addTakeFile(line.id, wav, "tts", actor, {
-			name: `AI ${voice} ${count}`,
-			generation: { provider: "openai", model: ai.ttsModel, prompt: text, voice },
+		return this.addTakeFile(line.id, wav, "recording", input.actor, {
+			recordedAtMs: Math.round(input.recordedAtMs),
+			name: `Take ${count}`,
 		});
 	}
 
+	/** Generates a spoken take for a line (OpenAI voices or the macOS synthesiser). */
+	async generateTake(
+		lineId: string,
+		runtime: AiRuntime,
+		actor: Actor,
+		overrides: { voice?: string; instructions?: string; text?: string } = {},
+	): Promise<Asset> {
+		const line = this.requireLine(lineId);
+		const ai = this.current.ai;
+		const text = overrides.text ?? line.text;
+		if (!text.trim()) throw new Error(`Line ${lineId} has no text.`);
+		const spoken = await runtime.speak(text, {
+			voice: overrides.voice ?? ai.voice,
+			instructions: overrides.instructions ?? ai.voiceInstructions,
+			model: ai.ttsModel,
+		});
+		const folder = path.join(this.projectDir, "takes", safeSegment(line.id));
+		await fs.mkdir(folder, { recursive: true });
+		const count = this.current.assets.filter((a) => a.lineId === line.id).length + 1;
+		const wav = path.join(
+			folder,
+			`${safeSegment(line.id)}-ai-${slug(spoken.voice)}-${Date.now().toString(36)}.wav`,
+		);
+		await fs.writeFile(wav, spoken.audio);
+		return this.addTakeFile(line.id, wav, "tts", actor, {
+			name: `AI ${spoken.voice} ${count}`,
+			generation: {
+				provider: spoken.provider,
+				model: spoken.model,
+				prompt: text,
+				voice: spoken.voice,
+			},
+		});
+	}
+
+	/** Rewrites a line with the text model, e.g. so it fits its slot. Returns before and after. */
+	async rewriteLine(
+		lineId: string,
+		runtime: AiRuntime,
+		actor: Actor,
+		goal: "fit" | "clearer" | "shorter" | "custom",
+		instructions?: string,
+	) {
+		const line = this.requireLine(lineId);
+		const view = deriveLines(this.current).find((l) => l.id === lineId);
+		const wordsPerSecond = view?.speechMs
+			? line.text.split(/\s+/).length / (view.speechMs / 1000)
+			: 2.6;
+		const budgetWords = Math.max(3, Math.floor((line.maxMs / 1000) * wordsPerSecond * 0.92));
+		const task = {
+			fit: `Rewrite it so it can be spoken comfortably within ${(line.maxMs / 1000).toFixed(1)} seconds (at most about ${budgetWords} words). Keep every fact and number.`,
+			clearer:
+				"Rewrite it to be clearer and more natural to say out loud. Keep the length about the same and keep every fact and number.",
+			shorter: "Make it noticeably shorter while keeping every fact and number.",
+			custom: instructions ?? "Improve it.",
+		}[goal];
+		const context = this.current.lines
+			.map((l) => `${l.id === lineId ? ">>" : "  "} ${l.text}`)
+			.join("\n");
+		const text = (
+			await runtime.chat(
+				"You edit voiceover scripts. Reply with only the rewritten line: no quotes, no labels, no explanation. Match the voice and vocabulary of the surrounding script.",
+				`Script for context (the line to rewrite is marked >>):\n${context}\n\nLine: ${line.text}\n\n${task}${instructions && goal !== "custom" ? `\nAlso: ${instructions}` : ""}`,
+			)
+		)
+			.replace(/^["'“]|["'”]$/g, "")
+			.trim();
+		if (!text) throw new Error("The text model returned nothing.");
+		this.apply({ type: "updateLine", id: lineId, patch: { text } }, actor);
+		return { before: line.text, after: text, words: text.split(/\s+/).length, budgetWords };
+	}
+
 	/** Uses an existing audio file as a take for a line. */
-	async importTake(lineId: string, file: string, actor: Actor, recordedAtMs?: number): Promise<Asset> {
+	async importTake(
+		lineId: string,
+		file: string,
+		actor: Actor,
+		recordedAtMs?: number,
+	): Promise<Asset> {
 		this.requireLine(lineId);
 		const source = path.resolve(file);
 		const folder = path.join(this.projectDir, "takes", safeSegment(lineId));
 		await fs.mkdir(folder, { recursive: true });
 		const wav = path.join(folder, `${path.parse(source).name}-${Date.now().toString(36)}.wav`);
 		await toWav(source, wav);
-		return this.addTakeFile(lineId, wav, "import", actor, { recordedAtMs, name: path.basename(source) });
+		return this.addTakeFile(lineId, wav, "import", actor, {
+			recordedAtMs,
+			name: path.basename(source),
+		});
 	}
 
 	private async addTakeFile(
@@ -382,12 +534,17 @@ export class ProjectStore extends EventEmitter {
 	/** Generates a still image and adds it to the library (optionally on a track). */
 	async generateImage(
 		prompt: string,
-		creds: AiCredentials,
+		runtime: AiRuntime,
 		actor: Actor,
-		options: { orientation?: "landscape" | "portrait" | "square"; place?: { trackId: string; startMs: number } } = {},
+		options: {
+			orientation?: "landscape" | "portrait" | "square";
+			place?: { trackId: string; startMs: number };
+		} = {},
 	): Promise<Asset> {
-		const size = ({ landscape: "1536x1024", portrait: "1024x1536", square: "1024x1024" } as const)[options.orientation ?? "landscape"];
-		const png = await generateImage(creds, { prompt, model: this.current.ai.imageModel, size });
+		const size = ({ landscape: "1536x1024", portrait: "1024x1536", square: "1024x1024" } as const)[
+			options.orientation ?? "landscape"
+		];
+		const png = await runtime.image(prompt, { model: this.current.ai.imageModel, size });
 		const folder = path.join(this.projectDir, "generated");
 		await fs.mkdir(folder, { recursive: true });
 		const file = path.join(folder, `${slug(prompt).slice(0, 40)}-${Date.now().toString(36)}.png`);
@@ -413,21 +570,44 @@ export class ProjectStore extends EventEmitter {
 
 	/** Transcribes what is heard (voiceover track or the full mix) into caption clips. */
 	async autoCaptions(
-		creds: AiCredentials,
+		runtime: AiRuntime,
 		actor: Actor,
-		options: { source: "voiceover" | "mix"; trackId?: string; maxChars?: number; language?: string },
+		options: {
+			source: "voiceover" | "mix";
+			trackId?: string;
+			maxChars?: number;
+			language?: string;
+		},
 	): Promise<{ count: number; trackId: string }> {
 		const tmp = path.join(os.tmpdir(), `cue-captions-${Date.now()}.wav`);
 		try {
 			if (options.source === "voiceover") await exportVoiceover(this.exportContext(), tmp);
 			else await exportAudioMix(this.exportContext(), tmp);
-			const hint = this.current.lines.map((l) => l.text).join(" ").slice(0, 800);
-			const { segments } = await transcribe(creds, { file: tmp, model: this.current.ai.transcriptionModel, language: options.language, prompt: hint || undefined });
+			const hint = this.current.lines
+				.map((l) => l.text)
+				.join(" ")
+				.slice(0, 800);
+			const { segments } = await runtime.transcribe(tmp, {
+				model: this.current.ai.transcriptionModel,
+				language: options.language,
+				prompt: hint || undefined,
+			});
 			const chunks = chunkCaptions(segments, options.maxChars ?? 42);
-			const trackId = options.trackId ?? this.apply({ type: "addTrack", kind: "text", name: "Captions", index: 0 }, actor).created?.[0];
+			const trackId =
+				options.trackId ??
+				this.apply({ type: "addTrack", kind: "text", name: "Captions", index: 0 }, actor)
+					.created?.[0];
 			if (!trackId) throw new Error("Could not create a captions track.");
 			if (chunks.length === 0) return { count: 0, trackId };
-			const style = { ...DEFAULT_TEXT_STYLE, fontSize: 46, fontWeight: 600, y: 0.9, width: 0.86, padding: 14, radius: 10 };
+			const style = {
+				...DEFAULT_TEXT_STYLE,
+				fontSize: 46,
+				fontWeight: 600,
+				y: 0.9,
+				width: 0.86,
+				padding: 14,
+				radius: 10,
+			};
 			this.apply(
 				{
 					type: "addClips",
@@ -456,8 +636,15 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/** Builds script lines from the speech in a media file, e.g. an existing narration. */
-	async scriptFromMedia(assetId: string, creds: AiCredentials, actor: Actor, options: { idPrefix?: string; replace?: boolean } = {}): Promise<number> {
-		const { segments } = await transcribe(creds, { file: this.assetPath(assetId), model: this.current.ai.transcriptionModel });
+	async scriptFromMedia(
+		assetId: string,
+		runtime: AiRuntime,
+		actor: Actor,
+		options: { idPrefix?: string; replace?: boolean } = {},
+	): Promise<number> {
+		const { segments } = await runtime.transcribe(await this.audioProxy(assetId, 1), {
+			model: this.current.ai.transcriptionModel,
+		});
 		const clip = this.current.clips.find((c) => c.type === "media" && c.assetId === assetId);
 		const offset = clip && clip.type === "media" ? clip.startMs - clip.inMs : 0;
 		const prefix = options.idPrefix ?? "L";
@@ -468,7 +655,13 @@ export class ProjectStore extends EventEmitter {
 			targetMs: segment.endMs - segment.startMs,
 			maxMs: (segments[i + 1] ? segments[i + 1].startMs : segment.endMs + 2000) - segment.startMs,
 		}));
-		this.apply({ type: "setLines", lines: options.replace === false ? [...this.current.lines, ...lines] : lines }, actor);
+		this.apply(
+			{
+				type: "setLines",
+				lines: options.replace === false ? [...this.current.lines, ...lines] : lines,
+			},
+			actor,
+		);
 		return lines.length;
 	}
 
@@ -479,7 +672,13 @@ export class ProjectStore extends EventEmitter {
 	 */
 	async removeSilence(
 		actor: Actor,
-		options: { clipIds?: string[]; thresholdDb: number; minSilenceMs: number; keepMs: number; dryRun?: boolean },
+		options: {
+			clipIds?: string[];
+			thresholdDb: number;
+			minSilenceMs: number;
+			keepMs: number;
+			dryRun?: boolean;
+		},
 	): Promise<{ ranges: { startMs: number; endMs: number }[]; removedMs: number }> {
 		const data = this.current;
 		const clips = data.clips.filter((c): c is import("./types").MediaClip => {
@@ -487,26 +686,45 @@ export class ProjectStore extends EventEmitter {
 			if (options.clipIds) return options.clipIds.includes(c.id);
 			const track = data.tracks.find((t) => t.id === c.trackId);
 			const asset = data.assets.find((a) => a.id === c.assetId);
-			return !!track && !track.muted && !!asset?.hasAudio && (track.kind === "video" || !!track.voiceover);
+			return (
+				!!track &&
+				!track.muted &&
+				!!asset?.hasAudio &&
+				(track.kind === "video" || !!track.voiceover)
+			);
 		});
 		if (clips.length === 0) throw new Error("No clips with audio to analyse.");
 		// A moment is removable only if every analysed clip covering it is silent.
 		const silentByClip = await Promise.all(
 			clips.map(async (c) => {
-				const found = await detectSilences(this.assetPath(c.assetId), { thresholdDb: options.thresholdDb, minSilenceMs: options.minSilenceMs, fromMs: c.inMs, durationMs: c.durationMs * c.speed });
+				const found = await detectSilences(this.assetPath(c.assetId), {
+					thresholdDb: options.thresholdDb,
+					minSilenceMs: options.minSilenceMs,
+					fromMs: c.inMs,
+					durationMs: c.durationMs * c.speed,
+				});
 				return found
-					.map((r) => ({ startMs: c.startMs + (r.startMs - c.inMs) / c.speed + options.keepMs, endMs: c.startMs + (r.endMs - c.inMs) / c.speed - options.keepMs }))
+					.map((r) => ({
+						startMs: c.startMs + (r.startMs - c.inMs) / c.speed + options.keepMs,
+						endMs: c.startMs + (r.endMs - c.inMs) / c.speed - options.keepMs,
+					}))
 					.filter((r) => r.endMs - r.startMs > 40);
 			}),
 		);
-		const covered = (ms: number) => clips.filter((c) => ms >= c.startMs && ms < c.startMs + c.durationMs);
+		const covered = (ms: number) =>
+			clips.filter((c) => ms >= c.startMs && ms < c.startMs + c.durationMs);
 		const candidates = silentByClip.flat().sort((a, b) => a.startMs - b.startMs);
 		const ranges: { startMs: number; endMs: number }[] = [];
 		for (const r of candidates) {
 			const mid = (r.startMs + r.endMs) / 2;
 			const owners = covered(mid);
-			const allSilent = owners.every((c) => silentByClip[clips.indexOf(c)].some((x) => x.startMs <= r.startMs + 1 && x.endMs >= r.endMs - 1));
-			if (allSilent && !ranges.some((x) => x.startMs < r.endMs && x.endMs > r.startMs)) ranges.push({ startMs: Math.round(r.startMs), endMs: Math.round(r.endMs) });
+			const allSilent = owners.every((c) =>
+				silentByClip[clips.indexOf(c)].some(
+					(x) => x.startMs <= r.startMs + 1 && x.endMs >= r.endMs - 1,
+				),
+			);
+			if (allSilent && !ranges.some((x) => x.startMs < r.endMs && x.endMs > r.startMs))
+				ranges.push({ startMs: Math.round(r.startMs), endMs: Math.round(r.endMs) });
 		}
 		const removedMs = ranges.reduce((sum, r) => sum + r.endMs - r.startMs, 0);
 		if (!options.dryRun && ranges.length) this.apply({ type: "removeRanges", ranges }, actor);
@@ -514,13 +732,22 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/** Word-level transcript of a media item, stored on the asset. */
-	async transcribeAsset(assetId: string, creds: AiCredentials, actor: Actor, language?: string) {
+	async transcribeAsset(assetId: string, runtime: AiRuntime, actor: Actor, language?: string) {
 		const file = await this.audioProxy(assetId, 1);
-		const { segments } = await transcribe(creds, { file, model: this.current.ai.transcriptionModel, language });
+		const { segments } = await runtime.transcribe(file, {
+			model: this.current.ai.transcriptionModel,
+			language,
+		});
 		const words = segments.flatMap((segment) =>
-			segment.words?.length ? segment.words.map((w) => ({ text: w.word.trim(), startMs: w.startMs, endMs: w.endMs })) : [{ text: segment.text, startMs: segment.startMs, endMs: segment.endMs }],
+			segment.words?.length
+				? segment.words.map((w) => ({ text: w.word.trim(), startMs: w.startMs, endMs: w.endMs }))
+				: [{ text: segment.text, startMs: segment.startMs, endMs: segment.endMs }],
 		);
-		const transcript = { model: this.current.ai.transcriptionModel, createdAt: new Date().toISOString(), words: words.filter((w) => w.text) };
+		const transcript = {
+			model: this.current.ai.transcriptionModel,
+			createdAt: new Date().toISOString(),
+			words: words.filter((w) => w.text),
+		};
 		this.apply({ type: "setTranscript", assetId, transcript }, actor);
 		return transcript;
 	}
@@ -533,7 +760,12 @@ export class ProjectStore extends EventEmitter {
 				const a = Math.max(fromMs, c.inMs);
 				const b = Math.min(toMs, c.inMs + c.durationMs * c.speed);
 				if (b - a < 5) return [];
-				return [{ startMs: Math.round(c.startMs + (a - c.inMs) / c.speed), endMs: Math.round(c.startMs + (b - c.inMs) / c.speed) }];
+				return [
+					{
+						startMs: Math.round(c.startMs + (a - c.inMs) / c.speed),
+						endMs: Math.round(c.startMs + (b - c.inMs) / c.speed),
+					},
+				];
 			});
 	}
 
@@ -552,18 +784,31 @@ export class ProjectStore extends EventEmitter {
 			// Cut from the end of the previous word to the start of the next one, so no breath is left behind.
 			const prevEnd = words[Math.min(from, to) - 1]?.endMs ?? a.startMs;
 			const nextStart = words[Math.max(from, to) + 1]?.startMs ?? b.endMs;
-			return this.sourceToTimeline(assetId, Math.max(prevEnd, a.startMs - 120), Math.min(nextStart, b.endMs + 120));
+			return this.sourceToTimeline(
+				assetId,
+				Math.max(prevEnd, a.startMs - 120),
+				Math.min(nextStart, b.endMs + 120),
+			);
 		});
 		if (timeline.length === 0) throw new Error("Those words are not on the timeline.");
-		return { summary: this.apply({ type: "removeRanges", ranges: timeline }, actor).summary, ranges: timeline };
+		return {
+			summary: this.apply({ type: "removeRanges", ranges: timeline }, actor).summary,
+			ranges: timeline,
+		};
 	}
 
 	/** Removes filler words ("um", "uh", …) found in the transcript. */
-	removeFillers(assetId: string, actor: Actor, fillers = ["um", "uh", "uhm", "erm", "er", "ah", "hmm", "mm"]) {
+	removeFillers(
+		assetId: string,
+		actor: Actor,
+		fillers = ["um", "uh", "uhm", "erm", "er", "ah", "hmm", "mm"],
+	) {
 		const words = this.current.assets.find((a) => a.id === assetId)?.transcript?.words;
 		if (!words?.length) throw new Error("Transcribe this media first.");
 		const set = new Set(fillers.map((f) => f.toLowerCase()));
-		const ranges = words.flatMap((w, i) => (set.has(w.text.toLowerCase().replace(/[^a-z']/g, "")) ? [{ from: i, to: i }] : []));
+		const ranges = words.flatMap((w, i) =>
+			set.has(w.text.toLowerCase().replace(/[^a-z']/g, "")) ? [{ from: i, to: i }] : [],
+		);
 		if (ranges.length === 0) return { summary: "No filler words found", ranges: [] };
 		return this.cutWords(assetId, ranges, actor);
 	}
@@ -592,7 +837,9 @@ export class ProjectStore extends EventEmitter {
 			info = await extractThumbnails(this.assetPath(assetId), dir, asset.durationMs);
 			await fs.writeFile(meta, JSON.stringify(info));
 		}
-		const urls = Array.from({ length: info.count }, (_, i) => this.options.mediaUrl(path.join(dir, `${String(i + 1).padStart(4, "0")}.jpg`)));
+		const urls = Array.from({ length: info.count }, (_, i) =>
+			this.options.mediaUrl(path.join(dir, `${String(i + 1).padStart(4, "0")}.jpg`)),
+		);
 		return { intervalMs: info.intervalMs, urls };
 	}
 
@@ -604,7 +851,12 @@ export class ProjectStore extends EventEmitter {
 		return { dir: this.projectDir, data: this.current, renderText, onProgress };
 	}
 
-	async export(kind: "stems" | "voiceover" | "audio" | "video" | "captions", out: string | undefined, actor: Actor, renderText?: TextRenderer): Promise<ExportReport> {
+	async export(
+		kind: "stems" | "voiceover" | "audio" | "video" | "captions",
+		out: string | undefined,
+		actor: Actor,
+		renderText?: TextRenderer,
+	): Promise<ExportReport> {
 		const ctx = this.exportContext(renderText);
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
@@ -617,7 +869,10 @@ export class ProjectStore extends EventEmitter {
 						: kind === "captions"
 							? await exportCaptions(ctx, target)
 							: await exportVideo(ctx, target);
-		this.log(actor, `Exported ${kind} → ${report.outputs.map((f) => path.basename(f)).join(", ")}${report.missing.length ? ` (no take yet: ${report.missing.join(", ")})` : ""}`);
+		this.log(
+			actor,
+			`Exported ${kind} → ${report.outputs.map((f) => path.basename(f)).join(", ")}${report.missing.length ? ` (no take yet: ${report.missing.join(", ")})` : ""}`,
+		);
 		return report;
 	}
 
@@ -638,7 +893,10 @@ export class ProjectStore extends EventEmitter {
 		this.dirty = true;
 		this.emit("change");
 		if (this.saveTimer) clearTimeout(this.saveTimer);
-		this.saveTimer = setTimeout(() => void this.flush().catch((error) => this.emit("error", error)), 400);
+		this.saveTimer = setTimeout(
+			() => void this.flush().catch((error) => this.emit("error", error)),
+			400,
+		);
 	}
 
 	private async findProjectIn(dir: string): Promise<string> {
@@ -650,15 +908,27 @@ export class ProjectStore extends EventEmitter {
 
 	private async remember(): Promise<void> {
 		if (!this.file || !this.data) return;
-		const entry: RecentProject = { path: this.file, name: this.data.name, openedAt: new Date().toISOString() };
-		const list = [entry, ...(await this.recent()).filter((item) => item.path !== this.file)].slice(0, 12);
+		const entry: RecentProject = {
+			path: this.file,
+			name: this.data.name,
+			openedAt: new Date().toISOString(),
+		};
+		const list = [entry, ...(await this.recent()).filter((item) => item.path !== this.file)].slice(
+			0,
+			12,
+		);
 		await fs.mkdir(path.dirname(this.options.recentFile), { recursive: true });
 		await fs.writeFile(this.options.recentFile, JSON.stringify(list, null, 2));
 	}
 }
 
 function slug(name: string): string {
-	return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+	return (
+		name
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-|-$/g, "") || "project"
+	);
 }
 
 function safeSegment(value: string): string {

@@ -1,11 +1,17 @@
 import type { MethodName } from "../../electron/control/contract";
 
 /** Runs a method as the user and surfaces failures as toasts instead of throwing. */
-export async function run<T = unknown>(method: MethodName, params?: unknown): Promise<T | undefined> {
+export async function run<T = unknown>(
+	method: MethodName,
+	params?: unknown,
+): Promise<T | undefined> {
 	try {
 		return await window.cue.call<T>(method, params);
 	} catch (error) {
-		notify((error as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), "danger");
+		notify(
+			(error as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""),
+			"danger",
+		);
 		return undefined;
 	}
 }

@@ -12,7 +12,10 @@ const stamp = (ms: number, sep: "," | ".") => {
 export function toSrt(clips: TextClip[]): string {
 	return [...clips]
 		.sort((a, b) => a.startMs - b.startMs)
-		.map((c, i) => `${i + 1}\n${stamp(c.startMs, ",")} --> ${stamp(c.startMs + c.durationMs, ",")}\n${c.text.trim()}\n`)
+		.map(
+			(c, i) =>
+				`${i + 1}\n${stamp(c.startMs, ",")} --> ${stamp(c.startMs + c.durationMs, ",")}\n${c.text.trim()}\n`,
+		)
 		.join("\n");
 }
 
@@ -20,6 +23,9 @@ export function toSrt(clips: TextClip[]): string {
 export function toVtt(clips: TextClip[]): string {
 	const cues = [...clips]
 		.sort((a, b) => a.startMs - b.startMs)
-		.map((c) => `${stamp(c.startMs, ".")} --> ${stamp(c.startMs + c.durationMs, ".")}\n${c.text.trim()}\n`);
+		.map(
+			(c) =>
+				`${stamp(c.startMs, ".")} --> ${stamp(c.startMs + c.durationMs, ".")}\n${c.text.trim()}\n`,
+		);
 	return `WEBVTT\n\n${cues.join("\n")}`;
 }

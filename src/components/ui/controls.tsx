@@ -44,9 +44,24 @@ export function IconButton({
 	);
 }
 
-export function Section({ title, action, children, className }: { title?: string; action?: ReactNode; children: ReactNode; className?: string }) {
+export function Section({
+	title,
+	action,
+	children,
+	className,
+}: {
+	title?: string;
+	action?: ReactNode;
+	children: ReactNode;
+	className?: string;
+}) {
 	return (
-		<section className={cn("flex flex-col gap-2.5 border-b border-separator px-4 py-3.5 last:border-b-0", className)}>
+		<section
+			className={cn(
+				"flex flex-col gap-2.5 border-b border-separator px-4 py-3.5 last:border-b-0",
+				className,
+			)}
+		>
 			{(title || action) && (
 				<div className="flex min-h-6 items-center justify-between gap-2">
 					{title && <h3 className="text-[11px] font-medium text-muted">{title}</h3>}
@@ -58,9 +73,21 @@ export function Section({ title, action, children, className }: { title?: string
 	);
 }
 
-export function Field({ label, hint, children, inline }: { label: string; hint?: string; children: ReactNode; inline?: boolean }) {
+export function Field({
+	label,
+	hint,
+	children,
+	inline,
+}: {
+	label: string;
+	hint?: string;
+	children: ReactNode;
+	inline?: boolean;
+}) {
 	return (
-		<label className={cn("flex gap-1 text-[12px]", inline ? "items-center justify-between" : "flex-col")}>
+		<label
+			className={cn("flex gap-1 text-[12px]", inline ? "items-center justify-between" : "flex-col")}
+		>
 			<span className="text-muted">{label}</span>
 			{children}
 			{hint && <span className="text-[11px] leading-snug text-muted">{hint}</span>}
@@ -171,13 +198,20 @@ export function NumberInput({
 					if (e.key === "ArrowUp" || e.key === "ArrowDown") {
 						e.preventDefault();
 						const delta = (e.key === "ArrowUp" ? step : -step) * (e.shiftKey ? 10 : 1);
-						const next = Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, value + delta * scale));
+						const next = Math.min(
+							max ?? Number.POSITIVE_INFINITY,
+							Math.max(min ?? Number.NEGATIVE_INFINITY, value + delta * scale),
+						);
 						onCommit(next);
 					}
 				}}
 				className={cn(inputClass, "tabular-nums", suffix && "pr-8")}
 			/>
-			{suffix && <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[11px] text-muted">{suffix}</span>}
+			{suffix && (
+				<span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[11px] text-muted">
+					{suffix}
+				</span>
+			)}
 		</div>
 	);
 }
@@ -218,14 +252,26 @@ export function Range({
 				onPointerUp={() => onCommit(draft)}
 				onKeyUp={() => onCommit(draft)}
 				className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full accent-[var(--accent)]"
-				style={{ background: `linear-gradient(to right, var(--accent) ${pct}%, color-mix(in srgb, var(--foreground) 12%, transparent) ${pct}%)` }}
+				style={{
+					background: `linear-gradient(to right, var(--accent) ${pct}%, color-mix(in srgb, var(--foreground) 12%, transparent) ${pct}%)`,
+				}}
 			/>
-			<span className="w-11 text-right text-[11px] text-muted tabular-nums">{format ? format(draft) : draft.toFixed(2)}</span>
+			<span className="w-11 text-right text-[11px] text-muted tabular-nums">
+				{format ? format(draft) : draft.toFixed(2)}
+			</span>
 		</div>
 	);
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+export function Toggle({
+	checked,
+	onChange,
+	label,
+}: {
+	checked: boolean;
+	onChange: (checked: boolean) => void;
+	label: string;
+}) {
 	return (
 		<Switch isSelected={checked} onChange={onChange} size="sm" className="w-full">
 			<Switch.Content className="flex w-full items-center justify-between gap-3 text-[13px]">
@@ -238,7 +284,17 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
 	);
 }
 
-export function Segmented<T extends string>({ value, options, onChange, size = "sm" }: { value: T; options: { value: T; label: ReactNode; title?: string }[]; onChange: (value: T) => void; size?: "sm" | "xs" }) {
+export function Segmented<T extends string>({
+	value,
+	options,
+	onChange,
+	size = "sm",
+}: {
+	value: T;
+	options: { value: T; label: ReactNode; title?: string }[];
+	onChange: (value: T) => void;
+	size?: "sm" | "xs";
+}) {
 	return (
 		<div className="inline-flex rounded-md bg-field p-0.5 ring-1 ring-border" role="radiogroup">
 			{options.map((option) => (
@@ -252,7 +308,9 @@ export function Segmented<T extends string>({ value, options, onChange, size = "
 					className={cn(
 						"rounded-[4px] px-2 font-medium transition-colors",
 						size === "xs" ? "h-6 text-[11px]" : "h-7 text-[12px]",
-						option.value === value ? "bg-default text-foreground" : "text-muted hover:text-foreground",
+						option.value === value
+							? "bg-default text-foreground"
+							: "text-muted hover:text-foreground",
 					)}
 				>
 					{option.label}
@@ -262,12 +320,30 @@ export function Segmented<T extends string>({ value, options, onChange, size = "
 	);
 }
 
-export function ColorInput({ value, onCommit, allowNone }: { value: string | null; onCommit: (value: string | null) => void; allowNone?: boolean }) {
+export function ColorInput({
+	value,
+	onCommit,
+	allowNone,
+}: {
+	value: string | null;
+	onCommit: (value: string | null) => void;
+	allowNone?: boolean;
+}) {
 	const hex = toHex(value);
 	return (
 		<div className="flex items-center gap-2">
-			<input type="color" value={hex} onChange={(e) => onCommit(e.target.value)} className="h-8 w-10 cursor-pointer rounded-md border border-border bg-transparent p-0.5" />
-			<TextInput value={value ?? ""} placeholder={allowNone ? "None" : ""} onCommit={(v) => onCommit(v.trim() ? v.trim() : allowNone ? null : hex)} className="flex-1" />
+			<input
+				type="color"
+				value={hex}
+				onChange={(e) => onCommit(e.target.value)}
+				className="h-8 w-10 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
+			/>
+			<TextInput
+				value={value ?? ""}
+				placeholder={allowNone ? "None" : ""}
+				onCommit={(v) => onCommit(v.trim() ? v.trim() : allowNone ? null : hex)}
+				className="flex-1"
+			/>
 		</div>
 	);
 }
@@ -276,11 +352,20 @@ function toHex(color: string | null): string {
 	if (!color) return "#000000";
 	if (/^#[0-9a-f]{6}$/i.test(color)) return color;
 	const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(color);
-	if (m) return `#${[m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("")}`;
+	if (m)
+		return `#${[m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("")}`;
 	return "#000000";
 }
 
-export function Empty({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }) {
+export function Empty({
+	icon,
+	title,
+	children,
+}: {
+	icon: ReactNode;
+	title: string;
+	children?: ReactNode;
+}) {
 	return (
 		<div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
 			<div className="text-muted">{icon}</div>

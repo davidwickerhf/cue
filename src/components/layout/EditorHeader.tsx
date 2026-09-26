@@ -1,5 +1,10 @@
 import { Button, Dropdown, Spinner } from "@heroui/react";
-import { ArrowClockwise, ArrowCounterClockwise, CaretLeft, SidebarSimple } from "@phosphor-icons/react";
+import {
+	ArrowClockwise,
+	ArrowCounterClockwise,
+	CaretLeft,
+	SidebarSimple,
+} from "@phosphor-icons/react";
 import { notify, run } from "../../lib/api";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
@@ -13,13 +18,17 @@ export function EditorHeader() {
 	const running = jobs.find((j) => j.state === "running");
 	const failed = jobs.find((j) => j.state === "failed");
 	if (!project) return null;
-	const agentActive = !!agent?.lastSeenAt && Date.now() - Date.parse(agent.lastSeenAt) < 5 * 60 * 1000;
+	const agentActive =
+		!!agent?.lastSeenAt && Date.now() - Date.parse(agent.lastSeenAt) < 5 * 60 * 1000;
 
 	const exportAs = async (kind: "video" | "voiceover" | "stems" | "audio" | "captions") => {
 		notify(`Exporting ${kind}…`);
 		const report = await run<{ outputs: string[]; missing: string[] }>("export", { kind });
 		if (!report) return;
-		notify(`Exported ${kind}${report.missing.length ? `. No take yet for ${report.missing.join(", ")}` : ""}`, "success");
+		notify(
+			`Exported ${kind}${report.missing.length ? `. No take yet for ${report.missing.join(", ")}` : ""}`,
+			"success",
+		);
 		if (report.outputs[0]) void window.cue.reveal(report.outputs[0]);
 	};
 
@@ -63,7 +72,10 @@ export function EditorHeader() {
 						{running.progress !== null && ` ${Math.round((running.progress ?? 0) * 100)}%`}
 					</span>
 				) : failed ? (
-					<span className="mr-2 max-w-[320px] truncate text-[12px] text-danger" title={failed.message}>
+					<span
+						className="mr-2 max-w-[320px] truncate text-[12px] text-danger"
+						title={failed.message}
+					>
 						{failed.label} failed
 					</span>
 				) : null}
@@ -73,16 +85,32 @@ export function EditorHeader() {
 					className="mr-1 flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-muted hover:bg-default hover:text-foreground"
 					title={agentActive ? "An agent is connected" : "Connect an agent"}
 				>
-					<span className={cn("size-1.5 rounded-full", agentActive ? "bg-success" : "bg-foreground/25")} />
+					<span
+						className={cn("size-1.5 rounded-full", agentActive ? "bg-success" : "bg-foreground/25")}
+					/>
 					Agent
 				</button>
-				<IconButton label="Undo" shortcut="⌘Z" disabled={!project.canUndo} onPress={() => void run("undo")}>
+				<IconButton
+					label="Undo"
+					shortcut="⌘Z"
+					disabled={!project.canUndo}
+					onPress={() => void run("undo")}
+				>
 					<ArrowCounterClockwise className="size-4" />
 				</IconButton>
-				<IconButton label="Redo" shortcut="⇧⌘Z" disabled={!project.canRedo} onPress={() => void run("redo")}>
+				<IconButton
+					label="Redo"
+					shortcut="⇧⌘Z"
+					disabled={!project.canRedo}
+					onPress={() => void run("redo")}
+				>
 					<ArrowClockwise className="size-4" />
 				</IconButton>
-				<IconButton label={inspectorOpen ? "Hide inspector" : "Show inspector"} active={inspectorOpen} onPress={() => editor.set({ inspectorOpen: !inspectorOpen })}>
+				<IconButton
+					label={inspectorOpen ? "Hide inspector" : "Show inspector"}
+					active={inspectorOpen}
+					onPress={() => editor.set({ inspectorOpen: !inspectorOpen })}
+				>
 					<SidebarSimple className="size-4 -scale-x-100" />
 				</IconButton>
 				<Dropdown>
@@ -101,7 +129,10 @@ export function EditorHeader() {
 								<ExportItem title="Voiceover track" body="WAV, full length" />
 							</Dropdown.Item>
 							<Dropdown.Item id="stems" textValue="Stems">
-								<ExportItem title="Line stems" body={`WAV per line → ${project.data.export.stemsDir}`} />
+								<ExportItem
+									title="Line stems"
+									body={`WAV per line → ${project.data.export.stemsDir}`}
+								/>
 							</Dropdown.Item>
 							<Dropdown.Item id="audio" textValue="Audio mix">
 								<ExportItem title="Audio mix" body="WAV, every audible track" />

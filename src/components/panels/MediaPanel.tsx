@@ -1,5 +1,14 @@
 import { Button } from "@heroui/react";
-import { FilmSlate, Image as ImageIcon, MusicNotes, Plus, Sparkle, Trash, UploadSimple, Waveform } from "@phosphor-icons/react";
+import {
+	FilmSlate,
+	Image as ImageIcon,
+	MusicNotes,
+	Plus,
+	Sparkle,
+	Trash,
+	UploadSimple,
+	Waveform,
+} from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import type { Asset, ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
@@ -15,7 +24,11 @@ export const ASSET_MIME = "application/x-cue-asset";
 /** Picks a track that can hold the asset (first matching, voiceover-aware for takes). */
 export function trackFor(project: ProjectSnapshot, asset: Asset): string | undefined {
 	const tracks = project.data.tracks.filter((t) => !t.locked);
-	if (asset.kind === "audio") return (tracks.find((t) => t.kind === "audio" && (asset.lineId ? t.voiceover : !t.voiceover)) ?? tracks.find((t) => t.kind === "audio"))?.id;
+	if (asset.kind === "audio")
+		return (
+			tracks.find((t) => t.kind === "audio" && (asset.lineId ? t.voiceover : !t.voiceover)) ??
+			tracks.find((t) => t.kind === "audio")
+		)?.id;
 	return tracks.find((t) => t.kind === "video")?.id;
 }
 
@@ -30,7 +43,11 @@ export function MediaPanel() {
 	return (
 		<div className="flex flex-col">
 			<Section>
-				<Button variant="secondary" className="w-full gap-2" onPress={() => void window.cue.importDialog()}>
+				<Button
+					variant="secondary"
+					className="w-full gap-2"
+					onPress={() => void window.cue.importDialog()}
+				>
 					<UploadSimple className="size-4" /> Import media
 				</Button>
 				<Segmented
@@ -68,7 +85,10 @@ function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot 
 	useEffect(() => {
 		if (asset.kind !== "video") return;
 		let alive = true;
-		void window.cue.thumbnails(asset.id).then((t) => alive && setThumb(t.urls[Math.min(1, t.urls.length - 1)] ?? null)).catch(() => {});
+		void window.cue
+			.thumbnails(asset.id)
+			.then((t) => alive && setThumb(t.urls[Math.min(1, t.urls.length - 1)] ?? null))
+			.catch(() => {});
 		return () => {
 			alive = false;
 		};
@@ -77,7 +97,11 @@ function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot 
 	const addAtPlayhead = () => {
 		const trackId = trackFor(project, asset);
 		if (!trackId) return;
-		void run("add_clips", { clips: [{ type: "media", trackId, assetId: asset.id, startMs: Math.round(playback.currentMs) }] });
+		void run("add_clips", {
+			clips: [
+				{ type: "media", trackId, assetId: asset.id, startMs: Math.round(playback.currentMs) },
+			],
+		});
 	};
 
 	return (
@@ -96,7 +120,13 @@ function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot 
 					<img src={thumb} alt="" draggable={false} className="size-full object-cover" />
 				) : (
 					<div className="flex size-full items-center justify-center text-muted">
-						{asset.kind === "audio" ? <Waveform className="size-7" /> : asset.kind === "image" ? <ImageIcon className="size-7" /> : <FilmSlate className="size-7" />}
+						{asset.kind === "audio" ? (
+							<Waveform className="size-7" />
+						) : asset.kind === "image" ? (
+							<ImageIcon className="size-7" />
+						) : (
+							<FilmSlate className="size-7" />
+						)}
 					</div>
 				)}
 				<span className="absolute bottom-1 left-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
@@ -111,14 +141,20 @@ function AssetCard({ asset, project }: { asset: Asset; project: ProjectSnapshot 
 					<IconButton label="Add at playhead" variant="secondary" onPress={addAtPlayhead}>
 						<Plus className="size-3.5" />
 					</IconButton>
-					<IconButton label="Remove from project" variant="secondary" onPress={() => void run("remove_media", { id: asset.id })}>
+					<IconButton
+						label="Remove from project"
+						variant="secondary"
+						onPress={() => void run("remove_media", { id: asset.id })}
+					>
 						<Trash className="size-3.5" />
 					</IconButton>
 				</div>
 			</div>
 			<div className="flex items-center gap-1.5 px-2 py-1.5">
 				{asset.kind === "audio" ? <MusicNotes className="size-3 shrink-0 text-muted" /> : null}
-				<p className={cn("truncate text-[12px] font-medium", !used && "text-muted")}>{asset.name}</p>
+				<p className={cn("truncate text-[12px] font-medium", !used && "text-muted")}>
+					{asset.name}
+				</p>
 			</div>
 		</div>
 	);

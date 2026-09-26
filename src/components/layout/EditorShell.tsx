@@ -34,7 +34,9 @@ export function EditorShell() {
 				}}
 				onPointerMove={(e) => {
 					if (!dragStart.current) return;
-					setTimelineHeight(Math.min(640, Math.max(180, dragStart.current.h - (e.clientY - dragStart.current.y))));
+					setTimelineHeight(
+						Math.min(640, Math.max(180, dragStart.current.h - (e.clientY - dragStart.current.y))),
+					);
 				}}
 				onPointerUp={() => {
 					dragStart.current = null;

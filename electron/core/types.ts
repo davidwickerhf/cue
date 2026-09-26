@@ -364,7 +364,17 @@ export interface AppState {
 	activity: ActivityEntry[];
 	recent: RecentProject[];
 	jobs: JobStatus[];
-	ai: { configured: boolean; provider: "openai" | null };
+	ai: {
+		configured: boolean;
+		provider: "openai" | null;
+		status: {
+			capability: "tts" | "transcription" | "text" | "image";
+			provider: string;
+			ready: boolean;
+			problem?: string;
+			model?: string;
+		}[];
+	};
 }
 
 export interface RecentProject {

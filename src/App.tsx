@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { EditorShell } from "./components/layout/EditorShell";
-import { Welcome } from "./components/Welcome";
+import { SettingsView } from "./components/settings/SettingsView";
 import { Toaster } from "./components/ui/Toaster";
+import { Welcome } from "./components/Welcome";
 import { playback } from "./lib/playback";
-import { startSync, useApp, useProject } from "./lib/state";
+import { appSettings, startSettingsSync, startSync, useApp, useProject } from "./lib/state";
 
 export function App() {
 	useEffect(() => {
@@ -12,8 +13,22 @@ export function App() {
 			stop();
 		};
 	}, []);
+	useEffect(() => startSettingsSync(), []);
 	const project = useProject();
 	const loaded = useApp(() => true);
+	const theme = appSettings.use((s) => s.settings?.theme ?? "dark");
+
+	useEffect(() => {
+		const media = window.matchMedia("(prefers-color-scheme: dark)");
+		const apply = () =>
+			document.documentElement.classList.toggle(
+				"dark",
+				theme === "dark" || (theme === "system" && media.matches),
+			);
+		apply();
+		media.addEventListener("change", apply);
+		return () => media.removeEventListener("change", apply);
+	}, [theme]);
 
 	useEffect(() => {
 		playback.setProject(project);
@@ -28,6 +43,7 @@ export function App() {
 	return (
 		<>
 			{project ? <EditorShell /> : <Welcome />}
+			<SettingsView />
 			<Toaster />
 		</>
 	);
