@@ -1,5 +1,6 @@
 import { CaretLeft, CaretRight, Pause, Play, SkipBack } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { valueAt } from "../../../electron/core/anim";
 import type { Clip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
@@ -211,7 +212,8 @@ function SelectionOverlay({
 	height: number;
 }) {
 	const selectedIds = useApp((s) => s.selectedClipIds) ?? [];
-	const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null);
+	const [drag, setDrag] = useState<{ dx: number; dy: number; scale?: number } | null>(null);
+	const resize = useRef<{ cx: number; cy: number; d0: number } | null>(null);
 	const [editing, setEditing] = useState<string | null>(null);
 	const start = useRef<{ x: number; y: number } | null>(null);
 	const clip = project.data.clips.find((c) => selectedIds.length === 1 && c.id === selectedIds[0]);
@@ -219,10 +221,17 @@ function SelectionOverlay({
 	const visible = playback.clock.use(
 		(s) => !!clip && s.currentMs >= clip.startMs && s.currentMs < clip.startMs + clip.durationMs,
 	);
+	// Animated clips move on their own: follow them (one render per frame, only then).
+	const animated =
+		clip?.type === "media" &&
+		!!clip.keyframes &&
+		(["x", "y", "scale"] as const).some((p) => clip.keyframes?.[p]?.length);
+	const frame = playback.clock.use((s) => (animated ? Math.round(s.currentMs / 33) : 0));
 	if (!clip || !visible) return null;
 	const track = project.data.tracks.find((t) => t.id === clip.trackId);
 	if (!track || track.kind === "audio" || track.locked) return null;
-	const box = boxOf(clip, project, width, height);
+	const local = animated ? frame * 33 - clip.startMs : playback.currentMs - clip.startMs;
+	const box = boxOf(clip, project, width, height, local, drag?.scale);
 	if (!box) return null;
 	const dx = drag?.dx ?? 0;
 	const dy = drag?.dy ?? 0;
@@ -292,20 +301,105 @@ function SelectionOverlay({
 				const ny = Math.round((box.cy + moved.dy / height) * 1000) / 1000;
 				if (clip.type === "text")
 					void run("update_clip", { id: clip.id, patch: { style: { x: nx, y: ny } } });
-				else void run("update_clip", { id: clip.id, patch: { transform: { x: nx, y: ny } } });
+				else setMotion(clip, { x: nx, y: ny });
 			}}
 		>
+			{/* Corners resize around the centre. */}
 			{["-top-1 -left-1", "-top-1 -right-1", "-bottom-1 -left-1", "-bottom-1 -right-1"].map(
 				(pos) => (
-					<span key={pos} className={cn("absolute size-2 border border-accent bg-white", pos)} />
+					<span
+						key={pos}
+						className={cn(
+							"absolute size-2.5 cursor-nwse-resize border border-accent bg-white",
+							pos,
+							(pos.includes("right") && pos.includes("top")) ||
+								(pos.includes("left") && pos.includes("bottom"))
+								? "cursor-nesw-resize"
+								: "",
+						)}
+						onPointerDown={(e) => {
+							e.stopPropagation();
+							const r = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+							const cx = r.left + r.width / 2;
+							const cy = r.top + r.height / 2;
+							resize.current = { cx, cy, d0: Math.hypot(e.clientX - cx, e.clientY - cy) };
+							(e.target as HTMLElement).setPointerCapture(e.pointerId);
+							setDrag({ dx: 0, dy: 0, scale: 1 });
+						}}
+						onPointerMove={(e) => {
+							const r0 = resize.current;
+							if (!r0) return;
+							e.stopPropagation();
+							const factor = Math.max(
+								0.05,
+								Math.hypot(e.clientX - r0.cx, e.clientY - r0.cy) / Math.max(1, r0.d0),
+							);
+							setDrag({ dx: 0, dy: 0, scale: factor });
+						}}
+						onPointerUp={(e) => {
+							if (!resize.current) return;
+							e.stopPropagation();
+							resize.current = null;
+							const factor = drag?.scale ?? 1;
+							setDrag(null);
+							if (Math.abs(factor - 1) < 0.01) return;
+							if (clip.type === "text") {
+								const s = clip.style;
+								void run("update_clip", {
+									id: clip.id,
+									patch: {
+										style: {
+											fontSize: Math.max(8, Math.round(s.fontSize * factor)),
+											width: Math.min(1, s.width * factor),
+										},
+										...(clip.shape
+											? {
+													shape: {
+														width: clip.shape.width * factor,
+														height: clip.shape.height * factor,
+													},
+												}
+											: {}),
+									},
+								});
+							} else
+								setMotion(clip, { scale: Math.round((box.scale ?? 1) * factor * 1000) / 1000 });
+						}}
+					/>
 				),
 			)}
 		</div>
 	);
 }
 
-function boxOf(clip: Clip, project: ProjectSnapshot, width: number, height: number) {
-	const scale = width / project.data.canvas.width;
+/**
+ * Sets position or size from the viewer: as a keyframe at the playhead when
+ * that property is animated (as the inspector does), else on the clip.
+ */
+function setMotion(clip: Clip, values: { x?: number; y?: number; scale?: number }) {
+	if (clip.type !== "media") return;
+	const local = Math.round(
+		Math.max(0, Math.min(clip.durationMs, playback.currentMs - clip.startMs)),
+	);
+	const plain: Record<string, number> = {};
+	for (const [prop, value] of Object.entries(values)) {
+		if (clip.keyframes?.[prop as "x"]?.length)
+			void run("set_keyframe", { clipId: clip.id, prop, atMs: local, value, ease: "ease" });
+		else plain[prop] = value;
+	}
+	if (Object.keys(plain).length)
+		void run("update_clip", { id: clip.id, patch: { transform: plain } });
+}
+
+function boxOf(
+	clip: Clip,
+	project: ProjectSnapshot,
+	width: number,
+	height: number,
+	local = 0,
+	resizeBy = 1,
+) {
+	const scale = (width / project.data.canvas.width) * (clip.type === "text" ? resizeBy : 1);
 	if (clip.type === "text" && clip.shape && !clip.text.trim()) {
 		// A shape on its own: its own size (a line's or arrow's bounding box).
 		const s = clip.style;
@@ -351,19 +445,26 @@ function boxOf(clip: Clip, project: ProjectSnapshot, width: number, height: numb
 			cy: s.y,
 		};
 	}
+	// Where the picture is at this moment (keyframes), and the part the crop leaves visible.
 	const t = clip.transform;
+	const kf = clip.keyframes;
+	const x = valueAt(kf?.x, local, t.x);
+	const y = valueAt(kf?.y, local, t.y);
+	const s = valueAt(kf?.scale, local, t.scale);
 	const asset = project.data.assets.find((a) => a.id === clip.assetId);
 	const ar = asset?.width && asset.height ? asset.width / asset.height : width / height;
-	const fit = Math.min(width / ar, height) * t.scale;
+	const fit = Math.min(width / ar, height) * s * resizeBy;
 	const w = fit * ar;
 	const h = fit;
+	const c = t.crop;
 	return {
-		left: t.x * width - w / 2,
-		top: t.y * height - h / 2,
-		width: w,
-		height: h,
-		cx: t.x,
-		cy: t.y,
+		left: x * width - w / 2 + c.left * w,
+		top: y * height - h / 2 + c.top * h,
+		width: w * (1 - c.left - c.right),
+		height: h * (1 - c.top - c.bottom),
+		cx: x,
+		cy: y,
+		scale: s,
 	};
 }
 

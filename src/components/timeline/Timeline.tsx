@@ -412,7 +412,8 @@ export function Timeline() {
 		if (!d) return;
 		let next: Drag = d;
 		if (d.kind === "scrub") {
-			playback.seek(Math.round(timeAt(e.clientX)));
+			// Dragging the playhead plays the sound under it.
+			playback.scrub(Math.round(timeAt(e.clientX)));
 			return;
 		}
 		if (d.kind === "move") {
@@ -1841,6 +1842,34 @@ function ClipView({
 		<div
 			data-clip
 			data-clip-id={clip.id}
+			// Reachable with Tab: Enter selects (⇧ adds), the menu key or ⇧F10 opens the clip menu.
+			role="button"
+			tabIndex={0}
+			aria-label={label}
+			aria-pressed={selected}
+			onKeyDown={(e) => {
+				if (e.key === "Enter") {
+					e.preventDefault();
+					e.stopPropagation();
+					const ids = window.cue ? [clip.id] : [];
+					if (e.shiftKey) {
+						const current = app.get().state?.selectedClipIds ?? [];
+						window.cue.selectClips(
+							current.includes(clip.id)
+								? current.filter((id) => id !== clip.id)
+								: [...current, clip.id],
+						);
+					} else window.cue.selectClips(ids);
+				} else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+					e.preventDefault();
+					const r = e.currentTarget.getBoundingClientRect();
+					onContext({
+						preventDefault() {},
+						clientX: r.left + Math.min(24, r.width / 2),
+						clientY: r.bottom,
+					} as unknown as React.MouseEvent);
+				}
+			}}
 			onPointerDown={onDown}
 			onContextMenu={onContext}
 			onDoubleClick={() => {
@@ -1848,7 +1877,7 @@ function ClipView({
 				if (inner) void run("open_sequence", { id: inner });
 			}}
 			className={cn(
-				"group absolute top-[3px] overflow-hidden rounded-[4px] text-white",
+				"group absolute top-[3px] overflow-hidden rounded-[4px] text-white focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
 				CLIP_TONE[tone],
 				selected
 					? "outline outline-2 -outline-offset-1 outline-white/90"
@@ -2037,6 +2066,8 @@ function ClipMenu({
 		const left = Math.min(menu.x, window.innerWidth - width - 8);
 		const top = menu.y + height > window.innerHeight - 8 ? Math.max(8, menu.y - height) : menu.y;
 		setPos({ left, top, ready: true });
+		// Keyboard users land on the first item.
+		el.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
 	}, [menu.x, menu.y]);
 	useEffect(() => {
 		const close = () => onClose();
@@ -2227,6 +2258,19 @@ function ClipMenu({
 			className="fixed z-[100] min-w-[190px] rounded-lg border border-border bg-overlay p-1 text-[12px] shadow-xl shadow-black/30"
 			style={{ left: pos.left, top: pos.top, visibility: pos.ready ? "visible" : "hidden" }}
 			onPointerDown={(e) => e.stopPropagation()}
+			// Arrow keys move between items, as in a native menu.
+			onKeyDown={(e) => {
+				const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+				const at = items.indexOf(document.activeElement as HTMLElement);
+				const go = (i: number) => items[(i + items.length) % items.length]?.focus();
+				if (e.key === "ArrowDown") go(at + 1);
+				else if (e.key === "ArrowUp") go(at < 0 ? -1 : at - 1);
+				else if (e.key === "Home") go(0);
+				else if (e.key === "End") go(-1);
+				else return;
+				e.preventDefault();
+				e.stopPropagation();
+			}}
 		>
 			<div className="flex items-center gap-1 px-2 pt-1 pb-1.5" role="group" aria-label="Label">
 				{Object.entries(LABEL_COLORS).map(([name, color]) => (

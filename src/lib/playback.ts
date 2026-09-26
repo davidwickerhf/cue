@@ -175,6 +175,7 @@ class PlaybackEngine {
 	private tickListeners = new Set<(ms: number) => void>();
 	private meterData = new Float32Array(1024);
 	private frameCount = 0;
+	private lastGrain = 0;
 	/** Before/after: pictures without their grade and effects. */
 	private original = false;
 	private stageW = 0;
@@ -368,6 +369,8 @@ class PlaybackEngine {
 			if ((this.frameCount++ & 1) === 0) this.readMeter();
 			// Schedule sound a little ahead of the playhead rather than all at once.
 			if (this.frameCount % 30 === 0) this.scheduleAhead();
+			// Shuttling (J/L at other speeds) has no scheduled sound; play grains instead.
+			if (this.rate !== 1 && this.frameCount % 5 === 0) this.scrubGrain(now);
 			for (const listener of this.tickListeners) listener(now);
 			this.raf = requestAnimationFrame(loop);
 		};
@@ -411,6 +414,58 @@ class PlaybackEngine {
 			// Have the sound around the new position ready by the time play is pressed.
 			clearTimeout(this.warmTimer);
 			this.warmTimer = setTimeout(() => this.warmAudio(), 300);
+		}
+	}
+
+	/**
+	 * Moves the playhead while the user drags it, playing a short grain of the
+	 * sound there so cuts can be found by ear (at most every 60 ms).
+	 */
+	scrub(ms: number) {
+		this.seek(ms);
+		const now = performance.now();
+		if (now - this.lastGrain < 60) return;
+		this.lastGrain = now;
+		this.scrubGrain(ms);
+	}
+
+	/** About 80 ms of every audible clip at `ms`, faded in and out, through each track's bus. */
+	private scrubGrain(ms: number) {
+		const project = this.project;
+		const index = this.index;
+		if (!project || !index) return;
+		const ctx = this.audio();
+		void ctx.resume();
+		const master = this.master as GainNode;
+		for (const clip of project.data.clips) {
+			if (clip.type !== "media" || ms < clip.startMs || ms >= clipEnd(clip)) continue;
+			const track = index.tracks.get(clip.trackId);
+			const asset = index.assets.get(clip.assetId);
+			if (!track || !asset?.hasAudio || asset.kind === "image" || !this.audible(clip, track))
+				continue;
+			// Only sound that is already decoded: scrubbing must never wait.
+			const key = bufferKey(asset, clip.speed);
+			const pending = this.buffers.get(key);
+			if (!pending) {
+				void this.buffer(asset, clip.speed);
+				continue;
+			}
+			void pending.then((buffer) => {
+				if (!buffer) return;
+				const offset = (clip.inMs / clip.speed + (ms - clip.startMs)) / 1000;
+				if (offset < 0 || offset >= buffer.duration) return;
+				const source = ctx.createBufferSource();
+				source.buffer = buffer;
+				source.playbackRate.value = Math.min(4, Math.max(0.5, Math.abs(this.rate) || 1));
+				const env = ctx.createGain();
+				const t = ctx.currentTime;
+				env.gain.setValueAtTime(0, t);
+				env.gain.linearRampToValueAtTime(clip.volume, t + 0.008);
+				env.gain.setValueAtTime(clip.volume, t + 0.07);
+				env.gain.linearRampToValueAtTime(0, t + 0.085);
+				source.connect(env).connect(this.bus(track.id, master).input);
+				source.start(t, offset, 0.09);
+			});
 		}
 	}
 

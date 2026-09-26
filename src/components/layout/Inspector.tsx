@@ -100,7 +100,7 @@ export function Inspector() {
 								shortcut="⌘K"
 								onPress={() =>
 									void run("split_at", {
-										atMs: playback.currentMs,
+										atMs: Math.round(playback.currentMs),
 										trackIds: [...new Set(clips.map((c) => c.trackId))],
 									})
 								}
@@ -108,16 +108,18 @@ export function Inspector() {
 								<Scissors className="size-4" />
 							</IconButton>
 							<IconButton
-								label="Duplicate"
-								shortcut="⌥ drag"
+								label="Duplicate after itself (or ⌥-drag a copy anywhere)"
 								onPress={() => void run("duplicate_clips", { ids: selected })}
 							>
 								<Copy className="size-4" />
 							</IconButton>
 							<IconButton
-								label="Delete"
+								label="Delete (⇧⌫ closes the gap)"
 								shortcut="⌫"
-								onPress={() => void run("delete_clips", { ids: selected })}
+								// Same as the key: ripples when ripple editing is on.
+								onPress={() =>
+									void run("delete_clips", { ids: selected, ripple: editor.get().ripple })
+								}
 							>
 								<Trash className="size-4" />
 							</IconButton>
@@ -439,6 +441,11 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 							/>
 						</Field>
 					</div>
+					<Toggle
+						label="Reduce background noise (on export)"
+						checked={clip.denoise}
+						onChange={(denoise) => patch({ denoise })}
+					/>
 				</Section>
 			)}
 			{visual && (

@@ -38,7 +38,20 @@ export function EditorShell() {
 			<div
 				role="separator"
 				aria-orientation="horizontal"
-				className="relative h-px shrink-0 cursor-row-resize bg-separator after:absolute after:inset-x-0 after:-top-1.5 after:-bottom-1.5 after:content-[''] hover:bg-accent"
+				aria-label="Timeline height"
+				aria-valuenow={timelineHeight}
+				tabIndex={0}
+				// Arrow keys resize, like dragging.
+				onKeyDown={(e) => {
+					const step = e.shiftKey ? 64 : 16;
+					if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+					e.preventDefault();
+					e.stopPropagation();
+					layout.set(
+						clampLayout({ timelineHeight: timelineHeight + (e.key === "ArrowUp" ? step : -step) }),
+					);
+				}}
+				className="relative h-px shrink-0 cursor-row-resize bg-separator after:absolute after:inset-x-0 after:-top-1.5 after:-bottom-1.5 after:content-[''] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
 				onPointerDown={(e) => {
 					dragStart.current = { y: e.clientY, h: timelineHeight };
 					(e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -77,7 +90,24 @@ function Splitter({
 		<div
 			role="separator"
 			aria-orientation="vertical"
-			className="relative z-10 -mx-[3px] w-[6px] shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-transparent hover:after:bg-accent"
+			aria-label={
+				edge === "sidebarWidth"
+					? "Sidebar width"
+					: edge === "dockWidth"
+						? "Pane width"
+						: "Inspector width"
+			}
+			aria-valuenow={layout.get()[edge]}
+			tabIndex={0}
+			// Arrow keys resize, like dragging.
+			onKeyDown={(e) => {
+				if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+				e.preventDefault();
+				e.stopPropagation();
+				const step = (e.shiftKey ? 64 : 16) * (e.key === "ArrowRight" ? 1 : -1) * (invert ? -1 : 1);
+				layout.set(clampLayout({ [edge]: layout.get()[edge] + step }));
+			}}
+			className="relative z-10 -mx-[3px] w-[6px] shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-transparent hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent"
 			onPointerDown={(e) => {
 				start.current = { x: e.clientX, w: layout.get()[edge] };
 				(e.target as HTMLElement).setPointerCapture(e.pointerId);
