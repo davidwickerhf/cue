@@ -121,6 +121,39 @@ export interface ShotSample {
 	labels: { id: string; confidence: number }[];
 	text: string[];
 	faces: number;
+	/** A sentence describing the frame (optional, from a vision model). */
+	caption?: string;
+}
+
+let vocabulary: Promise<string[]> | null = null;
+
+/** Every label the classifier knows (about 1,300), for widening a search. */
+export function visionVocabulary(): Promise<string[]> {
+	const bin = visionBinary();
+	if (!bin) return Promise.resolve([]);
+	vocabulary ??= new Promise<string[]>((resolve) => {
+		const child = spawn(bin, [], { stdio: ["pipe", "pipe", "ignore"] });
+		let out = "";
+		child.stdout.on("data", (d: Buffer) => {
+			out += d.toString("utf8");
+		});
+		child.on("close", () => {
+			try {
+				resolve(JSON.parse(out) as string[]);
+			} catch {
+				resolve([]);
+			}
+		});
+		child.on("error", () => resolve([]));
+		child.stdin.end(JSON.stringify({ images: [], vocabulary: true }));
+	});
+	return vocabulary;
+}
+
+/** Labels whose words include a word of the query ("snow" → snow, snowball, snowman…). */
+export function labelsFor(query: string, vocab: string[]): string[] {
+	const q = new Set(words(query));
+	return vocab.filter((label) => words(label.replace(/_/g, " ")).some((w) => q.has(w)));
 }
 
 /** Words that say nothing about a picture. */
@@ -136,16 +169,36 @@ const words = (s: string) =>
 		.replace(/[^a-z0-9\s_-]/g, " ")
 		.split(/[\s_-]+/)
 		.filter((w) => w.length > 1 && !STOP.has(w))
-		// Crude singular, so "dogs" finds "dog".
-		.map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w));
+		// Crude stemming, so "dogs" finds "dog", "snowy" finds "snow" and "walking" finds "walk".
+		.map(stem);
+
+function stem(w: string): string {
+	if (w.length > 5 && w.endsWith("ing")) return w.slice(0, -3);
+	if (w.length > 4 && w.endsWith("ed")) return w.slice(0, -2);
+	if (w.length > 4 && w.endsWith("y") && !/[aeiou]y$/.test(w)) return w.slice(0, -1);
+	if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) return w.slice(0, -1);
+	return w;
+}
 
 /**
  * How well a moment matches a search: what is in the picture, text on screen,
  * people ("person", "face", "people") and what is said around it.
  */
-export function scoreShot(query: string, sample: ShotSample, speech: string): number {
+export function scoreShot(
+	query: string,
+	sample: ShotSample,
+	speech: string,
+	/** Labels that mean the same as the query (from the vocabulary or a model). */
+	related: string[] = [],
+): number {
 	const q = words(query);
 	if (!q.length) return 0;
+	const relatedSet = new Set(related);
+	const relatedHit = Math.max(
+		0,
+		...sample.labels.filter((l) => relatedSet.has(l.id)).map((l) => Math.min(1, l.confidence * 2)),
+	);
+	const caption = words(sample.caption ?? "");
 	const labels = sample.labels.map((l) => ({ words: words(l.id), confidence: l.confidence }));
 	const text = words(sample.text.join(" "));
 	const said = words(speech);
@@ -160,6 +213,8 @@ export function scoreShot(query: string, sample: ShotSample, speech: string): nu
 		if (said.includes(w)) score += 1;
 		if (["person", "people", "face", "someone", "man", "woman"].includes(w) && sample.faces > 0)
 			score += 1;
+		if (caption.includes(w)) score += 2;
 	}
-	return score / q.length;
+	// A related label counts once for the whole query.
+	return score / q.length + relatedHit;
 }

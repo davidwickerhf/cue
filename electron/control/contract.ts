@@ -718,6 +718,12 @@ export const contract = {
 			query: z.string().min(1).max(200),
 			assetIds: z.array(z.string()).optional(),
 			limit: z.number().int().min(1).max(50).default(12),
+			describe: z
+				.boolean()
+				.default(false)
+				.describe(
+					"also describe each sampled frame with the vision model of the text provider in Settings (OpenAI sends small frames to OpenAI; Ollama or LM Studio stay on this Mac); descriptions are cached, so later searches are instant",
+				),
 		},
 	},
 	follow_faces: {

@@ -9,6 +9,8 @@ import Vision
 
 struct Request: Decodable {
 	let images: [String]
+	/** Print the classifier's labels instead (for widening searches). */
+	let vocabulary: Bool?
 	let faces: Bool?
 	let labels: Bool?
 	let text: Bool?
@@ -23,6 +25,12 @@ let input = FileHandle.standardInput.readDataToEndOfFile()
 guard let request = try? JSONDecoder().decode(Request.self, from: input) else {
 	FileHandle.standardError.write("cue-vision: expected {\"images\": [...]} on stdin\n".data(using: .utf8)!)
 	exit(2)
+}
+
+if request.vocabulary ?? false {
+	let labels = (try? VNClassifyImageRequest().supportedIdentifiers()) ?? []
+	print(String(data: try! JSONSerialization.data(withJSONObject: labels), encoding: .utf8)!)
+	exit(0)
 }
 
 for path in request.images {
@@ -55,8 +63,9 @@ for path in request.images {
 	}
 	if request.labels ?? false {
 		out["labels"] = (labels.results ?? [])
-			.filter { $0.confidence > 0.12 }
-			.prefix(10)
+			// Keep weaker labels too: "snow" in a hazy shot may only score a few percent.
+			.filter { $0.confidence > 0.04 }
+			.prefix(25)
 			.map { ["id": $0.identifier, "confidence": Double($0.confidence)] }
 	}
 	if request.text ?? false {

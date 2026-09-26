@@ -87,9 +87,11 @@ import { type Aspect, reframeData, shortenData, variantLabel } from "./variants"
 import {
 	analyseImages,
 	followKeyframes,
+	labelsFor,
 	type ShotSample,
 	scoreShot,
 	visionAvailable,
+	visionVocabulary,
 } from "./vision";
 
 const HISTORY_LIMIT = 150;
@@ -672,7 +674,13 @@ export class ProjectStore extends EventEmitter {
 	async shotIndex(assetId: string): Promise<ShotSample[]> {
 		const asset = this.current.assets.find((a) => a.id === assetId);
 		if (!asset || (asset.kind !== "video" && asset.kind !== "image")) return [];
-		const cache = path.join(this.projectDir, CACHE_DIR, "shots", `${this.cacheKey(assetId)}.json`);
+		// v2: weaker labels are kept too, so less obvious things (snow, fog) can be found.
+		const cache = path.join(
+			this.projectDir,
+			CACHE_DIR,
+			"shots",
+			`${this.cacheKey(assetId)}.v2.json`,
+		);
 		try {
 			return JSON.parse(await fs.readFile(cache, "utf8")) as ShotSample[];
 		} catch {}
@@ -710,9 +718,83 @@ export class ProjectStore extends EventEmitter {
 	 * is said there ("a dog on a beach", "the pricing slide"), all on this Mac.
 	 * Neighbouring matching moments are joined into one range.
 	 */
+	/**
+	 * Sentences describing each sampled frame of a media item, made once by a
+	 * vision model (only when asked: the frames are sent to that model).
+	 */
+	private async shotCaptions(assetId: string, runtime: AiRuntime): Promise<string[]> {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset) return [];
+		const cache = path.join(
+			this.projectDir,
+			CACHE_DIR,
+			"shots",
+			`${this.cacheKey(assetId)}.captions.json`,
+		);
+		try {
+			return JSON.parse(await fs.readFile(cache, "utf8")) as string[];
+		} catch {}
+		const samples = await this.shotIndex(assetId);
+		const dir = `${cache}.frames`;
+		await fs.rm(dir, { recursive: true, force: true });
+		await fs.mkdir(dir, { recursive: true });
+		const stepMs = samples[1] ? samples[1].atMs - samples[0].atMs : 0;
+		await ffmpeg([
+			"-i",
+			this.assetPath(assetId),
+			"-an",
+			...(stepMs ? [] : ["-frames:v", "1"]),
+			"-vf",
+			`${stepMs ? `fps=${(1000 / stepMs).toFixed(4)},` : ""}scale=512:-2`,
+			path.join(dir, "%04d.jpg"),
+		]);
+		const files = (await fs.readdir(dir))
+			.filter((f) => f.endsWith(".jpg"))
+			.sort()
+			.slice(0, samples.length);
+		const captions = await runtime.describeImages(files.map((f) => path.join(dir, f)));
+		await fs.rm(dir, { recursive: true, force: true });
+		await fs.writeFile(cache, JSON.stringify(captions));
+		return captions;
+	}
+
+	/** Labels a model thinks match the query, from the classifier's vocabulary (cached per query). */
+	private relatedLabels = new Map<string, Promise<string[]>>();
+
+	private async widenQuery(query: string, runtime?: AiRuntime): Promise<string[]> {
+		const vocab = await visionVocabulary();
+		const direct = labelsFor(query, vocab);
+		if (!runtime || !vocab.length) return direct;
+		const key = query.toLowerCase().trim();
+		let pending = this.relatedLabels.get(key);
+		if (!pending) {
+			pending = runtime
+				.chat(
+					"You map a video search to image-classifier labels. Reply with only a JSON array of up to 12 labels copied exactly from the list, the ones a frame matching the search would most likely get. No explanations.",
+					`Search: ${query}\n\nLabels: ${vocab.join(", ")}`,
+				)
+				.then((text) => {
+					const list = JSON.parse(
+						text.slice(text.indexOf("["), text.lastIndexOf("]") + 1),
+					) as string[];
+					return list.filter((l) => vocab.includes(l));
+				})
+				.catch(() => []);
+			this.relatedLabels.set(key, pending);
+		}
+		return [...new Set([...direct, ...(await pending)])];
+	}
+
 	async searchShots(
 		query: string,
-		options: { assetIds?: string[]; limit?: number } = {},
+		options: {
+			assetIds?: string[];
+			limit?: number;
+			/** A text model widens the search to related labels (cheap, no pictures sent). */
+			runtime?: AiRuntime;
+			/** Also describe frames with a vision model (sends small frames to it). */
+			describe?: boolean;
+		} = {},
 	): Promise<
 		{
 			assetId: string;
@@ -722,6 +804,7 @@ export class ProjectStore extends EventEmitter {
 			score: number;
 			shows: string[];
 			text: string[];
+			caption?: string;
 		}[]
 	> {
 		const assets = this.current.assets.filter(
@@ -731,8 +814,15 @@ export class ProjectStore extends EventEmitter {
 				(!options.assetIds || options.assetIds.includes(a.id)),
 		);
 		const found: Awaited<ReturnType<ProjectStore["searchShots"]>> = [];
+		const related = await this.widenQuery(query, options.runtime);
 		for (const asset of assets) {
 			const samples = await this.shotIndex(asset.id);
+			if (options.describe && options.runtime) {
+				const captions = await this.shotCaptions(asset.id, options.runtime);
+				samples.forEach((s, i) => {
+					s.caption = captions[i];
+				});
+			}
 			const step = samples[1] ? samples[1].atMs - samples[0].atMs : 2000;
 			const words = asset.transcript?.words ?? [];
 			let run: (typeof found)[number] | null = null;
@@ -741,7 +831,7 @@ export class ProjectStore extends EventEmitter {
 					.filter((w) => w.startMs >= s.atMs - 2000 && w.startMs <= s.atMs + step)
 					.map((w) => w.text)
 					.join(" ");
-				const score = scoreShot(query, s, speech);
+				const score = scoreShot(query, s, speech, related);
 				if (score < 0.5) {
 					run = null;
 					continue;
@@ -759,6 +849,7 @@ export class ProjectStore extends EventEmitter {
 						score,
 						shows,
 						text: s.text.slice(0, 3),
+						...(s.caption ? { caption: s.caption } : {}),
 					};
 					found.push(run);
 				}

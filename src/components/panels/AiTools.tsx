@@ -270,6 +270,7 @@ type Shot = {
 	score: number;
 	shows: string[];
 	text: string[];
+	caption?: string;
 };
 
 /** Search the footage by what it shows, text on screen or what is said (on this Mac). */
@@ -277,10 +278,11 @@ export function ShotSearch({ project }: { project: ProjectSnapshot }) {
 	const [query, setQuery] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [shots, setShots] = useState<Shot[] | null>(null);
+	const [describe, setDescribe] = useState(false);
 	const search = async () => {
 		if (!query.trim()) return;
 		setBusy(true);
-		const found = await run<Shot[]>("search_shots", { query: query.trim() });
+		const found = await run<Shot[]>("search_shots", { query: query.trim(), describe });
 		setBusy(false);
 		setShots(found ?? []);
 	};
@@ -325,6 +327,10 @@ export function ShotSearch({ project }: { project: ProjectSnapshot }) {
 					{busy ? "Looking…" : "Find"}
 				</Button>
 			</form>
+			<label className="flex items-center gap-2 text-[11px] text-muted">
+				<input type="checkbox" checked={describe} onChange={(e) => setDescribe(e.target.checked)} />
+				Describe frames with the AI model (finds much more; with OpenAI, small frames are sent)
+			</label>
 			<p className="text-[11px] text-muted">
 				Looks at what is in the picture, text on screen and what is said, on this Mac. The first
 				search reads each video once.
@@ -352,7 +358,7 @@ export function ShotSearch({ project }: { project: ProjectSnapshot }) {
 								<span className="block truncate text-[11px] text-muted">
 									{formatTime(s.startMs)}
 									{s.endMs > s.startMs ? `–${formatTime(s.endMs)}` : ""} ·{" "}
-									{[...s.shows, ...s.text].slice(0, 4).join(", ")}
+									{s.caption ?? [...s.shows, ...s.text].slice(0, 4).join(", ")}
 								</span>
 							</button>
 							<button

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import {
 	type AiCredentials,
@@ -75,6 +76,12 @@ export interface AiRuntime {
 		options: { size: "1536x1024" | "1024x1536" | "1024x1024"; model?: string },
 	): Promise<Buffer>;
 	chat(system: string, prompt: string): Promise<string>;
+	/**
+	 * One short description per picture (for searching footage): what is shown,
+	 * where, notable objects, text and actions. Uses the text provider's vision
+	 * model (OpenAI, or a vision model in Ollama / LM Studio).
+	 */
+	describeImages(files: string[]): Promise<string[]>;
 	status(): ProviderStatus[];
 }
 
@@ -228,6 +235,67 @@ export function buildRuntime(
 				model: options.model ?? "gpt-image-1",
 				size: options.size,
 			});
+		},
+		async describeImages(files) {
+			need("text");
+			const local = ai.text === "ollama" || ai.text === "lmstudio";
+			const baseUrl =
+				ai.text === "ollama"
+					? "http://127.0.0.1:11434/v1"
+					: ai.text === "lmstudio"
+						? "http://127.0.0.1:1234/v1"
+						: (creds?.baseUrl ?? "https://api.openai.com/v1");
+			// A small vision model is plenty for short descriptions.
+			const model = local ? (textModel as string) : "gpt-4o-mini";
+			const out: string[] = [];
+			for (let i = 0; i < files.length; i += 6) {
+				const batch = files.slice(i, i + 6);
+				const images = await Promise.all(
+					batch.map(async (f) => ({
+						type: "image_url",
+						image_url: {
+							url: `data:image/jpeg;base64,${(await readFile(f)).toString("base64")}`,
+							detail: "low",
+						},
+					})),
+				);
+				const res = await fetch(`${baseUrl}/chat/completions`, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						...(!local && creds?.apiKey ? { authorization: `Bearer ${creds.apiKey}` } : {}),
+					},
+					body: JSON.stringify({
+						model,
+						temperature: 0.2,
+						messages: [
+							{
+								role: "user",
+								content: [
+									{
+										type: "text",
+										text: `Describe each of these ${batch.length} video frames in one plain sentence (at most 25 words): what is shown, the setting, weather or time of day, notable objects, any readable text, and what is happening. Reply with only a JSON array of ${batch.length} strings, in order.`,
+									},
+									...images,
+								],
+							},
+						],
+					}),
+					signal: AbortSignal.timeout(120000),
+				});
+				if (!res.ok)
+					throw new Error(
+						`Describing frames failed (${res.status}): ${(await res.text()).slice(0, 200)}`,
+					);
+				const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+				const text = body.choices?.[0]?.message?.content ?? "[]";
+				let list: string[] = [];
+				try {
+					list = JSON.parse(text.slice(text.indexOf("["), text.lastIndexOf("]") + 1));
+				} catch {}
+				for (let k = 0; k < batch.length; k++) out.push(String(list[k] ?? ""));
+			}
+			return out;
 		},
 		async chat(system, prompt) {
 			need("text");

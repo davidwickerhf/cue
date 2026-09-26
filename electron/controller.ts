@@ -994,9 +994,11 @@ export class Controller extends EventEmitter {
 				);
 			}
 			case "search_shots": {
-				const { query, assetIds, limit } = parseInput("search_shots", params);
+				const { query, assetIds, limit, describe } = parseInput("search_shots", params);
+				// With a text model, the search also matches related labels ("snow" → winter, ice…).
+				const runtime = await this.hooks.runtime().catch(() => undefined);
 				return this.job("Searching shots", () =>
-					this.store.searchShots(query, { assetIds, limit }),
+					this.store.searchShots(query, { assetIds, limit, runtime, describe }),
 				);
 			}
 			case "follow_faces":
