@@ -18,6 +18,8 @@ const TOC = [
 	{ id: "adjustment-layers", label: "Adjustment layers" },
 	{ id: "transitions", label: "Transitions" },
 	{ id: "scopes", label: "Scopes and compare" },
+	{ id: "layouts", label: "Split screen and picture in picture" },
+	{ id: "overlays", label: "Shapes and overlays" },
 ];
 
 /** How each transition looks (electron/core/transitions.ts and the add_transition tool). */
@@ -163,6 +165,22 @@ export default function Page() {
 					effects, and let go to see it graded again.
 				</li>
 			</Ul>
+
+			<H2 id="layouts">Split screen and picture in picture</H2>
+			<p>
+				Select clips that play at the same time on different video tracks and pick a layout under{" "}
+				<strong className="text-white">Arrange on screen</strong> in the inspector: side by side, top and bottom, three across, a grid of
+				four, or picture in picture in any corner (the clip on the higher track becomes the small one). Each picture fills its area,
+				centre-cropped. A single clip can be made small in a corner or put back to full frame. Agents use <C>arrange_clips</C>.
+			</p>
+
+			<H2 id="overlays">Shapes and overlays</H2>
+			<p>
+				In the Text panel, <strong className="text-white">Shapes and overlays</strong> adds, at the playhead: a box, a circle, an arrow,
+				a callout (a box with text), a blur box that blurs whatever is under it, and a redaction (a solid box). Graphics sit on their own
+				Graphics tracks, pop in like titles, and can be moved and resized on the viewer. The inspector&apos;s Shape section changes the
+				kind, size, line and fill. Agents use <C>add_overlay</C>.
+			</p>
 			<Note>
 				You can turn the compare button on in any workspace from the workspace menu (On the viewer → Before/after button), and
 				dock the scopes from Beside the viewer.

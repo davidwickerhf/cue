@@ -60,8 +60,18 @@ export default function Page() {
 					tracks are heard.
 				</li>
 				<li>A live peak meter from -48 dBFS to 0, green to red.</li>
+				<li>
+					<strong className="text-white">Tone</strong>: a three-band EQ (Low around 120 Hz, Mid around 1.2 kHz, High around 8 kHz,
+					each ±12 dB; double-click a band to reset it) and a one-knob <strong className="text-white">Comp</strong>ressor. Presets:
+					Voice, and Music bed. They are heard as you play and applied the same way on export.
+				</li>
 			</Ul>
-			<p>The Master strip at the bottom shows the left and right meters of the whole mix.</p>
+			<p>
+				The Master strip at the bottom shows the left and right meters of the whole mix. <strong className="text-white">Measure</strong>{" "}
+				reads the loudness of the mix as it would export (LUFS and true peak), and <strong className="text-white">Auto-mix</strong> sets
+				each track&apos;s level for you: speech around -16 LUFS, music about 8 dB under it with ducking on, and the Voice preset on the
+				voiceover track. It is one step you can undo. Agents use <C>auto_mix</C> and <C>measure_loudness</C>.
+			</p>
 
 			<H2 id="ducking">Ducking under the voiceover</H2>
 			<Ol>
@@ -127,8 +137,8 @@ export default function Page() {
 			<Ul>
 				<li>
 					<strong className="text-white">Denoise</strong> cleans up low rumble and steady background noise on a clip (a high-pass filter and FFT noise reduction). It is
-					applied when you export and is set by an agent or the <C>update_clip</C> tool: ask &quot;Denoise the interview clips&quot;.
-					There is no button for it in the inspector yet.
+					applied when you export: switch on <strong className="text-white">Reduce background noise</strong> in the clip&apos;s Audio
+					section, or ask an agent (&quot;Denoise the interview clips&quot;).
 				</li>
 				<li>
 					<strong className="text-white">Normalise loudness</strong> in the project settings (Export section) evens out the level of the
