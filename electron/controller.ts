@@ -327,6 +327,11 @@ export class Controller extends EventEmitter {
 					return { removed: list.length };
 				});
 			}
+			case "rename_media":
+				return this.store.apply(
+					{ type: "renameAsset", ...parseInput("rename_media", params) },
+					actor,
+				);
 			case "list_bins": {
 				const data = this.store.current;
 				return (data.bins ?? []).map((b) => ({

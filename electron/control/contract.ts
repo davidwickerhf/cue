@@ -144,6 +144,10 @@ export const contract = {
 			"Remove media items (id, or ids for several) and every clip that uses them, as one undo step.",
 		input: { id: z.string().optional(), ids: z.array(z.string()).min(1).optional() },
 	},
+	rename_media: {
+		description: "Rename a media item in the library (the file on disk keeps its name).",
+		input: { id: z.string(), name: z.string().min(1).max(200) },
+	},
 	list_bins: {
 		description:
 			"The bins (folders) of the media library: id, name, parentId for sub-bins, and how many items each holds directly.",
