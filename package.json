@@ -13,9 +13,10 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc --noEmit && vite build && npm run build:mcp",
+		"build:native": "node scripts/build-native.mjs",
 		"build:mcp": "node scripts/build-mcp.mjs",
 		"start": "electron .",
-		"package": "npm run build && electron-builder --mac --dir",
+		"package": "npm run build && npm run build:native && electron-builder --mac --dir",
 		"test": "vitest --run",
 		"typecheck": "tsc --noEmit",
 		"lint": "biome lint .",

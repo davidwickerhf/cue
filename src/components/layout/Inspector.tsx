@@ -1355,6 +1355,16 @@ function ArrangeSection({ single }: { single?: string }) {
 					</button>
 				))}
 			</div>
+			{single && (
+				<button
+					type="button"
+					title="Pan across the picture to keep the main face in the middle (found on this Mac)"
+					onClick={() => void run("follow_faces", { clipId: single })}
+					className="h-7 rounded-md border border-border px-2 text-left text-[11px] text-muted hover:border-foreground/30 hover:text-foreground"
+				>
+					Follow the face
+				</button>
+			)}
 			{!single && ids.length === 2 && (
 				<p className="text-[11px] text-muted">
 					For picture in picture, the clip on the higher track is the small one.

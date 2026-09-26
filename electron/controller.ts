@@ -740,6 +740,16 @@ export class Controller extends EventEmitter {
 					this.store.makeVariants(input, actor, this.hooks.renderText),
 				);
 			}
+			case "search_shots": {
+				const { query, assetIds, limit } = parseInput("search_shots", params);
+				return this.job("Searching shots", () =>
+					this.store.searchShots(query, { assetIds, limit }),
+				);
+			}
+			case "follow_faces":
+				return this.job("Following faces", () =>
+					this.store.followFaces(parseInput("follow_faces", params).clipId, actor),
+				);
 			case "split_at_scenes": {
 				const { clipId, threshold, split } = parseInput("split_at_scenes", params);
 				return this.store.splitAtScenes(clipId, actor, { threshold, split });

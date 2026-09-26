@@ -79,6 +79,13 @@ import type {
 	TextClip,
 } from "./types";
 import { type Aspect, reframeData, shortenData, variantLabel } from "./variants";
+import {
+	analyseImages,
+	followKeyframes,
+	type ShotSample,
+	scoreShot,
+	visionAvailable,
+} from "./vision";
 
 const HISTORY_LIMIT = 150;
 const ACTIVITY_LIMIT = 200;
@@ -523,6 +530,185 @@ export class ProjectStore extends EventEmitter {
 		);
 	}
 
+	/**
+	 * Keyframes that pan a clip so the main face stays in the middle of the frame
+	 * (for a picture wider than the frame, e.g. a 16:9 shot in a 9:16 edit).
+	 * Faces are found on this Mac with Apple's Vision framework.
+	 */
+	async faceKeyframes(
+		clip: MediaClip,
+		canvas: { width: number; height: number },
+	): Promise<{ atMs: number; value: number }[]> {
+		const asset = this.current.assets.find((a) => a.id === clip.assetId);
+		if (!asset || asset.kind !== "video" || !asset.width || !asset.height)
+			throw new Error("Following faces works on video clips.");
+		const { width: W, height: H } = canvas;
+		const ar = asset.width / asset.height;
+		const span = (Math.min(W / ar, H) * ar * clip.transform.scale) / W;
+		if (span <= 1.01)
+			throw new Error(
+				"The picture already fits the frame across, so there is nothing to pan. Reframe first (e.g. to 9:16).",
+			);
+		// One frame every 400 ms of the clip, small, from the part of the source it plays.
+		const stepMs = Math.max(400, Math.ceil(clip.durationMs / 150));
+		const dir = path.join(
+			this.projectDir,
+			CACHE_DIR,
+			"faces",
+			`${this.cacheKey(asset.id)}-${clip.inMs}-${clip.durationMs}`,
+		);
+		await fs.rm(dir, { recursive: true, force: true });
+		await fs.mkdir(dir, { recursive: true });
+		await ffmpeg([
+			"-ss",
+			(clip.inMs / 1000).toFixed(3),
+			"-t",
+			((clip.durationMs * clip.speed) / 1000).toFixed(3),
+			"-i",
+			this.assetPath(asset.id),
+			"-an",
+			"-vf",
+			`fps=${(1000 / (stepMs * clip.speed)).toFixed(4)},scale=480:-2`,
+			path.join(dir, "%04d.jpg"),
+		]);
+		const files = (await fs.readdir(dir)).filter((f) => f.endsWith(".jpg")).sort();
+		const results = await analyseImages(
+			files.map((f) => path.join(dir, f)),
+			{ faces: true },
+		);
+		await fs.rm(dir, { recursive: true, force: true });
+		const samples = results.map((r, i) => {
+			// The biggest face is the one that matters.
+			const face = [...(r.faces ?? [])].sort((a, b) => b.w * b.h - a.w * a.h)[0];
+			return { atMs: i * stepMs, cx: face ? face.x + face.w / 2 : null };
+		});
+		if (!samples.some((s) => s.cx !== null)) throw new Error("No faces were found in that clip.");
+		return followKeyframes(samples, span);
+	}
+
+	/** Pans a clip so it follows the main face (x keyframes, one undoable step). */
+	async followFaces(clipId: string, actor: Actor): Promise<{ keyframes: number }> {
+		const clip = this.current.clips.find((c) => c.id === clipId);
+		if (!clip || clip.type !== "media") throw new Error(`No media clip "${clipId}".`);
+		const keys = await this.faceKeyframes(clip, this.current.canvas);
+		await this.transaction(actor, "Made the clip follow the face", () => {
+			this.apply({ type: "clearKeyframes", clipId, prop: "x" }, actor);
+			for (const k of keys)
+				this.apply(
+					{
+						type: "setKeyframe",
+						clipId,
+						prop: "x",
+						keyframe: { atMs: k.atMs, value: k.value, ease: "ease" },
+					},
+					actor,
+				);
+		});
+		return { keyframes: keys.length };
+	}
+
+	/**
+	 * What is in a video over time (or in a still): Vision's labels, text on
+	 * screen and faces, sampled every two seconds on this Mac. Cached per file.
+	 */
+	async shotIndex(assetId: string): Promise<ShotSample[]> {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset || (asset.kind !== "video" && asset.kind !== "image")) return [];
+		const cache = path.join(this.projectDir, CACHE_DIR, "shots", `${this.cacheKey(assetId)}.json`);
+		try {
+			return JSON.parse(await fs.readFile(cache, "utf8")) as ShotSample[];
+		} catch {}
+		const dir = `${cache}.frames`;
+		await fs.rm(dir, { recursive: true, force: true });
+		await fs.mkdir(dir, { recursive: true });
+		const stepMs = asset.kind === "image" ? 0 : Math.max(2000, Math.ceil(asset.durationMs / 240));
+		await ffmpeg([
+			"-i",
+			this.assetPath(assetId),
+			"-an",
+			...(asset.kind === "image" ? ["-frames:v", "1"] : []),
+			"-vf",
+			`${asset.kind === "image" ? "" : `fps=${(1000 / stepMs).toFixed(4)},`}scale=512:-2`,
+			path.join(dir, "%04d.jpg"),
+		]);
+		const files = (await fs.readdir(dir)).filter((f) => f.endsWith(".jpg")).sort();
+		const results = await analyseImages(
+			files.map((f) => path.join(dir, f)),
+			{ faces: true, labels: true, text: true },
+		);
+		await fs.rm(dir, { recursive: true, force: true });
+		const samples: ShotSample[] = results.map((r, i) => ({
+			atMs: i * stepMs,
+			labels: r.labels ?? [],
+			text: r.text ?? [],
+			faces: r.faces?.length ?? 0,
+		}));
+		await fs.writeFile(cache, JSON.stringify(samples));
+		return samples;
+	}
+
+	/**
+	 * Finds moments in the media by what they show, the text on screen or what
+	 * is said there ("a dog on a beach", "the pricing slide"), all on this Mac.
+	 * Neighbouring matching moments are joined into one range.
+	 */
+	async searchShots(
+		query: string,
+		options: { assetIds?: string[]; limit?: number } = {},
+	): Promise<
+		{
+			assetId: string;
+			name: string;
+			startMs: number;
+			endMs: number;
+			score: number;
+			shows: string[];
+			text: string[];
+		}[]
+	> {
+		const assets = this.current.assets.filter(
+			(a) =>
+				(a.kind === "video" || a.kind === "image") &&
+				!a.sequenceId &&
+				(!options.assetIds || options.assetIds.includes(a.id)),
+		);
+		const found: Awaited<ReturnType<ProjectStore["searchShots"]>> = [];
+		for (const asset of assets) {
+			const samples = await this.shotIndex(asset.id);
+			const step = samples[1] ? samples[1].atMs - samples[0].atMs : 2000;
+			const words = asset.transcript?.words ?? [];
+			let run: (typeof found)[number] | null = null;
+			for (const s of samples) {
+				const speech = words
+					.filter((w) => w.startMs >= s.atMs - 2000 && w.startMs <= s.atMs + step)
+					.map((w) => w.text)
+					.join(" ");
+				const score = scoreShot(query, s, speech);
+				if (score < 0.5) {
+					run = null;
+					continue;
+				}
+				const shows = s.labels.slice(0, 4).map((l) => l.id.replace(/_/g, " "));
+				if (run && s.atMs - run.endMs <= step) {
+					run.endMs = Math.min(asset.durationMs || s.atMs + step, s.atMs + step);
+					run.score = Math.max(run.score, score);
+				} else {
+					run = {
+						assetId: asset.id,
+						name: asset.name,
+						startMs: s.atMs,
+						endMs: asset.kind === "image" ? 0 : Math.min(asset.durationMs, s.atMs + step),
+						score,
+						shows,
+						text: s.text.slice(0, 3),
+					};
+					found.push(run);
+				}
+			}
+		}
+		return found.sort((a, b) => b.score - a.score).slice(0, options.limit ?? 20);
+	}
+
 	/** Shot changes found in a video (seconds into the source), by threshold. */
 	private scenes = new Map<string, Promise<number[]>>();
 
@@ -928,6 +1114,8 @@ export class ProjectStore extends EventEmitter {
 			lengthsSec?: number[];
 			/** Stretches to keep when shortening (timeline ms), best first or in order. */
 			keep?: { startMs: number; endMs: number }[];
+			/** Pan to follow faces in the narrower shapes (on-device vision). */
+			followFaces?: boolean;
 			saveProjects?: boolean;
 			exportVideos?: boolean;
 		},
@@ -949,6 +1137,19 @@ export class ProjectStore extends EventEmitter {
 				let data = base;
 				if (lengthSec) data = shortenData(data, lengthSec * 1000, options.keep);
 				if (aspect) data = reframeData(data, aspect);
+				// Narrow shapes can follow the faces in wide shots instead of a fixed centre crop.
+				if (aspect && options.followFaces && visionAvailable())
+					for (const clip of data.clips) {
+						if (clip.type !== "media" || clip.keyframes?.x?.length) continue;
+						const keys = await this.faceKeyframes(clip, data.canvas).catch(() => []);
+						for (const k of keys)
+							data = applyOp(data, {
+								type: "setKeyframe",
+								clipId: clip.id,
+								prop: "x",
+								keyframe: { atMs: k.atMs, value: k.value, ease: "ease" },
+							}).data;
+					}
 				const label = variantLabel(aspect, lengthSec);
 				const name = `${base.name} ${label}`;
 				data = { ...data, name };

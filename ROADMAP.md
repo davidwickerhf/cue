@@ -91,11 +91,11 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 
 - [x] Edit review: agent changes arrive as proposals to accept or reject
 - [ ] Alternative cuts as branches, compared side by side
-- [ ] Search shots by content, on device
+- [x] Search shots by content, on device (Apple Vision labels, on-screen text, faces and transcripts)
 - [ ] Rough cut from a brief or script
 - [ ] Director's notes with one-click fixes
 - [ ] Voice editing
-- [ ] Smart reframe that follows faces
+- [x] Smart reframe that follows faces (follow_faces, and variants with followFaces)
 - [x] One-click variants (lengths and aspect ratios)
 - [x] Animated word-by-word captions
 - [ ] Recipes: reusable edit templates for people and agents

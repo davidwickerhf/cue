@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ProjectSnapshot } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
+import { openSource, seekSource, source } from "../../lib/source";
 import { useApp } from "../../lib/state";
 import { cn, formatTime } from "../../lib/utils";
 import { Section } from "../ui/controls";
@@ -257,6 +258,114 @@ export function ReframeTools({ project }: { project: ProjectSnapshot }) {
 					</Button>
 				))}
 			</div>
+		</Section>
+	);
+}
+
+type Shot = {
+	assetId: string;
+	name: string;
+	startMs: number;
+	endMs: number;
+	score: number;
+	shows: string[];
+	text: string[];
+};
+
+/** Search the footage by what it shows, text on screen or what is said (on this Mac). */
+export function ShotSearch({ project }: { project: ProjectSnapshot }) {
+	const [query, setQuery] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [shots, setShots] = useState<Shot[] | null>(null);
+	const search = async () => {
+		if (!query.trim()) return;
+		setBusy(true);
+		const found = await run<Shot[]>("search_shots", { query: query.trim() });
+		setBusy(false);
+		setShots(found ?? []);
+	};
+	const place = (s: Shot) => {
+		const video = project.data.tracks.find((t) => t.kind === "video" && !t.locked);
+		if (!video) return;
+		void run("add_clips", {
+			clips: [
+				{
+					type: "media",
+					trackId: video.id,
+					assetId: s.assetId,
+					startMs: Math.round(playback.currentMs),
+					inMs: s.startMs,
+					...(s.endMs > s.startMs ? { durationMs: s.endMs - s.startMs } : {}),
+				},
+			],
+		});
+	};
+	return (
+		<Section title="Find shots">
+			<form
+				className="flex gap-1.5"
+				onSubmit={(e) => {
+					e.preventDefault();
+					void search();
+				}}
+			>
+				<input
+					value={query}
+					onChange={(e) => setQuery(e.target.value)}
+					onKeyDown={(e) => e.stopPropagation()}
+					placeholder="a dog on a beach, a whiteboard…"
+					className="h-7 min-w-0 flex-1 rounded-md border border-border bg-field px-2 text-[12px] outline-none focus:border-accent"
+				/>
+				<Button
+					size="sm"
+					className="h-7 text-[12px]"
+					isDisabled={busy}
+					onPress={() => void search()}
+				>
+					{busy ? "Looking…" : "Find"}
+				</Button>
+			</form>
+			<p className="text-[11px] text-muted">
+				Looks at what is in the picture, text on screen and what is said, on this Mac. The first
+				search reads each video once.
+			</p>
+			{shots && shots.length === 0 && <p className="text-[12px] text-muted">Nothing found.</p>}
+			{shots && shots.length > 0 && (
+				<ul className="-mx-1 flex flex-col gap-0.5">
+					{shots.map((s) => (
+						<li
+							key={`${s.assetId}-${s.startMs}`}
+							className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-default/60"
+						>
+							<button
+								type="button"
+								className="min-w-0 flex-1 text-left"
+								title="Show in the source monitor"
+								onClick={() => {
+									openSource(s.assetId);
+									// Picked up when the source loads, or used straight away if it already has.
+									source.set({ currentMs: s.startMs });
+									seekSource(s.startMs);
+								}}
+							>
+								<span className="block truncate text-[12px]">{s.name}</span>
+								<span className="block truncate text-[11px] text-muted">
+									{formatTime(s.startMs)}
+									{s.endMs > s.startMs ? `–${formatTime(s.endMs)}` : ""} ·{" "}
+									{[...s.shows, ...s.text].slice(0, 4).join(", ")}
+								</span>
+							</button>
+							<button
+								type="button"
+								onClick={() => place(s)}
+								className="hidden h-6 shrink-0 rounded px-2 text-[11px] text-accent group-hover:block hover:bg-accent/10"
+							>
+								Add at playhead
+							</button>
+						</li>
+					))}
+				</ul>
+			)}
 		</Section>
 	);
 }

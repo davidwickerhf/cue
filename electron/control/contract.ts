@@ -600,7 +600,25 @@ export const contract = {
 				.optional(),
 			saveProjects: z.boolean().default(false),
 			exportVideos: z.boolean().default(true),
+			followFaces: z
+				.boolean()
+				.default(false)
+				.describe("pan wide shots to follow faces in narrower shapes (on-device, macOS)"),
 		},
+	},
+	search_shots: {
+		description:
+			"Find moments in the media by what they show, text on screen or what is said there, e.g. 'dog on a beach', 'whiteboard', 'the word pricing on a slide'. Runs on this Mac (Apple Vision labels, text recognition and faces, plus transcripts); the first search indexes each video, which takes a moment. Returns source ranges (assetId, startMs, endMs) best first, ready for add_clips (inMs = startMs) or insert_edit.",
+		input: {
+			query: z.string().min(1).max(200),
+			assetIds: z.array(z.string()).optional(),
+			limit: z.number().int().min(1).max(50).default(12),
+		},
+	},
+	follow_faces: {
+		description:
+			"Pan a video clip so the main face stays in the middle of the frame: sets smoothed x keyframes (one undoable step). For pictures wider than the frame, e.g. 16:9 footage in a 9:16 edit (reframe or make_variants first). Faces are found on this Mac.",
+		input: { clipId: z.string() },
 	},
 	split_at_scenes: {
 		description:

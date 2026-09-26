@@ -12,7 +12,7 @@ import { playback } from "../../lib/playback";
 import { appSettings, openSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { Field, Section, Segmented, TextInput } from "../ui/controls";
-import { BeatTools, BrollTools, ChapterTools, ReframeTools } from "./AiTools";
+import { BeatTools, BrollTools, ChapterTools, ReframeTools, ShotSearch } from "./AiTools";
 
 const VOICES = [
 	"cedar",
@@ -189,6 +189,7 @@ export function GeneratePanel() {
 				</div>
 			</Section>
 
+			<ShotSearch project={project} />
 			<BeatTools project={project} />
 			<ChapterTools />
 			<BrollTools />

@@ -5,3 +5,4 @@ dist-mcp/
 release/
 .DS_Store
 *.log
+build/native/
