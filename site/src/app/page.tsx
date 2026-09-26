@@ -8,11 +8,12 @@ import {
 	Lightning,
 	Microphone,
 	Plugs,
-	Plus,
 } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { AutoVideo } from "@/components/AutoVideo";
+import { Faq } from "@/components/Faq";
+import { Reveal, Words } from "@/components/Reveal";
 
 const REPO = "https://github.com/davidwickerhf/cue";
 const DOWNLOAD = `${REPO}/releases/latest/download/Cue-mac-arm64.zip`;
@@ -159,7 +160,7 @@ export default async function Home() {
 	const starCount = await stars();
 	return (
 		<>
-			<header className="mx-auto flex max-w-[1080px] items-center justify-between px-5 py-4">
+			<Reveal as="header" y={-12} blur={6} duration={800} className="mx-auto flex max-w-[1080px] items-center justify-between px-5 py-4">
 				<a href="#top" aria-label="Cue home">
 					<Logo />
 				</a>
@@ -183,21 +184,24 @@ export default async function Home() {
 				>
 					<GithubLogo size={16} weight="fill" /> GitHub{starCount > 0 ? ` (${starCount >= 1000 ? `${(starCount / 1000).toFixed(1)}k` : starCount})` : ""}
 				</a>
-			</header>
+			</Reveal>
 
 			<main id="top">
 				<section className="mx-auto max-w-[1080px] px-5 pt-14 text-center">
-					<h1 className="text-[44px] leading-[1.05] font-bold tracking-[-0.035em] sm:text-[60px]">
-						The video editor your agent can drive
-					</h1>
-					<p className="mx-auto mt-5 max-w-[720px] text-[17px] leading-relaxed text-muted sm:text-[19px]">
+					<Words
+						as="h1"
+						text="The video editor your agent can drive"
+						step={70}
+						className="text-[44px] leading-[1.05] font-bold tracking-[-0.035em] sm:text-[60px]"
+					/>
+					<Reveal delay={420} as="p" className="mx-auto mt-5 max-w-[720px] text-[17px] leading-relaxed text-muted sm:text-[19px]">
 						Cue is a fast, open-source video editor for macOS. Cut by hand with the shortcuts you already know, or let Claude
 						Code, Codex or any MCP agent edit right alongside you.
-					</p>
-					<div className="mt-8 flex flex-col items-center gap-3">
+					</Reveal>
+					<Reveal delay={600} className="mt-8 flex flex-col items-center gap-3">
 						<a
 							href={DOWNLOAD}
-							className="flex items-center gap-2.5 rounded-xl bg-accent px-6 py-3.5 text-[17px] font-semibold text-white shadow-[0_8px_30px_-8px_rgba(10,108,255,0.7)] transition hover:brightness-110"
+							className="flex items-center gap-2.5 rounded-xl bg-accent px-6 py-3.5 text-[17px] font-semibold text-white shadow-[0_8px_30px_-8px_rgba(10,108,255,0.7)] transition duration-300 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_14px_40px_-8px_rgba(10,108,255,0.85)] active:translate-y-0"
 						>
 							<AppleLogo size={20} weight="fill" /> Download for Mac
 						</a>
@@ -207,42 +211,54 @@ export default async function Home() {
 								View the source
 							</a>
 						</p>
-					</div>
-					<div className="mt-14 overflow-hidden rounded-2xl border border-line bg-card shadow-2xl shadow-black/60">
+					</Reveal>
+					<Reveal delay={780} y={60} scale={0.96} duration={1200} className="mt-14 overflow-hidden rounded-2xl border border-line bg-card shadow-2xl shadow-black/60">
 						<AutoVideo name="edit" label="Cutting, splitting and playing back an edit in Cue" priority />
-					</div>
-					<p className="mt-4 text-[13px] text-muted">Every demo on this page was recorded in Cue and rendered with Recordly.</p>
+					</Reveal>
+					<Reveal delay={950} as="p" className="mt-4 text-[13px] text-muted">
+						Every demo on this page was recorded in Cue and rendered with Recordly.
+					</Reveal>
 				</section>
 
 				<section id="features" className="mx-auto mt-28 flex max-w-[1080px] flex-col gap-8 px-5">
 					{FEATURES.map((f, i) => (
-						<article
+						<Reveal
 							key={f.video}
+							as="article"
+							y={48}
+							blur={0}
+							duration={1000}
 							className={`grid items-center gap-8 rounded-2xl bg-card p-4 sm:p-5 md:grid-cols-[1.35fr_1fr] md:gap-10 ${i % 2 ? "md:grid-cols-[1fr_1.35fr]" : ""}`}
 						>
 							<div className={`overflow-hidden rounded-xl border border-line ${i % 2 ? "md:order-2" : ""}`}>
 								<AutoVideo name={f.video} label={f.title} />
 							</div>
 							<div className={`px-2 pb-3 md:px-4 md:pb-0 ${i % 2 ? "md:order-1" : ""}`}>
-								<h2 className="text-[28px] leading-[1.1] font-bold tracking-[-0.03em] sm:text-[34px]">{f.title}</h2>
-								<p className="mt-4 text-[15px] leading-relaxed text-muted">{f.body}</p>
+								<Words text={f.title} delay={150} className="text-[28px] leading-[1.1] font-bold tracking-[-0.03em] sm:text-[34px]" />
+								<Reveal delay={380} as="p" className="mt-4 text-[15px] leading-relaxed text-muted">
+									{f.body}
+								</Reveal>
 							</div>
-						</article>
+						</Reveal>
 					))}
 				</section>
 
 				<section className="mx-auto mt-24 grid max-w-[1080px] gap-3 px-5 sm:grid-cols-2 lg:grid-cols-4">
-					{GRID.map((g) => (
-						<div key={g.title} className="rounded-2xl bg-card p-5">
+					{GRID.map((g, i) => (
+						<Reveal
+							key={g.title}
+							delay={(i % 4) * 90}
+							className="rounded-2xl bg-card p-5 transition-[background-color,translate] duration-300 hover:-translate-y-1 hover:bg-[#1a1a1a]"
+						>
 							<span className="flex size-12 items-center justify-center rounded-full bg-[#1f1f1f] text-neutral-200">{g.icon}</span>
 							<h3 className="mt-5 text-[16px] font-semibold">{g.title}</h3>
 							<p className="mt-2 text-[14px] leading-relaxed text-muted">{g.body}</p>
-						</div>
+						</Reveal>
 					))}
 				</section>
 
 				<section className="mx-auto mt-24 max-w-[1080px] px-5">
-					<div className="flex flex-col gap-5 rounded-2xl bg-card p-8">
+					<Reveal y={40} blur={0} className="flex flex-col gap-5 rounded-2xl bg-card p-8">
 						<div>
 							<h2 className="text-[26px] font-bold tracking-[-0.03em]">Connect your agent in one line</h2>
 							<p className="mt-2 text-[15px] text-muted">Or skip it: the Agent panel inside Cue runs the CLIs you already have.</p>
@@ -250,39 +266,34 @@ export default async function Home() {
 						<code className="block w-full overflow-x-auto rounded-xl border border-line bg-page px-4 py-3 font-mono text-[13px] whitespace-nowrap text-neutral-300 select-all">
 							claude mcp add --scope user cue -- node &quot;/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs&quot;
 						</code>
-					</div>
+					</Reveal>
 				</section>
 
 				<section id="faq" className="mx-auto mt-28 grid max-w-[1080px] gap-10 px-5 pb-28 md:grid-cols-2">
 					<div>
-						<p className="text-[14px] text-muted">{"// FAQ"}</p>
-						<h2 className="mt-2 text-[34px] leading-tight font-medium tracking-[-0.03em] sm:text-[38px]">
-							Questions? <span className="text-muted">We&apos;ve got answers.</span>
-						</h2>
-						<p className="mt-3 text-[15px] text-neutral-300">
+						<Reveal as="p" className="text-[14px] text-muted">
+							{"// FAQ"}
+						</Reveal>
+						<Words
+							text="Questions?"
+							muted="We've got answers."
+							delay={100}
+							className="mt-2 text-[34px] leading-tight font-medium tracking-[-0.03em] sm:text-[38px]"
+						/>
+						<Reveal delay={450} as="p" className="mt-3 text-[15px] text-neutral-300">
 							For support, please open an issue on{" "}
 							<a href={`${REPO}/issues`} className="underline underline-offset-4 hover:text-white">
 								GitHub
 							</a>
 							.
-						</p>
+						</Reveal>
 					</div>
-					<div className="flex flex-col gap-3">
-						{FAQ.map((f) => (
-							<details key={f.q} className="group rounded-xl bg-card">
-								<summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3.5 text-[15px] font-medium">
-									{f.q}
-									<Plus size={16} className="shrink-0 text-muted transition-transform group-open:rotate-45" />
-								</summary>
-								<p className="px-4 pb-4 text-[14px] leading-relaxed text-muted">{f.a}</p>
-							</details>
-						))}
-					</div>
+					<Faq items={FAQ} />
 				</section>
 			</main>
 
 			<footer className="bg-card">
-				<div className="mx-auto flex max-w-[1080px] flex-col justify-between gap-10 px-5 py-12 sm:flex-row">
+				<Reveal y={30} className="mx-auto flex max-w-[1080px] flex-col justify-between gap-10 px-5 py-12 sm:flex-row">
 					<div className="max-w-[340px]">
 						<Logo size={24} />
 						<p className="mt-3 text-[14px] leading-relaxed text-muted">The open-source video editor that you and your AI agent edit together.</p>
@@ -316,7 +327,7 @@ export default async function Home() {
 							</a>
 						</div>
 					</div>
-				</div>
+				</Reveal>
 				<p className="mx-auto max-w-[1080px] px-5 pb-10 text-[12px] leading-relaxed text-[#5f5f5f]">
 					Demo footage: Sintel and Big Buck Bunny © Blender Foundation (durian.blender.org, peach.blender.org), CC BY 3.0. Demos
 					recorded with{" "}

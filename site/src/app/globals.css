@@ -12,7 +12,18 @@
 html {
 	background: var(--color-page);
 	color: #fafafa;
-	scroll-behavior: smooth;
+}
+
+/* Lenis */
+html.lenis,
+html.lenis body {
+	height: auto;
+}
+.lenis:not(.lenis-autoToggle).lenis-stopped {
+	overflow: clip;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+	overscroll-behavior: contain;
 }
 
 ::selection {
