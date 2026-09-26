@@ -1,20 +1,33 @@
 # Cue
 
-An AI-centred video editor for macOS. You can edit by hand like in any non-linear editor, or an agent (Claude Code or any MCP client) can drive the same project: cut, caption, generate voice, record with you, check frames and export. Every change is attributed to *you* or *agent* and can be undone.
+A fast, lightweight video editor for macOS, built so that you and an AI agent can edit the same project. Edit by hand with the shortcuts you already know from Premiere, Resolve and Final Cut, or let Claude Code, Codex or any MCP client cut, caption, grade and export for you. Every change is recorded, attributed to you or the agent, and can be undone or restored later.
 
-It grew out of a voiceover booth: a script sits on the timeline as timed lines, you record takes against a teleprompter, and the best take per line is placed on the voiceover track.
+**Website:** [cue.wicker.life](https://cue.wicker.life) · **Download:** [latest release](https://github.com/davidwickerhf/cue/releases/latest) (Apple Silicon)
 
 ## What it does
 
-- **Timeline**: video, audio and text tracks (mute, lock, hide, volume, reorder). Move clips across tracks, trim and extend both edges within the source, blade and split, ripple delete, duplicate, snapping, markers, J/K/L, in/out points, zoom.
-- **Clips**: speed, volume, fades, noise reduction, position, scale, opacity, crop. Detach a video's audio onto its own track.
-- **Text**: titles, lower thirds, captions and labels. Font, colour, box, alignment, layout and in/out animations (fade, pop, slide, typewriter). The same canvas code draws the preview and the export, so they match.
-- **Voiceover**: script lines with target and maximum length, recording with pre-roll, teleprompter and auto-stop, speech detection and trimming, several takes per line with fit status, SRT/JSON script import.
-- **Audio**: waveforms, per-clip and per-track gain, music that ducks under the voiceover (a sidechain compressor on export), loudness normalisation.
-- **Generate** (OpenAI; the key is stored encrypted in the keychain): text-to-speech takes, captions from speech, a script from existing narration, still images.
-- **Clean-up**: remove pauses in the speech across every track, keeping everything in sync.
-- **Export**: H.264, HEVC or ProRes (hardware encoding on macOS), output scale, quality presets. Also per-line WAV stems with `durations.json`, the voiceover track, the full mix, and SRT/VTT captions.
-- **Agents**: 60+ MCP tools, generated from one contract that the UI uses too. `render_frame` returns a PNG of any moment so an agent can look at its edit, and `record_line` rolls a take with the user.
+- **Timeline**: video, text and audio tracks (picture above sound), drag to reorder, mute, solo, lock, hide. Selection, blade, slip, roll and slide tools; ripple delete, lift and extract, ripple trim (Q/W), snapping, markers, J/K/L, in/out points, clip labels, enable/disable.
+- **Source monitor**: mark in and out on a clip, then insert (,) or overwrite (.) at the playhead.
+- **Sequences**: several timelines per project, and Nest to turn clips into one nested sequence.
+- **Motion and look**: keyframes for position, scale and volume; push-in zooms; crossfades and dips; speed and speed ramps; colour (brightness, contrast, saturation, temperature, LUTs); adjustment layers; masks; chroma key; frame holds.
+- **Titles**: eleven templates, every installed font, outline, gradient, spacing, rotation, animations, and typing directly on the viewer.
+- **Audio**: waveforms, mixer with per-track level, pan, meters, solo; music that ducks under the voiceover; denoise; loudness normalisation; beat detection and cut-to-the-beat.
+- **Speech**: word-level transcripts, text-based editing (delete words to cut them), filler-word removal, search by meaning, chapters, captions.
+- **Voiceover booth**: a script on the timeline as timed lines, teleprompter recording with takes per line, or AI voices.
+- **Generate**: voices, captions, images and B-roll with OpenAI, or on-device with macOS voices, Whisper and Ollama / LM Studio.
+- **Agents**: an in-app chat that runs Claude Code, Codex or Gemini CLI with Cue's tools only, and 110+ MCP tools for any client, with a written guide sent to every agent.
+- **Projects**: `.cueproj` files, a projects overview, relinking of moved media, a complete persistent history, workspaces.
+- **Export**: H.264, HEVC or ProRes (hardware encoding), presets, in-to-out ranges, stills, stems, captions, and timelines for other editors (OpenTimelineIO, FCPXML, MLT, EDL).
+
+## Install
+
+Download `Cue-mac-arm64.zip` from the [latest release](https://github.com/davidwickerhf/cue/releases/latest), unzip, and move Cue to Applications. The app is signed but not notarised yet, so the first time, right-click Cue and choose Open.
+
+Agents connect with one command (shown in Cue under Agent → Connect):
+
+```sh
+claude mcp add --scope user cue -- node "/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs"
+```
 
 ## Architecture
 
@@ -82,3 +95,7 @@ File → Export Timeline (or the Export menu, or the `export` agent tool) writes
 | CMX3600 `.edl` | Almost anything | The main video track and two audio tracks; nested sequences as their rendered file |
 
 File → Import Timeline brings an OpenTimelineIO file in as new tracks (one undo step), rebuilding nested stacks as nested sequences and Cue's adjustment layers. Crossfades export as straight cuts for now.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

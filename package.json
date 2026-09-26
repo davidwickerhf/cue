@@ -3,7 +3,7 @@
 	"productName": "Cue",
 	"version": "0.1.0",
 	"private": true,
-	"description": "An AI-centred video editor. Record voiceover over a script, review takes, and export \u2014 driven by you or by an agent over MCP.",
+	"description": "A fast, lightweight video editor for macOS that you and an AI agent edit together.",
 	"author": "David Wicker",
 	"type": "module",
 	"main": "dist-electron/main.cjs",
@@ -47,5 +47,11 @@
 		"vite-plugin-electron": "^1.1.2",
 		"vitest": "^5.0.2",
 		"zod": "^4.6.5"
+	},
+	"license": "MIT",
+	"homepage": "https://cue.wicker.life",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/davidwickerhf/cue.git"
 	}
 }
