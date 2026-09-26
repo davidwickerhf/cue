@@ -9,7 +9,10 @@ function useInView<T extends Element>(margin = "0px 0px -12% 0px") {
 	useEffect(() => {
 		const el = ref.current;
 		if (!el) return;
-		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return setSeen(true);
+		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+			const frame = requestAnimationFrame(() => setSeen(true));
+			return () => cancelAnimationFrame(frame);
+		}
 		const observer = new IntersectionObserver(
 			([entry]) => {
 				if (entry.isIntersecting) {
@@ -41,6 +44,7 @@ export function Reveal({
 	as: Tag = "div",
 	className,
 	style,
+	id,
 }: {
 	children: ReactNode;
 	delay?: number;
@@ -51,11 +55,13 @@ export function Reveal({
 	as?: ElementType;
 	className?: string;
 	style?: CSSProperties;
+	id?: string;
 }) {
 	const [ref, seen] = useInView<HTMLElement>();
 	return (
 		<Tag
 			ref={ref}
+			id={id}
 			className={className}
 			style={{
 				...style,
