@@ -1,5 +1,6 @@
 import { createReadStream, existsSync, readdirSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import {
@@ -33,6 +34,7 @@ import {
 	startOllama,
 	WHISPER_DOWNLOADS,
 } from "./core/local-ai";
+import { ffmpeg } from "./core/media";
 import { resolveInProject } from "./core/paths";
 import { isProjectFile, PROJECT_EXTENSION } from "./core/project";
 import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtime";
@@ -799,6 +801,21 @@ function registerIpc() {
 	ipcMain.handle("cue:harnesses", (_event, force?: boolean) => listHarnesses(force));
 	ipcMain.handle("cue:chatSend", (_event, chatId: string, input) => sendChat(chatId, input));
 	ipcMain.handle("cue:chatStop", (_event, chatId: string) => chats.get(chatId)?.stop());
+	// Voice commands: what was said, with the transcription provider from Settings.
+	ipcMain.handle("cue:transcribeSpeech", async (_event, audio: ArrayBuffer) => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-voice-"));
+		try {
+			// No extension: ffmpeg recognises the format from the data (WebM from the recorder).
+			const input = path.join(dir, "speech-input");
+			const wav = path.join(dir, "speech.wav");
+			await fs.writeFile(input, Buffer.from(audio));
+			await ffmpeg(["-i", input, "-ar", "16000", "-ac", "1", wav]);
+			const { text } = await (await runtime()).transcribe(wav, {});
+			return text.trim();
+		} finally {
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
 	ipcMain.handle(
 		"cue:createProject",
 		async (

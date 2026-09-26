@@ -61,6 +61,9 @@ const api = {
 		},
 	) => ipcRenderer.invoke("cue:chatSend", chatId, input) as Promise<void>,
 	chatStop: (chatId: string) => ipcRenderer.invoke("cue:chatStop", chatId) as Promise<void>,
+	/** What was said in a short recording (voice commands). */
+	transcribeSpeech: (audio: ArrayBuffer) =>
+		ipcRenderer.invoke("cue:transcribeSpeech", audio) as Promise<string>,
 	onChatEvent: (
 		listener: (chatId: string, event: import("./agents/harness").ChatEvent) => void,
 	) => {

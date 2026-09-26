@@ -4,6 +4,7 @@ import {
 	ArrowUp,
 	CheckCircle,
 	Copy,
+	Microphone,
 	NotePencil,
 	Robot,
 	Stop,
@@ -203,16 +204,19 @@ function ChatView() {
 							<Stop weight="fill" className="size-3.5" />
 						</button>
 					) : (
-						<button
-							type="button"
-							onClick={() => submit()}
-							disabled={!draft.trim()}
-							aria-label="Send"
-							title="Send (Enter)"
-							className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground disabled:opacity-30"
-						>
-							<ArrowUp weight="bold" className="size-3.5" />
-						</button>
+						<>
+							<VoiceButton onText={(text) => submit(text)} />
+							<button
+								type="button"
+								onClick={() => submit()}
+								disabled={!draft.trim()}
+								aria-label="Send"
+								title="Send (Enter)"
+								className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground disabled:opacity-30"
+							>
+								<ArrowUp weight="bold" className="size-3.5" />
+							</button>
+						</>
 					)}
 				</div>
 				<p className="mt-1.5 flex items-center justify-between gap-2 px-0.5 text-[10px] text-muted">
@@ -222,6 +226,77 @@ function ChatView() {
 				</p>
 			</div>
 		</div>
+	);
+}
+
+/**
+ * Talk to the agent: hold the button (or click to start and again to stop),
+ * say what you want ("cut the pause after the intro", "make this slower"),
+ * and it is transcribed and sent. Transcription uses the provider in Settings
+ * (Whisper on this Mac, or OpenAI).
+ */
+function VoiceButton({ onText }: { onText: (text: string) => void }) {
+	const [state, setState] = useState<"idle" | "listening" | "working">("idle");
+	const recorder = useRef<MediaRecorder | null>(null);
+	const started = useRef(0);
+	const stopOnUp = useRef(false);
+	const start = async () => {
+		if (state !== "idle") return;
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			const chunks: Blob[] = [];
+			const rec = new MediaRecorder(stream);
+			rec.ondataavailable = (e) => chunks.push(e.data);
+			rec.onstop = async () => {
+				for (const t of stream.getTracks()) t.stop();
+				if (Date.now() - started.current < 400) return setState("idle");
+				setState("working");
+				try {
+					const text = await window.cue.transcribeSpeech(await new Blob(chunks).arrayBuffer());
+					if (text) onText(text);
+					else notify("Didn't catch that.");
+				} catch (error) {
+					notify((error as Error).message, "danger");
+				}
+				setState("idle");
+			};
+			recorder.current = rec;
+			started.current = Date.now();
+			rec.start();
+			setState("listening");
+		} catch {
+			notify("Cue can't use the microphone. Allow it in System Settings → Privacy.", "danger");
+		}
+	};
+	const stop = () => {
+		if (recorder.current?.state === "recording") recorder.current.stop();
+	};
+	return (
+		<button
+			type="button"
+			aria-label={state === "listening" ? "Stop and send" : "Speak to the agent"}
+			title="Hold to speak (or click to start and stop)"
+			// Hold to talk and release to send; or click once to start and again to send.
+			onPointerDown={() => {
+				stopOnUp.current = state === "listening";
+				if (state === "idle") void start();
+			}}
+			onPointerUp={() => {
+				if (stopOnUp.current || Date.now() - started.current > 600) stop();
+			}}
+			className={cn(
+				"flex size-7 shrink-0 items-center justify-center rounded-md transition-colors",
+				state === "listening"
+					? "rec-pulse bg-danger text-white"
+					: "bg-default text-muted hover:text-foreground",
+			)}
+		>
+			{state === "working" ? (
+				<Spinner size="sm" />
+			) : (
+				<Microphone weight="fill" className="size-3.5" />
+			)}
+		</button>
 	);
 }
 
