@@ -1202,9 +1202,22 @@ class PlaybackEngine {
 				const keys = clip.keyframes?.volume;
 				volume.gain.setValueAtTime(valueAt(keys, localFrom, clip.volume), toCtx(from));
 				if (keys?.length)
-					for (const k of keys)
-						if (k.atMs > localFrom)
-							volume.gain.linearRampToValueAtTime(k.value, toCtx(clip.startMs + k.atMs));
+					for (let i = 0; i < keys.length; i++) {
+						const k = keys[i];
+						if (k.atMs <= localFrom) continue;
+						const prev = keys[i - 1];
+						// Curved segments are followed in short straight steps, so the level
+						// eases as it does in the export; holds jump at the keyframe.
+						if (prev && prev.ease !== "linear" && prev.ease !== "hold")
+							for (let t = Math.max(localFrom, prev.atMs) + 25; t < k.atMs; t += 25)
+								volume.gain.linearRampToValueAtTime(
+									valueAt(keys, t, clip.volume),
+									toCtx(clip.startMs + t),
+								);
+						if (prev?.ease === "hold")
+							volume.gain.setValueAtTime(prev.value, toCtx(clip.startMs + k.atMs - 1));
+						volume.gain.linearRampToValueAtTime(k.value, toCtx(clip.startMs + k.atMs));
+					}
 				let tail: AudioNode = volume;
 				if (track.duck && !track.voiceover && index.voiceRanges.length) {
 					const duck = ctx.createGain();

@@ -149,10 +149,19 @@ export const settingsSchema = z.object({
 	useProxies: z.boolean(),
 });
 
+export const EASES = ["linear", "ease", "ease-in", "ease-out", "hold", "bezier"] as const;
+/** Bezier handles: x within 0–1 so time only runs forward; y may overshoot. */
+export const curveSchema = z.tuple([
+	z.number().min(0).max(1),
+	z.number().min(-2).max(3),
+	z.number().min(0).max(1),
+	z.number().min(-2).max(3),
+]);
 export const keyframeSchema = z.object({
 	atMs: z.number().min(0),
 	value: z.number(),
-	ease: z.enum(["linear", "ease", "hold"]).default("ease"),
+	ease: z.enum(EASES).default("ease"),
+	curve: curveSchema.optional(),
 });
 export const zoomSchema = z.object({
 	id: z.string(),
