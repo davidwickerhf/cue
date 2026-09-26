@@ -555,6 +555,9 @@ class PlaybackEngine {
 			} else if (track.kind === "video") {
 				const root = document.createElement("div");
 				root.className = "pointer-events-none absolute inset-0 overflow-hidden";
+				// Its own stacking context: the z-index of a slot (crossfades) orders it within
+				// this track only, never above the tracks drawn after it.
+				root.style.zIndex = "0";
 				stage.insertBefore(root, this.anchor);
 				this.videoLayers.set(track.id, { root, slots: [makeSlot(root), makeSlot(root)] });
 			}

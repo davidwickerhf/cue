@@ -393,11 +393,27 @@ export class ProjectStore extends EventEmitter {
 				const trackId = this.current.clips.find((c) => c.id === clipId)?.trackId as string;
 				return { clipId, trackId };
 			}
-			// Graphics go on a text track above the picture ("Graphics"), made if needed.
-			let trackId = this.current.tracks.find((t) => t.kind === "text" && t.name === "Graphics")?.id;
+			// Graphics go on a "Graphics" text track that is free at that time, so each
+			// overlay can be seen and picked on the timeline; another is made if needed.
+			const end = startMs + durationMs;
+			const free = (id: string) =>
+				!this.current.clips.some(
+					(c) => c.trackId === id && c.startMs < end && c.startMs + c.durationMs > startMs,
+				);
+			const graphics = this.current.tracks.filter(
+				(t) => t.kind === "text" && /^Graphics/.test(t.name),
+			);
+			let trackId = graphics.find((t) => free(t.id))?.id;
 			if (!trackId)
-				trackId = this.apply({ type: "addTrack", kind: "text", name: "Graphics", index: 0 }, actor)
-					.created?.[0] as string;
+				trackId = this.apply(
+					{
+						type: "addTrack",
+						kind: "text",
+						name: graphics.length ? `Graphics ${graphics.length + 1}` : "Graphics",
+						index: 0,
+					},
+					actor,
+				).created?.[0] as string;
 			const shape =
 				kind === "circle"
 					? { kind: "ellipse" as const, width, height, fill: null, stroke: color, strokeWidth: 8 }
