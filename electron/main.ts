@@ -321,9 +321,12 @@ async function loadAppSettings() {
 
 async function saveAppSettings(patch: Partial<AppSettings>) {
 	const wasAutoUpdate = appSettings.autoUpdate;
+	const wasAutoInstall = appSettings.autoInstallUpdates;
 	appSettings = appSettingsSchema.parse({
 		...appSettings,
 		...patch,
+		...(patch.autoInstallUpdates === true ? { autoUpdate: true } : {}),
+		...(patch.autoUpdate === false ? { autoInstallUpdates: false } : {}),
 		ai: { ...appSettings.ai, ...patch.ai },
 		agent: { ...appSettings.agent, ...patch.agent },
 		editor: { ...appSettings.editor, ...patch.editor },
@@ -333,6 +336,8 @@ async function saveAppSettings(patch: Partial<AppSettings>) {
 	await controller.refreshAi();
 	win?.webContents.send("cue:appSettings", appSettings);
 	if (appSettings.autoUpdate !== wasAutoUpdate) updater?.schedule();
+	if (appSettings.autoInstallUpdates !== wasAutoInstall)
+		updater?.setAutoInstall(appSettings.autoInstallUpdates);
 }
 
 let inventoryScan: Promise<LocalInventory> | null = null;
@@ -969,6 +974,16 @@ async function checkForUpdatesDialog() {
 			cancelId: 1,
 		});
 		if (response === 0) await updater.install();
+	} else if (status.state === "available") {
+		const { response } = await show({
+			type: "info",
+			message: `Cue ${status.version} is available.`,
+			detail: "Download this update? Cue will not download it without your choice.",
+			buttons: ["Download Update", "Later"],
+			defaultId: 0,
+			cancelId: 1,
+		});
+		if (response === 0) void updater.download();
 	} else if (status.state === "downloading")
 		await show({
 			type: "info",
@@ -1238,6 +1253,7 @@ function registerIpc() {
 	});
 	ipcMain.handle("cue:updateStatus", () => updater?.status ?? { state: "idle" });
 	ipcMain.handle("cue:checkForUpdates", () => updater?.check(true));
+	ipcMain.handle("cue:downloadUpdate", () => updater?.download());
 	ipcMain.handle("cue:installUpdate", () => updater?.install());
 	// Windows: the window buttons drawn over the header take the header's colours.
 	ipcMain.on("cue:titleBarColors", (_event, color: string, symbolColor: string) => {
@@ -1388,6 +1404,7 @@ else {
 		});
 		updater = new Updater({
 			automatic: () => appSettings.autoUpdate,
+			autoInstall: () => appSettings.autoInstallUpdates,
 			onStatus: sendUpdateStatus,
 			// Installing quits through the updater, which must not be held up by before-quit.
 			beforeInstall: async () => {

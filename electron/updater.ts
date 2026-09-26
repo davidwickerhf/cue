@@ -17,8 +17,9 @@ const run = promisify(execFile);
 
 /**
  * Updates from GitHub Releases (electron-updater). Checks at launch and every
- * few hours while "Check for updates automatically" is on, downloads in the
- * background and tells the window when a restart will install the new version.
+ * few hours while "Check for updates automatically" is on. Manual mode asks
+ * before each download; automatic mode is standing consent to download and
+ * install future updates on quit.
  * Copies that can't update themselves (development, a separate data folder, an
  * app without a Developer ID signature on macOS, the Linux .deb) never contact
  * GitHub; the reason goes to the log and Settings.
@@ -26,6 +27,8 @@ const run = promisify(execFile);
 export interface UpdaterOptions {
 	/** Whether the user wants automatic checks (Settings → General). */
 	automatic: () => boolean;
+	/** Standing consent to download and install new updates on quit. */
+	autoInstall: () => boolean;
 	/** Status changes, for the window. */
 	onStatus: (status: UpdateStatus) => void;
 	/** Saves and stops everything before the app quits to install. */
@@ -37,6 +40,7 @@ export class Updater {
 	private support: Promise<Support> | null = null;
 	private updater: AppUpdater | null = null;
 	private timer: NodeJS.Timeout | null = null;
+	private downloadPromise: Promise<UpdateStatus> | null = null;
 	private readonly logFile = path.join(app.getPath("logs"), "updates.log");
 
 	constructor(private readonly options: UpdaterOptions) {}
@@ -88,6 +92,38 @@ export class Updater {
 		}
 	}
 
+	/** Called after explicit Download, or when the user enables automatic updates. */
+	async download(): Promise<UpdateStatus> {
+		if (this.downloadPromise) return this.downloadPromise;
+		if (this.status.state !== "available") return this.status;
+		this.downloadPromise = (async () => {
+			try {
+				const updater = await this.load();
+				const installOnQuit = this.options.autoInstall();
+				updater.autoInstallOnAppQuit = installOnQuit;
+				this.set({ state: "downloading", version: this.status.version, percent: 0, installOnQuit });
+				await updater.downloadUpdate();
+				return this.status;
+			} catch (error) {
+				const message = (error as Error).message.split("\n")[0];
+				this.log(`Download failed: ${message}`);
+				return this.set({ state: "error", message });
+			} finally {
+				this.downloadPromise = null;
+			}
+		})();
+		return this.downloadPromise;
+	}
+
+	/** A preference change applies to future downloads, leaving an in-progress one unchanged. */
+	setAutoInstall(enabled: boolean) {
+		if (this.updater && this.status.state !== "downloading" && this.status.state !== "ready") {
+			this.updater.autoDownload = enabled;
+			this.updater.autoInstallOnAppQuit = enabled;
+		}
+		if (enabled && this.status.state === "available") void this.download();
+	}
+
 	/** Quits, installs the downloaded update and reopens Cue. */
 	async install() {
 		if (this.status.state !== "ready" || !this.updater) return;
@@ -125,8 +161,8 @@ export class Updater {
 			default?: typeof import("electron-updater");
 		};
 		const autoUpdater = loaded.default?.autoUpdater ?? loaded.autoUpdater;
-		autoUpdater.autoDownload = true;
-		autoUpdater.autoInstallOnAppQuit = true;
+		autoUpdater.autoDownload = this.options.autoInstall();
+		autoUpdater.autoInstallOnAppQuit = this.options.autoInstall();
 		autoUpdater.allowPrerelease = false;
 		autoUpdater.logger = {
 			info: (m?: unknown) => this.log(String(m)),
@@ -137,15 +173,24 @@ export class Updater {
 		autoUpdater.on("checking-for-update", () =>
 			this.set({ ...this.status, state: "checking", message: undefined }),
 		);
-		autoUpdater.on("update-available", (info) =>
-			this.set({ state: "downloading", version: info.version, percent: 0 }),
-		);
+		autoUpdater.on("update-available", (info) => {
+			const installOnQuit = this.options.autoInstall();
+			this.set({
+				state: installOnQuit ? "downloading" : "available",
+				version: info.version,
+				percent: installOnQuit ? 0 : undefined,
+				installOnQuit,
+				checkedAt: new Date().toISOString(),
+			});
+		});
 		autoUpdater.on("download-progress", (progress) =>
 			this.set({ ...this.status, state: "downloading", percent: Math.round(progress.percent) }),
 		);
 		autoUpdater.on("update-downloaded", (info) => {
-			this.log(`Downloaded ${info.version}; it installs when Cue restarts.`);
-			this.set({ state: "ready", version: info.version });
+			this.log(
+				`Downloaded ${info.version}; ${this.status.installOnQuit ? "installs on quit" : "awaiting user restart"}.`,
+			);
+			this.set({ state: "ready", version: info.version, installOnQuit: this.status.installOnQuit });
 		});
 		autoUpdater.on("error", (error) => {
 			if (this.status.state === "ready") return;

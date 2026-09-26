@@ -226,6 +226,10 @@ const api = {
 		ipcRenderer.invoke("cue:checkForUpdates") as Promise<
 			import("./core/updates").UpdateStatus | undefined
 		>,
+	downloadUpdate: () =>
+		ipcRenderer.invoke("cue:downloadUpdate") as Promise<
+			import("./core/updates").UpdateStatus | undefined
+		>,
 	installUpdate: () => ipcRenderer.invoke("cue:installUpdate") as Promise<void>,
 	/** Windows: colours of the window buttons drawn over the header. */
 	setTitleBarColors: (color: string, symbolColor: string) =>

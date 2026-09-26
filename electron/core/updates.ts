@@ -8,14 +8,17 @@ export interface UpdateStatus {
 	/**
 	 * unsupported: this copy can't update itself (see message).
 	 * idle: nothing to do (checkedAt says when it last looked).
-	 * checking / downloading: in progress. ready: restart to install `version`.
+	 * available: a version was found but needs consent before download.
+	 * checking / downloading: in progress. ready: downloaded and ready to install.
 	 * error: the last check or download failed (message).
 	 */
-	state: "unsupported" | "idle" | "checking" | "downloading" | "ready" | "error";
+	state: "unsupported" | "idle" | "checking" | "available" | "downloading" | "ready" | "error";
 	/** The version being downloaded or ready to install. */
 	version?: string;
 	/** Download progress, 0–100. */
 	percent?: number;
+	/** Install this already-approved download on quit (choice captured when download began). */
+	installOnQuit?: boolean;
 	message?: string;
 	checkedAt?: string;
 }

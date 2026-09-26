@@ -15,8 +15,10 @@ export const appSettingsSchema = z.object({
 	projectsDir: z.string().default(""),
 	/** Open the last project on launch instead of the projects overview. */
 	reopenLast: z.boolean().default(false),
-	/** Look for new versions at launch and every few hours, and download them in the background. */
+	/** Look for new versions at launch and every few hours. */
 	autoUpdate: z.boolean().default(true),
+	/** Standing consent to download future updates and install them when Cue quits. */
+	autoInstallUpdates: z.boolean().default(false),
 	ai: z
 		.object({
 			tts: z.enum(["openai", "macos"]).default("openai"),

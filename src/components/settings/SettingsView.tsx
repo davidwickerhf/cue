@@ -213,7 +213,7 @@ function General({ settings, save }: { settings: Settings; save: (p: Partial<Set
 	);
 }
 
-/** Settings → General → Updates: the automatic check and its current state. */
+/** Settings → General → Updates: checks, download consent and install preference. */
 function Updates({ settings, save }: { settings: Settings; save: (p: Partial<Settings>) => void }) {
 	const [status, setStatus] = useState<UpdateStatus | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -225,16 +225,18 @@ function Updates({ settings, save }: { settings: Settings; save: (p: Partial<Set
 		status?.state === "unsupported"
 			? status.message
 			: status?.state === "ready"
-				? `Cue ${status.version} is ready: restart to install it.`
-				: status?.state === "downloading"
-					? `Downloading Cue ${status.version}… ${status.percent ?? 0}%`
-					: status?.state === "checking"
-						? "Checking…"
-						: status?.state === "error"
-							? `The last check failed: ${status.message}`
-							: status?.checkedAt
-								? `Up to date. Checked ${new Date(status.checkedAt).toLocaleString()}.`
-								: "Looks for new versions on GitHub at launch and every few hours, and downloads them in the background.";
+				? `Cue ${status.version} is downloaded. ${status.installOnQuit ? "It will install when Cue quits, or you can restart now." : "Restart when you're ready to install it."}`
+				: status?.state === "available"
+					? `Cue ${status.version} is available. Choose Download to get it.`
+					: status?.state === "downloading"
+						? `Downloading Cue ${status.version}… ${status.percent ?? 0}%`
+						: status?.state === "checking"
+							? "Checking…"
+							: status?.state === "error"
+								? `The last check failed: ${status.message}`
+								: status?.checkedAt
+									? `Up to date. Checked ${new Date(status.checkedAt).toLocaleString()}.`
+									: "Checks GitHub at launch and every few hours. With automatic installation off, each download needs your approval.";
 	return (
 		<Group title="Updates">
 			<Row label="Check for updates automatically" hint={hint}>
@@ -246,12 +248,30 @@ function Updates({ settings, save }: { settings: Settings; save: (p: Partial<Set
 					>
 						Restart to update
 					</Button>
+				) : status?.state === "available" ? (
+					<Button
+						size="sm"
+						className="h-7 text-[12px]"
+						isDisabled={busy}
+						onPress={async () => {
+							setBusy(true);
+							const next = await window.cue.downloadUpdate().finally(() => setBusy(false));
+							if (next) setStatus(next);
+						}}
+					>
+						Download Cue {status.version}
+					</Button>
 				) : (
 					<Button
 						size="sm"
 						variant="secondary"
 						className="h-7 text-[12px]"
-						isDisabled={busy || status?.state === "unsupported"}
+						isDisabled={
+							busy ||
+							status?.state === "unsupported" ||
+							status?.state === "downloading" ||
+							status?.state === "checking"
+						}
 						onPress={async () => {
 							setBusy(true);
 							const next = await window.cue.checkForUpdates().finally(() => setBusy(false));
@@ -265,6 +285,16 @@ function Updates({ settings, save }: { settings: Settings; save: (p: Partial<Set
 					label=""
 					checked={settings.autoUpdate}
 					onChange={(autoUpdate) => save({ autoUpdate })}
+				/>
+			</Row>
+			<Row
+				label="Download and install updates automatically"
+				hint="Turning this on checks for new versions, downloads them, and installs them when Cue quits. Changes after a download starts apply to later updates."
+			>
+				<Toggle
+					label=""
+					checked={settings.autoInstallUpdates}
+					onChange={(autoInstallUpdates) => save({ autoInstallUpdates })}
 				/>
 			</Row>
 		</Group>

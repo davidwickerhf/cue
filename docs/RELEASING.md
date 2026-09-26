@@ -105,10 +105,15 @@ with your Apple Development identity for `/Applications`.
 - **The first Developer ID release has to be installed by hand.** Copies signed ad hoc or with
   an Apple Development certificate (0.1.x) can't update themselves; they log why in
   `~/Library/Logs/Cue/updates.log` and Settings → General → Updates says so. From the first
-  Developer ID release on, updates install themselves as long as the same team signs them.
+  Developer ID release on, Cue can download and install signed updates according to the
+  user's update preferences, as long as the same team signs them.
 - **Updates are off** in development (`npm run dev`), when `CUE_USER_DATA` is set, when
-  `CUE_DISABLE_UPDATES` is set, for the Linux `.deb`, and when the user turns off
-  Settings → General → "Check for updates automatically" (Help/Cue → Check for Updates… still works).
+  `CUE_DISABLE_UPDATES` is set, and for the Linux `.deb`. Settings → General →
+  "Check for updates automatically" controls scheduled checks; Help/Cue → Check for Updates…
+  still works when it is off. A discovered update stays undownloaded until the user chooses
+  Download. "Download and install updates automatically" is an opt-in that gives standing
+  consent for future downloads and installs them on the next normal quit. Changing this
+  setting after a download begins applies to later updates.
 - **ffmpeg per platform.** `ffmpeg-static` downloads the ffmpeg for the OS and CPU that ran
   `npm install`. In CI each job installs its own. When packing for another target (the Intel Mac
   build on an Apple Silicon runner, or Linux/Windows from a Mac), the electron-builder hooks in
