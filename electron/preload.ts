@@ -38,6 +38,33 @@ const api = {
 	failRecording: (requestId: string, message: string) =>
 		ipcRenderer.send("cue:failRecording", requestId, message),
 	requestMicrophone: () => ipcRenderer.invoke("cue:requestMicrophone") as Promise<boolean>,
+	requestCamera: () => ipcRenderer.invoke("cue:requestCamera") as Promise<boolean>,
+	/** Screens and windows (with small previews), cameras, microphones and permissions. */
+	captureSources: () =>
+		ipcRenderer.invoke("cue:captureSources") as Promise<import("./core/capture").CaptureSources>,
+	screenAccess: () => ipcRenderer.invoke("cue:screenAccess") as Promise<string>,
+	/** The source the next getDisplayMedia() call records. */
+	setCaptureSource: (id: string | null) => ipcRenderer.send("cue:setCaptureSource", id),
+	captureBegin: (input: { screen: boolean; camera: boolean; requestId?: string }) =>
+		ipcRenderer.invoke("cue:captureBegin", input) as Promise<{
+			id: string;
+			files: { main: string; overlay?: string };
+		}>,
+	captureChunk: (id: string, part: "main" | "overlay", data: ArrayBuffer) =>
+		ipcRenderer.invoke("cue:captureChunk", id, part, data) as Promise<void>,
+	captureFinish: (id: string, input: { atMs: number; bubble: boolean }) =>
+		ipcRenderer.invoke("cue:captureFinish", id, input) as Promise<
+			import("./controller").CaptureResult
+		>,
+	captureCancel: (id: string | null, message: string, requestId?: string) =>
+		ipcRenderer.invoke("cue:captureCancel", id, message, requestId) as Promise<void>,
+	onOpenRecord: (listener: () => void) => {
+		const handler = () => listener();
+		ipcRenderer.on("cue:openRecord", handler);
+		return () => {
+			ipcRenderer.removeListener("cue:openRecord", handler);
+		};
+	},
 	peaks: (assetId: string) => ipcRenderer.invoke("cue:peaks", assetId) as Promise<number[]>,
 	audioProxy: (assetId: string, speed: number) =>
 		ipcRenderer.invoke("cue:audioProxy", assetId, speed) as Promise<string>,

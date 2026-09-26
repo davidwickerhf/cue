@@ -503,6 +503,8 @@ export interface RecorderStatus {
 	inMs?: number | null;
 	outMs?: number | null;
 	panel?: string;
+	/** A screen or camera recording is running (record_screen / the Record dialog). */
+	capturing?: boolean;
 }
 
 export interface JobStatus {
@@ -564,6 +566,17 @@ export type PreviewMode = "all" | "voiceover" | "muted";
 export type EditorCommand =
 	| { type: "record"; lineId: string; prerollMs?: number; requestId?: string }
 	| { type: "stop" }
+	| {
+			type: "recordScreen";
+			requestId: string;
+			sourceId: string | null;
+			camera: boolean;
+			microphone: boolean;
+			bubble: boolean;
+			maxSeconds?: number;
+	  }
+	| { type: "stopScreen" }
+	| { type: "listDevices"; requestId: string }
 	| { type: "play"; fromMs?: number; toMs?: number }
 	| { type: "pause" }
 	| { type: "seek"; ms: number }

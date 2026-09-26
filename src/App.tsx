@@ -1,12 +1,14 @@
 import { useEffect } from "react";
 import { EditorShell } from "./components/layout/EditorShell";
 import { NewProjectDialog } from "./components/NewProjectDialog";
+import { recordDialog } from "./components/RecordDialog";
 import { SettingsView } from "./components/settings/SettingsView";
 import { Toaster } from "./components/ui/Toaster";
 import { Welcome } from "./components/Welcome";
+import { notify } from "./lib/api";
 import { startChatSync } from "./lib/chat";
 import { playback } from "./lib/playback";
-import { appSettings, startSettingsSync, startSync, useApp, useProject } from "./lib/state";
+import { app, appSettings, startSettingsSync, startSync, useApp, useProject } from "./lib/state";
 
 export function App() {
 	useEffect(() => {
@@ -36,6 +38,16 @@ export function App() {
 	useEffect(() => {
 		playback.setProject(project);
 	}, [project]);
+
+	// File → Record Screen or Camera… (⇧⌘R)
+	useEffect(
+		() =>
+			window.cue.onOpenRecord(() => {
+				if (app.get().state?.project) recordDialog.set({ open: true });
+				else notify("Open a project first, then record into it.");
+			}),
+		[],
+	);
 
 	useEffect(() => {
 		window.cue.reportRecorder({ uiReady: true });

@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 import {
 	app,
 	BrowserWindow,
+	desktopCapturer,
 	dialog,
 	ipcMain,
 	Menu,
@@ -25,6 +26,7 @@ import { contract, type MethodName } from "./control/contract";
 import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
+import type { CaptureSources } from "./core/capture";
 import type { TextRender } from "./core/exporter";
 import {
 	detectLocal,
@@ -159,6 +161,74 @@ async function captureFrame(atMs: number): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Screen and camera recording
+// ---------------------------------------------------------------------------
+
+/** macOS permission for screen, camera or microphone (always granted elsewhere). */
+function mediaAccess(kind: "screen" | "camera" | "microphone"): string {
+	return process.platform === "darwin" ? systemPreferences.getMediaAccessStatus(kind) : "granted";
+}
+
+/** Screens and windows that can be recorded, plus cameras and microphones (asked of the window). */
+async function captureSources(thumbnails = false): Promise<CaptureSources> {
+	let sources: CaptureSources["sources"] = [];
+	try {
+		const found = await desktopCapturer.getSources({
+			types: ["screen", "window"],
+			thumbnailSize: thumbnails ? { width: 320, height: 200 } : { width: 0, height: 0 },
+			fetchWindowIcons: false,
+		});
+		sources = found.map((s) => ({
+			id: s.id,
+			name: s.name,
+			kind: s.id.startsWith("screen:") ? "screen" : "window",
+			...(thumbnails && !s.thumbnail.isEmpty() ? { thumbnail: s.thumbnail.toDataURL() } : {}),
+		}));
+	} catch (error) {
+		store.log("system", `Could not list screens: ${(error as Error).message}`);
+	}
+	const devices = await askWindow<{
+		cameras: CaptureSources["cameras"];
+		microphones: CaptureSources["microphones"];
+	}>((requestId) => ({ type: "listDevices", requestId }), 5000).catch(() => ({
+		cameras: [],
+		microphones: [],
+	}));
+	return {
+		sources,
+		screenAccess: mediaAccess("screen"),
+		cameraAccess: mediaAccess("camera"),
+		microphoneAccess: mediaAccess("microphone"),
+		...devices,
+	};
+}
+
+/** The screen or window the window's next getDisplayMedia() call records. */
+let displaySource: string | null = null;
+
+/** Hands the chosen source to getDisplayMedia (Electron has no picker of its own). */
+async function handleDisplayMedia(
+	_request: Electron.DisplayMediaRequestHandlerHandlerRequest,
+	callback: (streams: Electron.Streams) => void,
+) {
+	const wanted = displaySource;
+	displaySource = null;
+	try {
+		const found = await desktopCapturer.getSources({
+			types: ["screen", "window"],
+			thumbnailSize: { width: 0, height: 0 },
+		});
+		const source =
+			found.find((s) => s.id === wanted) ??
+			(wanted === "screen" || !wanted ? found.find((s) => s.id.startsWith("screen:")) : undefined);
+		// No streams at all makes getDisplayMedia fail, which the window explains.
+		callback(source ? { video: source } : {});
+	} catch {
+		callback({});
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Credentials: stored encrypted with the OS keychain via safeStorage
 // ---------------------------------------------------------------------------
 
@@ -275,6 +345,7 @@ const controller = new Controller(store, {
 	captureFrame,
 	runtime,
 	projectsDir: () => appSettings.projectsDir,
+	captureSources: () => captureSources(false),
 	appSettings: {
 		get: () => appSettings,
 		set: async (patch) => {
@@ -508,6 +579,7 @@ function createWindow() {
 			recordingLineId: null,
 			playing: false,
 		});
+		void controller.abortCapture("The Cue window was closed.");
 	});
 	win.webContents.setWindowOpenHandler(({ url }) => {
 		if (/^https?:/.test(url)) void shell.openExternal(url);
@@ -773,6 +845,30 @@ function registerIpc() {
 	ipcMain.handle("cue:requestMicrophone", () =>
 		process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : true,
 	);
+	ipcMain.handle("cue:requestCamera", () =>
+		process.platform === "darwin" ? systemPreferences.askForMediaAccess("camera") : true,
+	);
+	ipcMain.handle("cue:captureSources", () => captureSources(true));
+	ipcMain.handle("cue:screenAccess", () => mediaAccess("screen"));
+	ipcMain.on("cue:setCaptureSource", (_event, id: string | null) => {
+		displaySource = id;
+	});
+	ipcMain.handle(
+		"cue:captureBegin",
+		(_event, input: { screen: boolean; camera: boolean; requestId?: string }) =>
+			controller.beginCapture(input),
+	);
+	ipcMain.handle("cue:captureChunk", (_event, id: string, part: "main" | "overlay", data) =>
+		controller.writeCapture(id, part, Buffer.from(data)),
+	);
+	ipcMain.handle("cue:captureFinish", (_event, id: string, input) =>
+		controller.finishCapture(id, input),
+	);
+	ipcMain.handle(
+		"cue:captureCancel",
+		(_event, id: string | null, message: string, requestId?: string) =>
+			controller.cancelCapture(id, message, requestId),
+	);
 	ipcMain.handle("cue:peaks", (_event, assetId: string) => store.peaks(assetId));
 	ipcMain.handle("cue:thumbnails", (_event, assetId: string) => store.thumbnails(assetId));
 	ipcMain.handle("cue:audioProxy", async (_event, assetId: string, speed: number) =>
@@ -993,13 +1089,21 @@ else {
 		session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
 			callback(
 				permission === "media" ||
+					// Screen recording; the source itself is chosen in handleDisplayMedia.
+					permission === "display-capture" ||
 					permission === "clipboard-sanitized-write" ||
 					// Lists installed fonts for the title editor.
 					(permission as string) === "local-fonts",
 			),
 		);
 		session.defaultSession.setPermissionCheckHandler(
-			(_wc, permission) => permission === "media" || (permission as string) === "local-fonts",
+			(_wc, permission) =>
+				permission === "media" ||
+				permission === "display-capture" ||
+				(permission as string) === "local-fonts",
+		);
+		session.defaultSession.setDisplayMediaRequestHandler(
+			(request, callback) => void handleDisplayMedia(request, callback),
 		);
 		registerIpc();
 		buildMenu();

@@ -5,6 +5,7 @@ import {
 	LinkBreak,
 	MusicNotes,
 	Plus,
+	RecordIcon,
 	Sparkle,
 	Trash,
 	UploadSimple,
@@ -17,6 +18,7 @@ import { playback } from "../../lib/playback";
 import { openSource } from "../../lib/source";
 import { useProject } from "../../lib/state";
 import { cn, formatTime } from "../../lib/utils";
+import { recordDialog } from "../RecordDialog";
 import { locate } from "../RelinkMedia";
 import { Empty, IconButton, Section, Segmented } from "../ui/controls";
 
@@ -58,6 +60,14 @@ export function MediaPanel() {
 					onPress={() => void window.cue.importDialog()}
 				>
 					<UploadSimple className="size-4" /> Import media
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-7 w-full gap-1.5 text-[12px]"
+					onPress={() => recordDialog.set({ open: true })}
+				>
+					<RecordIcon weight="fill" className="size-3.5 text-danger" /> Record screen or camera…
 				</Button>
 				<Button
 					variant="ghost"
