@@ -64,6 +64,9 @@ jobs:
 
       # Each job installs the ffmpeg for its own OS (ffmpeg-static downloads the
       # host's binary); the Intel Mac build swaps in the x64 one while packing.
+      # xmllint checks the exported FCPXML and MLT (built into macOS).
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libxml2-utils
       - run: npm ci
       - run: npx tsc --noEmit -p tsconfig.json
       - run: npx vitest run

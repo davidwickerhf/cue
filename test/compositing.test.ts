@@ -336,7 +336,10 @@ describe("compositing", () => {
 		);
 		const clip = store.current.clips.find((c) => c.type === "media") as MediaClip;
 		const { cuts } = await store.splitAtScenes(clip.id, "user");
-		expect(cuts.map((t) => Math.round(t / 100) * 100)).toEqual([1500, 2500]);
+		// ffmpeg builds differ by a frame or so (Linux finds the first cut at 1.6 s).
+		expect(cuts).toHaveLength(2);
+		expect(Math.abs(cuts[0] - 1500)).toBeLessThanOrEqual(150);
+		expect(Math.abs(cuts[1] - 2500)).toBeLessThanOrEqual(150);
 		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(3);
 		// One undo step puts it back.
 		store.undo("user");
