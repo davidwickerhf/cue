@@ -162,12 +162,17 @@ async function captureFrame(atMs: number): Promise<string> {
 		(requestId) => ({ type: "captureFrame", requestId, atMs }),
 	);
 	if (!win) throw new Error("The Cue window is not open.");
-	const image = await win.webContents.capturePage({
-		x: Math.round(rect.x),
-		y: Math.round(rect.y),
-		width: Math.round(rect.width),
-		height: Math.round(rect.height),
-	});
+	const image = await win.webContents
+		.capturePage({
+			x: Math.round(rect.x),
+			y: Math.round(rect.y),
+			width: Math.round(rect.width),
+			height: Math.round(rect.height),
+		})
+		.finally(() => {
+			// The window put its guides and zoom away for the capture; they come back now.
+			if (win && !win.isDestroyed()) win.webContents.send("cue:command", { type: "captureDone" });
+		});
 	const dir = path.join(store.cacheDir(), "frames");
 	await fs.mkdir(dir, { recursive: true });
 	const file = path.join(dir, `frame-${Math.round(atMs)}.png`);

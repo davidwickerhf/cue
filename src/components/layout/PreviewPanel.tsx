@@ -8,11 +8,17 @@ import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { showTimeline, source } from "../../lib/source";
 import { useApp, useProject } from "../../lib/state";
-import { fittedRatio, MAX_ZOOM, MIN_ZOOM, viewerZoom, zoomViewer } from "../../lib/viewer";
 import { cn, formatSeconds } from "../../lib/utils";
+import { fittedRatio, MAX_ZOOM, MIN_ZOOM, viewerZoom, zoomViewer } from "../../lib/viewer";
 import { compareView, layout } from "../../lib/workspace";
 import { ClipStrip } from "./ClipStrip";
-import { MonitorHeader, SourceMonitor, SourcePane, ViewerTabs } from "./SourceMonitor";
+import {
+	MonitorHeader,
+	SingleViewerButton,
+	SourceMonitor,
+	SourcePane,
+	ViewerTabs,
+} from "./SourceMonitor";
 
 /** Zoom presets as shares of the canvas's real pixels (100% = one canvas pixel per screen pixel). */
 const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4];
@@ -23,6 +29,7 @@ export function PreviewPanel() {
 	const compare = layout.use((s) => s.overlays.compare);
 	const twoUp = layout.use((s) => s.overlays.sourceTwoUp);
 	const strip = layout.use((s) => s.overlays.clipStrip);
+	const sourceShare = layout.use((s) => s.sourceShare ?? 0.5);
 	const sourceActive = source.use((s) => s.active);
 	const sourceOpen = source.use((s) => !!s.assetId);
 	const project = useProject();
@@ -75,7 +82,7 @@ export function PreviewPanel() {
 			const frame = stage.current?.getBoundingClientRect();
 			if (!frame) return;
 			const current = viewerZoom.get().scale;
-						// Pinches send small steps, mouse wheels big ones: at most a quarter per event.
+			// Pinches send small steps, mouse wheels big ones: at most a quarter per event.
 			const step = Math.max(-0.22, Math.min(0.22, -e.deltaY * 0.006));
 			const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current * Math.exp(step)));
 			if (next === current) return;
@@ -169,9 +176,12 @@ export function PreviewPanel() {
 								ref={textCanvas}
 								className="pointer-events-none absolute inset-0 z-10 size-full"
 							/>
-							{project && <SelectionOverlay project={project} width={stageW} height={stageH} />}
-							{safeAreas && <SafeAreas />}
-							{compare && project && <SplitDivider />}
+							{/* Guides and handles, left out of render_frame captures. */}
+							<div data-viewer-overlays className="contents">
+								{project && <SelectionOverlay project={project} width={stageW} height={stageH} />}
+								{safeAreas && <SafeAreas />}
+								{compare && project && <SplitDivider />}
+							</div>
 						</div>
 					</div>
 				</div>
@@ -190,7 +200,8 @@ export function PreviewPanel() {
 	const two = twoUp && !!project;
 	return (
 		<section className="relative flex min-w-0 flex-1 bg-viewer">
-			{two && project && <SourcePane project={project} />}
+			{two && project && <SourcePane project={project} share={sourceShare} />}
+			{two && <MonitorDivider share={sourceShare} />}
 			{/* biome-ignore lint/a11y/noStaticElementInteractions: focus follows the click, as between Premiere's monitors */}
 			<div
 				className="relative flex min-w-0 flex-1 flex-col"
@@ -201,6 +212,7 @@ export function PreviewPanel() {
 						<span className="min-w-0 truncate text-foreground/80">
 							{project.data.sequence?.name ?? ""}
 						</span>
+						<SingleViewerButton />
 					</MonitorHeader>
 				)}
 				{!two && project && <ViewerTabs project={project} />}
@@ -208,6 +220,41 @@ export function PreviewPanel() {
 				{program}
 			</div>
 		</section>
+	);
+}
+
+/** Drag handle between the source monitor and the viewer in two-up (double-click: half and half). */
+function MonitorDivider({ share }: { share: number }) {
+	const set = (v: number) =>
+		layout.set({ sourceShare: Math.round(Math.min(0.8, Math.max(0.2, v)) * 1000) / 1000 });
+	return (
+		<div
+			role="separator"
+			aria-orientation="vertical"
+			aria-label="Source monitor width"
+			aria-valuenow={Math.round(share * 100)}
+			tabIndex={0}
+			onKeyDown={(e) => {
+				if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+				e.preventDefault();
+				e.stopPropagation();
+				set(share + (e.key === "ArrowRight" ? 0.02 : -0.02) * (e.shiftKey ? 3 : 1));
+			}}
+			onDoubleClick={() => set(0.5)}
+			onPointerDown={(e) => {
+				const area = e.currentTarget.parentElement?.getBoundingClientRect();
+				if (!area) return;
+				e.currentTarget.setPointerCapture(e.pointerId);
+				const move = (m: PointerEvent) => set((m.clientX - area.left) / area.width);
+				const up = () => {
+					window.removeEventListener("pointermove", move);
+					window.removeEventListener("pointerup", up);
+				};
+				window.addEventListener("pointermove", move);
+				window.addEventListener("pointerup", up);
+			}}
+			className="relative z-10 w-px shrink-0 cursor-col-resize bg-separator after:absolute after:inset-y-0 after:-left-1.5 after:-right-1.5 after:content-[''] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+		/>
 	);
 }
 

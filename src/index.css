@@ -137,3 +137,8 @@
 .rec-pulse {
 	animation: rec-pulse 1.2s ease-in-out infinite;
 }
+
+/* render_frame captures only the picture. */
+body[data-capturing] [data-viewer-overlays] {
+	display: none;
+}

@@ -351,7 +351,9 @@ class PlaybackEngine {
 	private videoUrl(assetId: string): string {
 		const project = this.project;
 		if (!project) return "";
-		return (this.fullQuality ? undefined : project.proxyUrls[assetId]) ?? project.assetUrls[assetId];
+		return (
+			(this.fullQuality ? undefined : project.proxyUrls[assetId]) ?? project.assetUrls[assetId]
+		);
 	}
 
 	/** Redraw after the viewer changes size. */
@@ -751,9 +753,7 @@ class PlaybackEngine {
 		if (asset?.kind === "adjustment") return this.renderAdjustment(slot, clip, ms);
 		if (slot.frame.style.backdropFilter) slot.frame.style.backdropFilter = "";
 		const isImage = asset?.kind === "image";
-		const url = isImage
-			? project.assetUrls[clip.assetId]
-			: this.videoUrl(clip.assetId);
+		const url = isImage ? project.assetUrls[clip.assetId] : this.videoUrl(clip.assetId);
 		const local = ms - clip.startMs;
 		const t = clip.transform;
 		const kf = clip.keyframes;

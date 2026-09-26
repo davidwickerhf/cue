@@ -39,6 +39,8 @@ export interface Layout {
 	};
 	/** Inspector sections open by default; every other section starts collapsed. Empty: all open. */
 	sections: string[];
+	/** Share of the viewer area the source monitor takes in two-up, 0.2–0.8. */
+	sourceShare?: number;
 }
 
 const BASE: Layout = {

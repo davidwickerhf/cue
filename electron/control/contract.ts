@@ -1100,7 +1100,9 @@ export const contract = {
 			beforeAfter: z
 				.object({ split: z.boolean(), at: z.number().min(0).max(1).optional() })
 				.optional()
-				.describe("Split before/after in the viewer: the ungraded picture left of a divider at `at`"),
+				.describe(
+					"Split before/after in the viewer: the ungraded picture left of a divider at `at`",
+				),
 			compareSequences: z
 				.tuple([z.string(), z.string()])
 				.nullable()

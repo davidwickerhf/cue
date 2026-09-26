@@ -655,6 +655,7 @@ export type EditorCommand =
 			height?: number;
 	  }
 	| { type: "captureFrame"; requestId: string; atMs: number }
+	| { type: "captureDone" }
 	| { type: "setInOut"; inMs?: number | null; outMs?: number | null }
 	| {
 			type: "setView";
@@ -665,7 +666,9 @@ export type EditorCommand =
 			workspace?: string;
 			dock?: string;
 			viewerZoom?: number | "fit";
-			overlays?: Partial<Record<"safeAreas" | "teleprompter" | "compare" | "sourceTwoUp" | "clipStrip", boolean>>;
+			overlays?: Partial<
+				Record<"safeAreas" | "teleprompter" | "compare" | "sourceTwoUp" | "clipStrip", boolean>
+			>;
 			beforeAfter?: { split: boolean; at?: number };
 			compareSequences?: [string, string] | null;
 	  }

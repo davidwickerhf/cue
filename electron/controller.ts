@@ -345,6 +345,7 @@ export class Controller extends EventEmitter {
 		}
 		this.lastCapture = null;
 		this.updateRecorder({ capturing: true });
+		// An agent's record_screen returns once the screen is really being recorded.
 		if (agentStart) {
 			this.captureStart = null;
 			agentStart.resolve();
@@ -459,7 +460,8 @@ export class Controller extends EventEmitter {
 									trackId: c.trackId,
 									startMs: c.startMs,
 									durationMs: c.durationMs,
-									role: roles[i] ?? "camera",
+									// The studio's extra clips are named Wallpaper, Cursor and Click.
+									role: roles[i] ?? c.name?.toLowerCase() ?? "studio",
 								},
 							]
 						: [];

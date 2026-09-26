@@ -6,12 +6,18 @@ import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
 import { app, editor, findLine, type SidebarPanel } from "../lib/state";
 import { rasterise } from "../lib/textDraw";
-import { zoomViewer } from "../lib/viewer";
+import { viewerZoom, zoomViewer } from "../lib/viewer";
 import { compareView, type Dock, layout, sequenceCompare, switchWorkspace } from "../lib/workspace";
 
 /** Carries out commands from the main process (and therefore from agents). */
 export function useEditorCommands() {
 	useEffect(() => {
+		let capturing: { scale: number } | null = null;
+		const endCapture = () => {
+			delete document.body.dataset.capturing;
+			if (capturing && capturing.scale !== 1) viewerZoom.set({ scale: capturing.scale });
+			capturing = null;
+		};
 		const offCommand = window.cue.onCommand(async (command) => {
 			const project = app.get().state?.project ?? null;
 			switch (command.type) {
@@ -134,7 +140,12 @@ export function useEditorCommands() {
 				}
 				case "captureFrame": {
 					try {
+						// Only the picture: no guides or handles, and the whole frame (not a zoomed-in part).
+						capturing = { scale: viewerZoom.get().scale };
+						document.body.dataset.capturing = "";
+						if (capturing.scale !== 1) viewerZoom.set({ scale: 1 });
 						await playback.seekAndSettle(command.atMs);
+						await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 						const frame = document.querySelector<HTMLElement>("[data-stage-frame]");
 						if (!frame) throw new Error("The preview is not visible.");
 						const r = frame.getBoundingClientRect();
@@ -145,10 +156,14 @@ export function useEditorCommands() {
 							height: r.height,
 						});
 					} catch (error) {
+						endCapture();
 						window.cue.reply(command.requestId, (error as Error).message);
 					}
 					break;
 				}
+				case "captureDone":
+					endCapture();
+					break;
 			}
 		});
 		// Tell the main process where the playhead is (for agents) a few times a second at most.

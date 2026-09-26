@@ -4,6 +4,7 @@ import {
 	FilmSlate,
 	Pause,
 	Play,
+	SquareSplitHorizontal,
 	Waveform,
 	X,
 } from "@phosphor-icons/react";
@@ -21,6 +22,7 @@ import {
 	toggleSource,
 } from "../../lib/source";
 import { cn, formatTime } from "../../lib/utils";
+import { layout } from "../../lib/workspace";
 
 /** Tabs over the viewer: the timeline, or the clip open in the source monitor. */
 export function ViewerTabs({ project }: { project: ProjectSnapshot }) {
@@ -79,14 +81,15 @@ export function SourceMonitor({ project }: { project: ProjectSnapshot }) {
  * always there, empty until a clip is opened. Clicking it gives it the
  * transport keys; clicking the viewer gives them back to the timeline.
  */
-export function SourcePane({ project }: { project: ProjectSnapshot }) {
+export function SourcePane({ project, share }: { project: ProjectSnapshot; share: number }) {
 	const { assetId, active } = source.use((s) => s);
 	const asset = project.data.assets.find((a) => a.id === assetId);
 	useEffect(() => () => attachSource(null), []);
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: focus follows the click, as between Premiere's monitors
 		<div
-			className="relative flex min-w-0 flex-1 flex-col border-r border-separator bg-viewer"
+			className="relative flex min-w-0 shrink-0 flex-col bg-viewer"
+			style={{ width: `${share * 100}%` }}
 			onPointerDownCapture={() => asset && !active && source.set({ active: true })}
 		>
 			<MonitorHeader label="Source" active={active && !!asset}>
@@ -95,15 +98,16 @@ export function SourcePane({ project }: { project: ProjectSnapshot }) {
 						<span className="min-w-0 truncate text-foreground/80">{asset.name}</span>
 						<button
 							type="button"
-							aria-label="Close source"
-							title="Close source"
+							aria-label="Close source clip"
+							title="Close the source clip"
 							onClick={closeSource}
-							className="ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+							className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
 						>
 							<X className="size-3.5" />
 						</button>
 					</>
 				)}
+				<SingleViewerButton />
 			</MonitorHeader>
 			{asset ? (
 				<SourceBody project={project} asset={asset} />
@@ -122,6 +126,22 @@ export function SourcePane({ project }: { project: ProjectSnapshot }) {
 }
 
 /** The strip over each monitor in two-up: its name, lit while it has the transport keys. */
+/** Leaves two-up: the viewer takes the whole area again (the source still opens over it). */
+export function SingleViewerButton() {
+	return (
+		<button
+			type="button"
+			aria-label="Hide the source monitor"
+			title="Hide the source monitor (one viewer)"
+			onClick={() => layout.set({ overlays: { ...layout.get().overlays, sourceTwoUp: false } })}
+			className="ml-auto flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted hover:bg-default hover:text-foreground"
+		>
+			<SquareSplitHorizontal className="size-3.5" />
+			One viewer
+		</button>
+	);
+}
+
 export function MonitorHeader({
 	label,
 	active,
