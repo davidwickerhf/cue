@@ -22,6 +22,11 @@ export const SHORTCUTS: {
 			{ label: "Go to start / end", keys: ["Home", "End"] },
 			{ label: "Mark in / out", keys: ["I", "O"] },
 			{ label: "Play in to out", keys: ["/"] },
+			{
+				label: "Zoom the viewer",
+				keys: ["⌘ scroll"],
+				note: "Or pinch; ⇧Z fits the frame again",
+			},
 			{ label: "Clear in and out", keys: ["⌥X"] },
 			{
 				label: "A/B compare two versions",
@@ -73,6 +78,11 @@ export const SHORTCUTS: {
 			},
 			{ label: "Insert / overwrite at the playhead", keys: [",", "."] },
 			{ label: "Back to the timeline", keys: ["Esc"] },
+			{
+				label: "Single / dual viewer",
+				keys: ["⇧2"],
+				note: "The source monitor beside the viewer, or over it",
+			},
 		],
 	},
 	{

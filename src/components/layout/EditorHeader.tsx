@@ -3,21 +3,26 @@ import {
 	ArrowClockwise,
 	ArrowCounterClockwise,
 	CaretLeft,
+	Rectangle,
 	SidebarSimple,
+	SquareSplitHorizontal,
 } from "@phosphor-icons/react";
 import { notify, run } from "../../lib/api";
 import { keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn, nameFieldKeys } from "../../lib/utils";
+import { layout } from "../../lib/workspace";
 import { exportDialog } from "../ExportDialog";
 import { UpdateBadge } from "../UpdateBadge";
 import { IconButton } from "../ui/controls";
 import { WindowDots } from "../WindowDots";
+import { toggleDualViewer } from "./SourceMonitor";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
 export function EditorHeader() {
 	const project = useProject();
+	const dual = layout.use((l) => l.overlays.sourceTwoUp);
 	const agent = useApp((s) => s.agent);
 	const jobs = useApp((s) => s.jobs) ?? [];
 	const inspectorOpen = editor.use((s) => s.inspectorOpen);
@@ -119,6 +124,14 @@ export function EditorHeader() {
 					onPress={() => void run("redo")}
 				>
 					<ArrowClockwise className="size-4" />
+				</IconButton>
+				<IconButton
+					label={dual ? "Single viewer" : "Dual viewer: source monitor beside the viewer"}
+					shortcut="⇧2"
+					active={dual}
+					onPress={() => toggleDualViewer()}
+				>
+					{dual ? <SquareSplitHorizontal className="size-4" /> : <Rectangle className="size-4" />}
 				</IconButton>
 				<IconButton
 					label={inspectorOpen ? "Hide inspector" : "Show inspector"}

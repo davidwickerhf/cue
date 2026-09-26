@@ -4,7 +4,6 @@ import {
 	FilmSlate,
 	Pause,
 	Play,
-	SquareSplitHorizontal,
 	Waveform,
 	X,
 } from "@phosphor-icons/react";
@@ -98,16 +97,16 @@ export function SourcePane({ project, share }: { project: ProjectSnapshot; share
 						<span className="min-w-0 truncate text-foreground/80">{asset.name}</span>
 						<button
 							type="button"
-							aria-label="Close source clip"
-							title="Close the source clip"
+							aria-label="Close this clip"
+							title="Close this clip"
 							onClick={closeSource}
-							className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+							className="flex size-5 shrink-0 items-center justify-center rounded text-muted hover:bg-default hover:text-foreground"
 						>
-							<X className="size-3.5" />
+							<X className="size-3" />
 						</button>
 					</>
 				)}
-				<SingleViewerButton />
+				<CloseMonitorButton />
 			</MonitorHeader>
 			{asset ? (
 				<SourceBody project={project} asset={asset} />
@@ -126,18 +125,22 @@ export function SourcePane({ project, share }: { project: ProjectSnapshot; share
 }
 
 /** The strip over each monitor in two-up: its name, lit while it has the transport keys. */
-/** Leaves two-up: the viewer takes the whole area again (the source still opens over it). */
-export function SingleViewerButton() {
+/** Turns the source monitor beside the viewer on or off (dual or single viewer, as in Resolve). */
+export function toggleDualViewer(on = !layout.get().overlays.sourceTwoUp) {
+	layout.set({ overlays: { ...layout.get().overlays, sourceTwoUp: on } });
+}
+
+/** The source monitor's close button, like a panel's. */
+export function CloseMonitorButton() {
 	return (
 		<button
 			type="button"
-			aria-label="Hide the source monitor"
-			title="Hide the source monitor (one viewer)"
-			onClick={() => layout.set({ overlays: { ...layout.get().overlays, sourceTwoUp: false } })}
-			className="ml-auto flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted hover:bg-default hover:text-foreground"
+			aria-label="Close the source monitor"
+			title="Close the source monitor (⇧2 brings it back)"
+			onClick={() => toggleDualViewer(false)}
+			className="ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
 		>
-			<SquareSplitHorizontal className="size-3.5" />
-			One viewer
+			<X className="size-3.5" />
 		</button>
 	);
 }

@@ -60,6 +60,13 @@
 					]
 				},
 				{
+					"label": "Zoom the viewer",
+					"keys": [
+						"⌘ scroll"
+					],
+					"note": "Or pinch; ⇧Z fits the frame again"
+				},
+				{
 					"label": "Clear in and out",
 					"keys": [
 						"⌥X"
@@ -234,6 +241,13 @@
 					"keys": [
 						"Esc"
 					]
+				},
+				{
+					"label": "Single / dual viewer",
+					"keys": [
+						"⇧2"
+					],
+					"note": "The source monitor beside the viewer, or over it"
 				}
 			]
 		},

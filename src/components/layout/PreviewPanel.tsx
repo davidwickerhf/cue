@@ -14,9 +14,9 @@ import { compareView, layout } from "../../lib/workspace";
 import { ClipStrip } from "./ClipStrip";
 import {
 	MonitorHeader,
-	SingleViewerButton,
 	SourceMonitor,
 	SourcePane,
+	toggleDualViewer,
 	ViewerTabs,
 } from "./SourceMonitor";
 
@@ -119,7 +119,7 @@ export function PreviewPanel() {
 	// Zoomed in, proxies look soft: play the originals.
 	useEffect(() => playback.setFullQuality(zoom > 1.2), [zoom]);
 
-	// Shift+Z: back to Fit.
+	// Shift+Z: back to Fit. Shift+2: source monitor beside the viewer, or not.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const t = e.target as HTMLElement | null;
@@ -127,6 +127,10 @@ export function PreviewPanel() {
 			if (e.code === "KeyZ" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
 				e.preventDefault();
 				viewerZoom.set({ scale: 1 });
+			}
+			if (e.code === "Digit2" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+				e.preventDefault();
+				toggleDualViewer();
 			}
 		};
 		window.addEventListener("keydown", onKey);
@@ -212,7 +216,6 @@ export function PreviewPanel() {
 						<span className="min-w-0 truncate text-foreground/80">
 							{project.data.sequence?.name ?? ""}
 						</span>
-						<SingleViewerButton />
 					</MonitorHeader>
 				)}
 				{!two && project && <ViewerTabs project={project} />}
