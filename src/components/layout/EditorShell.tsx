@@ -4,6 +4,7 @@ import { useShortcuts } from "../../hooks/useShortcuts";
 import { editor } from "../../lib/state";
 import { clampLayout, layout } from "../../lib/workspace";
 import { ExportDialog } from "../ExportDialog";
+import { CaptureBar, RecordDialog } from "../RecordDialog";
 import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
 import { Dock } from "./Dock";
@@ -73,6 +74,8 @@ export function EditorShell() {
 			</div>
 			<RelinkDialog />
 			<ExportDialog />
+			<RecordDialog />
+			<CaptureBar />
 		</div>
 	);
 }

@@ -1,9 +1,11 @@
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
 import { binPath, filterMedia, mediaUses, usedAssetIds } from "./core/bins";
+import { type CaptureSources, checkCaptureOptions, recordingFiles } from "./core/capture";
 import type { TextRender } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
 import { activeSequence, allSequences } from "./core/ops";
@@ -78,6 +80,22 @@ interface PendingRecording {
 	timer: NodeJS.Timeout;
 }
 
+/** A screen or camera recording being written: chunks stream in from the window. */
+interface CaptureSession {
+	id: string;
+	files: { main: string; overlay?: string };
+	handles: { main: fs.FileHandle; overlay?: fs.FileHandle };
+	/** Writes happen in order, one after another. */
+	writing: Promise<void>;
+	actor: Actor;
+}
+
+/** What a finished recording became, for agents. */
+export interface CaptureResult {
+	media: { id: string; name: string; durationMs: number; size: string }[];
+	clips: { id: string; trackId: string; startMs: number; durationMs: number; role: string }[];
+}
+
 export interface ControllerHooks {
 	sendCommand: (command: EditorCommand) => boolean;
 	focusWindow: () => void;
@@ -94,6 +112,8 @@ export interface ControllerHooks {
 	appSettings?: { get: () => unknown; set: (patch: Record<string, unknown>) => Promise<unknown> };
 	/** The folder new projects go in (app setting). */
 	projectsDir?: () => string;
+	/** Screens, windows, cameras and microphones, and the macOS permissions for them. */
+	captureSources?: () => Promise<CaptureSources>;
 }
 
 /**
@@ -116,6 +136,20 @@ export class Controller extends EventEmitter {
 	private recent: RecentProject[] = [];
 	private jobs: JobStatus[] = [];
 	private pending = new Map<string, PendingRecording>();
+	private capture: CaptureSession | null = null;
+	/** An agent's record_screen, waiting for the window to start recording. */
+	private captureStart: {
+		requestId: string;
+		resolve: () => void;
+		reject: (error: Error) => void;
+	} | null = null;
+	/** The import after a recording stops; stop_screen_recording waits for it. */
+	private captureImport: Promise<CaptureResult> | null = null;
+	/** Resolved when the next recording has been imported (or failed). */
+	private captureWaiters: { resolve: (r: CaptureResult) => void; reject: (e: Error) => void }[] =
+		[];
+	/** The last finished recording, for a stop_screen_recording that comes after maxSeconds. */
+	private lastCapture: CaptureResult | null = null;
 	private seq = 0;
 
 	constructor(
@@ -224,6 +258,143 @@ export class Controller extends EventEmitter {
 		pending.reject(new Error(message));
 	}
 
+	/** The window is about to record: opens the files its chunks are written to. */
+	async beginCapture(input: {
+		screen: boolean;
+		camera: boolean;
+		requestId?: string;
+	}): Promise<{ id: string; files: { main: string; overlay?: string } }> {
+		if (!this.store.isOpen) throw new Error("Open a project first.");
+		if (this.capture) throw new Error("A recording is already running.");
+		const named = recordingFiles(this.store.projectDir, new Date(), input, existsSync);
+		const main = named.screen ?? named.camera;
+		if (!main) throw new Error("Choose a screen or window, or turn the camera on.");
+		const files = { main, overlay: named.screen ? named.camera : undefined };
+		await fs.mkdir(path.dirname(main), { recursive: true });
+		const handles = {
+			main: await fs.open(files.main, "w"),
+			overlay: files.overlay ? await fs.open(files.overlay, "w") : undefined,
+		};
+		const agentStart =
+			input.requestId && this.captureStart?.requestId === input.requestId
+				? this.captureStart
+				: null;
+		this.capture = {
+			id: `s${++this.seq}`,
+			files,
+			handles,
+			writing: Promise.resolve(),
+			actor: agentStart ? "agent" : "user",
+		};
+		this.lastCapture = null;
+		this.updateRecorder({ capturing: true });
+		if (agentStart) {
+			this.captureStart = null;
+			agentStart.resolve();
+		}
+		return { id: this.capture.id, files };
+	}
+
+	/** A piece of a recording from the window's MediaRecorder. */
+	writeCapture(id: string, part: "main" | "overlay", data: Buffer): Promise<void> {
+		const session = this.capture;
+		if (!session || session.id !== id) return Promise.reject(new Error("No recording is running."));
+		const handle = session.handles[part];
+		if (!handle) return Promise.resolve();
+		session.writing = session.writing.then(async () => {
+			await handle.write(data);
+		});
+		return session.writing;
+	}
+
+	/** The window stopped recording: convert, import and place the result. */
+	finishCapture(id: string, input: { atMs: number; bubble: boolean }): Promise<CaptureResult> {
+		const session = this.capture;
+		if (!session || session.id !== id) return Promise.reject(new Error("No recording is running."));
+		this.capture = null;
+		const waiters = this.captureWaiters;
+		this.captureWaiters = [];
+		const run = async (): Promise<CaptureResult> => {
+			await session.writing;
+			await session.handles.main.close();
+			await session.handles.overlay?.close();
+			const { assets, clipIds } = await this.job("Importing the recording", () =>
+				this.store.addScreenRecording(
+					{ ...session.files, atMs: input.atMs, bubble: input.bubble },
+					session.actor,
+				),
+			);
+			const roles = session.files.overlay
+				? ["screen", "camera"]
+				: [/camera\.webm$/.test(session.files.main) ? "camera" : "screen"];
+			return {
+				media: assets.map((a) => ({
+					id: a.id,
+					name: a.name,
+					durationMs: a.durationMs,
+					size: `${a.width}x${a.height}`,
+				})),
+				clips: clipIds.flatMap((clipId, i) => {
+					const c = this.store.current.clips.find((x) => x.id === clipId);
+					return c
+						? [
+								{
+									id: c.id,
+									trackId: c.trackId,
+									startMs: c.startMs,
+									durationMs: c.durationMs,
+									role: roles[i] ?? "camera",
+								},
+							]
+						: [];
+				}),
+			};
+		};
+		const imported = run();
+		this.captureImport = imported;
+		imported.then(
+			(result) => {
+				this.lastCapture = result;
+				for (const w of waiters) w.resolve(result);
+			},
+			(error: Error) => {
+				for (const w of waiters) w.reject(error);
+			},
+		);
+		void imported
+			.catch(() => {})
+			.finally(() => {
+				if (this.captureImport === imported) this.captureImport = null;
+				this.updateRecorder({ capturing: false });
+			});
+		return imported;
+	}
+
+	/** Drops whatever is being recorded (the window closed). */
+	abortCapture(message: string): Promise<void> {
+		return this.cancelCapture(this.capture?.id ?? null, message);
+	}
+
+	/** The recording failed or was cancelled: nothing is kept. */
+	async cancelCapture(id: string | null, message: string, requestId?: string): Promise<void> {
+		const error = new Error(message);
+		if (this.captureStart && (!requestId || this.captureStart.requestId === requestId)) {
+			this.captureStart.reject(error);
+			this.captureStart = null;
+		}
+		const session = id && this.capture?.id === id ? this.capture : null;
+		if (!session) return;
+		this.capture = null;
+		for (const w of this.captureWaiters) w.reject(error);
+		this.captureWaiters = [];
+		this.updateRecorder({ capturing: false });
+		await session.writing.catch(() => {});
+		await session.handles.main.close().catch(() => {});
+		await session.handles.overlay?.close().catch(() => {});
+		await fs.rm(session.files.main, { force: true });
+		if (session.files.overlay) await fs.rm(session.files.overlay, { force: true });
+	}
+
 	async call(method: MethodName, params: unknown, actor: Actor): Promise<unknown> {
 		// Edits wait for a running transaction (an import, a freeze frame) to finish.
 		if (!READ_ONLY.test(method)) await this.store.settled();
@@ -327,6 +498,19 @@ export class Controller extends EventEmitter {
 					return { removed: list.length };
 				});
 			}
+			case "list_capture_sources": {
+				if (!this.hooks.captureSources) throw new Error("Recording is not available.");
+				const found = await this.hooks.captureSources();
+				return {
+					...found,
+					sources: found.sources.map(({ thumbnail: _t, ...s }) => s),
+					recording: !!this.capture,
+				};
+			}
+			case "record_screen":
+				return this.recordScreen(parseInput("record_screen", params));
+			case "stop_screen_recording":
+				return this.stopScreenRecording();
 			case "rename_media":
 				return this.store.apply(
 					{ type: "renameAsset", ...parseInput("rename_media", params) },
@@ -1095,6 +1279,77 @@ export class Controller extends EventEmitter {
 		if (!input.wait) return { started: l.id, requestId };
 		const take = await done;
 		return this.describeTake(this.requireLine(l.id), take);
+	}
+
+	private async recordScreen(input: MethodInput<"record_screen">) {
+		if (!this.store.isOpen) throw new Error("No project is open. Open or create one first.");
+		if (!this.recorder.uiReady)
+			throw new Error("The Cue window is not ready. Call focus_window and try again.");
+		if (this.capture || this.captureStart)
+			throw new Error("A recording is already running. Call stop_screen_recording first.");
+		const cameraOnly = input.sourceId === "none";
+		checkCaptureOptions({ ...input, sourceId: cameraOnly ? null : (input.sourceId ?? "screen") });
+		if (input.sourceId && !cameraOnly && this.hooks.captureSources) {
+			const { sources } = await this.hooks.captureSources();
+			if (!sources.some((s) => s.id === input.sourceId))
+				throw new Error(
+					`No screen or window "${input.sourceId}". Call list_capture_sources for the ids.`,
+				);
+		}
+		const requestId = `c${++this.seq}`;
+		const started = new Promise<void>((resolve, reject) => {
+			this.captureStart = { requestId, resolve, reject };
+		});
+		// Permissions and the 3-2-1 countdown come first; give up if nothing happens.
+		const timer = setTimeout(() => {
+			if (this.captureStart?.requestId !== requestId) return;
+			this.captureStart.reject(
+				new Error("The recording did not start. Is screen recording allowed for Cue?"),
+			);
+			this.captureStart = null;
+		}, 30000);
+		this.hooks.focusWindow();
+		try {
+			this.command({
+				type: "recordScreen",
+				requestId,
+				// Without a source the window picks the main screen.
+				sourceId: cameraOnly ? null : (input.sourceId ?? "screen"),
+				camera: input.camera,
+				microphone: input.microphone,
+				bubble: input.bubble,
+				maxSeconds: input.maxSeconds,
+			});
+			await started;
+		} catch (error) {
+			// Narrowed to null by the check above, but the window may have set it since.
+			const start = this.captureStart as { requestId: string } | null;
+			if (start?.requestId === requestId) this.captureStart = null;
+			throw error;
+		} finally {
+			clearTimeout(timer);
+		}
+		return {
+			recording: true,
+			camera: input.camera,
+			microphone: input.microphone,
+			stopsAfterSeconds: input.maxSeconds ?? null,
+			next: "Call stop_screen_recording to finish and import it.",
+		};
+	}
+
+	private stopScreenRecording(): Promise<CaptureResult> {
+		// Already stopped (by the user or maxSeconds): the import that is running, or its result.
+		if (!this.capture) {
+			if (this.captureImport) return this.captureImport;
+			if (this.lastCapture) return Promise.resolve(this.lastCapture);
+			return Promise.reject(new Error("Nothing is being recorded."));
+		}
+		const done = new Promise<CaptureResult>((resolve, reject) =>
+			this.captureWaiters.push({ resolve, reject }),
+		);
+		this.command({ type: "stopScreen" });
+		return done;
 	}
 
 	private describeAsset(a: Asset, used?: Set<string>) {

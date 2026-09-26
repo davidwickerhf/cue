@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { chunkCaptions } from "./ai";
 import { AUTO_MIX_TARGETS, audioPreset, type MixRole, mixRole } from "./audio";
+import { mp4Args, mp4Name, planPlacement, type TrackChoice } from "./capture";
 import {
 	type ExportReport,
 	exportAudioMix,
@@ -2399,6 +2400,94 @@ export class ProjectStore extends EventEmitter {
 			recordedAtMs: Math.round(input.recordedAtMs),
 			name: `Take ${count}`,
 		});
+	}
+
+	/**
+	 * Turns a finished screen or camera recording into media on the timeline:
+	 * each WebM becomes an MP4 (for reliable seeking), and the clips go at `atMs`
+	 * with the camera on the track above the screen, linked, and shown as a
+	 * picture in picture bubble when asked. One undo step.
+	 */
+	async addScreenRecording(
+		input: { main: string; overlay?: string; atMs: number; bubble: boolean },
+		actor: Actor,
+	): Promise<{ assets: Asset[]; clipIds: string[] }> {
+		const fps = this.current.canvas.fps;
+		const converted: string[] = [];
+		for (const raw of [input.main, input.overlay].filter((f): f is string => !!f)) {
+			const out = mp4Name(raw);
+			// Hardware encoding is much faster; x264 is the fallback where it isn't available.
+			await ffmpeg(mp4Args(raw, out, { fps, hardware: process.platform === "darwin" })).catch(() =>
+				ffmpeg(mp4Args(raw, out, { fps, hardware: false })),
+			);
+			await fs.rm(raw, { force: true });
+			converted.push(out);
+		}
+		const assets: Asset[] = [];
+		for (const file of converted) {
+			const [info, stat] = await Promise.all([probe(file), fs.stat(file)]);
+			if (!info.durationMs) throw new Error(`The recording ${path.basename(file)} is empty.`);
+			assets.push({
+				id: newId("a"),
+				kind: "video",
+				name: path.basename(file),
+				path: relativeToProject(this.projectDir, file),
+				relPath: path.relative(this.projectDir, file),
+				size: stat.size,
+				durationMs: info.durationMs,
+				width: info.width,
+				height: info.height,
+				hasAudio: info.hasAudio,
+				origin: "recording",
+				createdAt: new Date().toISOString(),
+				actor,
+			});
+		}
+		const [main, overlay] = assets;
+		const atMs = Math.max(0, Math.round(input.atMs));
+		const summary = overlay
+			? `Recorded the screen and camera (${(main.durationMs / 1000).toFixed(1)} s)`
+			: `Recorded ${path.basename(main.path).includes("camera") ? "the camera" : "the screen"} (${(main.durationMs / 1000).toFixed(1)} s)`;
+		const result = await this.transaction(actor, summary, () => {
+			const plan = planPlacement(this.current.tracks, this.current.clips, atMs, {
+				mainMs: main.durationMs,
+				overlayMs: overlay?.durationMs,
+			});
+			const trackFor = (choice: TrackChoice) =>
+				"trackId" in choice
+					? choice.trackId
+					: (this.apply({ type: "addTrack", kind: "video", index: choice.newTrackAt }, actor)
+							.created?.[0] as string);
+			const mainTrack = trackFor(plan.main);
+			const overlayTrack = plan.overlay ? trackFor(plan.overlay) : undefined;
+			const clipIds: string[] = [];
+			for (const [asset, trackId] of [
+				[main, mainTrack],
+				[overlay, overlayTrack],
+			] as const) {
+				if (!asset || !trackId) continue;
+				const created = this.apply(
+					{ type: "addAsset", asset, placeOn: { trackId, startMs: atMs } },
+					actor,
+				).created;
+				if (created?.[0]) clipIds.push(created[0]);
+			}
+			if (clipIds.length > 1) {
+				this.apply({ type: "groupClips", ids: clipIds }, actor);
+				if (input.bubble) {
+					const placed = clipIds.map((id) => {
+						const clip = this.current.clips.find((c) => c.id === id) as MediaClip;
+						return { clip, asset: this.current.assets.find((a) => a.id === clip.assetId) };
+					});
+					// The screen fills the frame; the camera (on the track above) is the bubble.
+					for (const { id, transform } of layoutTransforms("pip-br", placed, this.current.canvas))
+						this.apply({ type: "updateClip", id, patch: { transform } }, actor);
+				}
+			}
+			return { assets, clipIds };
+		});
+		this.autoBuildProxies();
+		return result;
 	}
 
 	/** Generates a spoken take for a line (OpenAI voices or the macOS synthesiser). */

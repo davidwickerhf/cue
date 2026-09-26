@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { TextClip } from "../../electron/core/types";
+import { capture } from "../lib/capture";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
@@ -25,6 +26,38 @@ export function useEditorCommands() {
 				case "stop":
 					await recorder.stop();
 					break;
+				case "recordScreen":
+					void capture.start(
+						{
+							sourceId: command.sourceId,
+							camera: command.camera,
+							microphone: command.microphone,
+							bubble: command.bubble,
+							maxSeconds: command.maxSeconds,
+						},
+						command.requestId,
+					);
+					break;
+				case "stopScreen":
+					await capture.stop();
+					break;
+				case "listDevices": {
+					try {
+						const devices = await navigator.mediaDevices.enumerateDevices();
+						// Labels are empty until the camera or microphone has been allowed once.
+						const list = (kind: MediaDeviceKind, fallback: string) =>
+							devices
+								.filter((d) => d.kind === kind && d.deviceId !== "default")
+								.map((d, i) => ({ id: d.deviceId, label: d.label || `${fallback} ${i + 1}` }));
+						window.cue.reply(command.requestId, null, {
+							cameras: list("videoinput", "Camera"),
+							microphones: list("audioinput", "Microphone"),
+						});
+					} catch (error) {
+						window.cue.reply(command.requestId, (error as Error).message);
+					}
+					break;
+				}
 				case "setInOut":
 					editor.set({
 						...(command.inMs !== undefined ? { inPoint: command.inMs } : {}),

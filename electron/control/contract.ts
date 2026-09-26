@@ -185,6 +185,35 @@ export const contract = {
 			note: z.string().max(4000).optional(),
 		},
 	},
+	list_capture_sources: {
+		description:
+			"What can be recorded: screens and windows (ids for record_screen), cameras and microphones, and whether macOS allows Cue to record the screen, camera and microphone (granted, denied, not-determined).",
+		input: {},
+	},
+	record_screen: {
+		description:
+			"Start recording a screen or window, optionally with the camera and microphone, in the editor window (a 3-2-1 countdown, then a recording bar the user can stop). Tell the user before calling. Returns once recording has started; call stop_screen_recording to finish, or it stops by itself after maxSeconds. The result is imported and placed at the playhead: the screen on a free video track, the camera on the track above (as a picture-in-picture bubble when bubble is true), linked together; the microphone is recorded into the screen's sound.",
+		input: {
+			sourceId: z
+				.string()
+				.optional()
+				.describe(
+					"A screen or window id from list_capture_sources; omit for the main screen; 'none' records the camera alone",
+				),
+			camera: z.boolean().default(false),
+			microphone: z.boolean().default(true),
+			bubble: z
+				.boolean()
+				.default(true)
+				.describe("Show the camera small in the bottom-right corner"),
+			maxSeconds: z.number().min(1).max(7200).optional(),
+		},
+	},
+	stop_screen_recording: {
+		description:
+			"Stop the screen or camera recording started with record_screen (or by the user), then import it and return the new media and clips.",
+		input: {},
+	},
 	add_track: {
 		description: "Add a video, audio or text track. index 0 is the top.",
 		input: {

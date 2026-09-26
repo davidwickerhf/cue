@@ -11,6 +11,7 @@ import {
 	MusicNotes,
 	PencilSimple,
 	Plus,
+	RecordIcon,
 	Sparkle,
 	SquaresFour,
 	Star,
@@ -33,6 +34,7 @@ import { playback } from "../../lib/playback";
 import { openSource } from "../../lib/source";
 import { createStore, editor, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
+import { recordDialog } from "../RecordDialog";
 import { locate } from "../RelinkMedia";
 import { Empty, IconButton, Section, Segmented } from "../ui/controls";
 
@@ -237,6 +239,14 @@ export function MediaPanel() {
 						<FolderPlus className="size-4" />
 					</IconButton>
 				</div>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-7 w-full gap-1.5 text-[12px]"
+					onPress={() => recordDialog.set({ open: true })}
+				>
+					<RecordIcon weight="fill" className="size-3.5 text-danger" /> Record screen or camera…
+				</Button>
 				<Button
 					variant="ghost"
 					size="sm"
