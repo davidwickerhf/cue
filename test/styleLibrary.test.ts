@@ -23,7 +23,16 @@ describe("style and asset library", () => {
 	it("keeps every style preview and recommended asset resolvable", async () => {
 		const ids = new Set(LIBRARY_ASSETS.map((asset) => asset.id));
 		const styles = BUILT_IN_RECIPES.filter((item) => item.format === "style");
-		expect(styles).toHaveLength(13);
+		expect(styles).toHaveLength(18);
+		expect(LIBRARY_ASSETS).toHaveLength(33);
+		for (const asset of LIBRARY_ASSETS) {
+			expect(
+				(await fs.stat(path.join("resources/assets/posters", `${asset.id}.jpg`))).size,
+			).toBeGreaterThan(0);
+			expect(
+				(await fs.stat(path.join("site/public/assets", `${asset.id}.jpg`))).size,
+			).toBeGreaterThan(0);
+		}
 		for (const style of styles) {
 			expect(style.preview).toBeDefined();
 			for (const file of [style.preview?.video, style.preview?.poster]) {
@@ -32,6 +41,10 @@ describe("style and asset library", () => {
 				).toBeGreaterThan(0);
 			}
 			for (const id of style.assetIds ?? []) expect(ids.has(id)).toBe(true);
+			for (const file of [style.preview?.video, style.preview?.poster])
+				expect((await fs.stat(path.join("site/public/styles", file ?? ""))).size).toBeGreaterThan(
+					0,
+				);
 		}
 	});
 

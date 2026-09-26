@@ -11,7 +11,7 @@ export function StyleGallery() {
 	const [query, setQuery] = useState("");
 	const visible = STYLES.filter((style) =>
 		(category === "All" || style.category === category) &&
-		`${style.name} ${style.description} ${style.category}`.toLowerCase().includes(query.toLowerCase()),
+		`${style.name} ${style.description} ${style.category} ${style.guide.goal} ${style.assetIds.join(" ")}`.toLowerCase().includes(query.toLowerCase()),
 	);
 	return <>
 		<div className="mt-12 flex flex-col gap-5 border-y border-line py-5 sm:flex-row sm:items-center sm:justify-between">
@@ -23,6 +23,7 @@ export function StyleGallery() {
 				<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a style" aria-label="Find a style" className="w-full bg-transparent text-[14px] text-white outline-none placeholder:text-muted sm:w-32" />
 			</label>
 		</div>
+		<p className="mt-5 text-[13px] text-muted">{visible.length} of {STYLES.length} styles</p>
 		{visible.length === 0 ? <p className="py-20 text-center text-muted">No styles match. Try another term or category.</p> :
 			<div className="grid gap-x-7 gap-y-14 pt-9 pb-24 md:grid-cols-2">
 				{visible.map((style) => <article key={style.id} id={style.id} className="scroll-mt-8 min-w-0">
@@ -38,7 +39,7 @@ export function StyleGallery() {
 							<GuideList title="Direction" items={style.guide.directions} />
 							<GuideList title="Review" items={style.guide.review} />
 						</div>
-						{style.assetIds.length > 0 && <p className="mt-5 text-[13px] text-muted">Try it with <a href="/assets" className="underline underline-offset-4 hover:text-white">library assets</a>: {style.assetIds.join(", ").replaceAll("-", " ")}.</p>}
+						{style.assetIds.length > 0 && <div className="mt-5 text-[13px] text-muted">Try it with <span className="text-neutral-200">{style.assetIds.length} library assets:</span> <span className="inline-flex flex-wrap gap-x-2 gap-y-1">{style.assetIds.map((id) => <a key={id} href={`/assets#${id}`} className="underline underline-offset-4 hover:text-white">{id.replaceAll("-", " ")}</a>)}</span></div>}
 						<p className="mt-3 text-[12px] text-muted">Visual research: {style.references.map((ref, index) => <span key={ref.url}>{index > 0 && " · "}<a href={ref.url} target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-white">{ref.label}</a></span>)}</p>
 					</details>
 				</article>)}

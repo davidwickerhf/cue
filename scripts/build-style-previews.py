@@ -366,6 +366,82 @@ def draw_original_assets() -> None:
         thumb.save(SITE_ASSETS / f"{name}.jpg", quality=84)
 
 
+def route_reveal(t: float) -> Image.Image:
+    im = Image.new("RGB", (W, H), "#d9d4c7")
+    draw = ImageDraw.Draw(im)
+    for x in range(0, W, 40):
+        draw.line((x, 0, x, H), fill="#bbb8aa", width=1)
+    for y in range(0, H, 40):
+        draw.line((0, y, W, y), fill="#bbb8aa", width=1)
+    points = [(85, 265), (180, 224), (290, 246), (392, 143)]
+    progress = ease((t - .4) / 2.0)
+    count = 1 + round(progress * (len(points) - 1))
+    if count > 1:
+        draw.line(points[:count], fill="#c6553d", width=8, joint="curve")
+    for x, y in points[:count]:
+        draw.ellipse((x - 8, y - 8, x + 8, y + 8), fill="#c6553d")
+    text(im, (28, 25), "01 / THE ROUTE", 25, "#243432", bold=True)
+    text(im, (48, 283), "DEPARTURE", 14, "#243432", bold=True)
+    if t > 2.0:
+        paste_panel(im, "winding-road", t, (374, 183, 238, 135), border=5)
+        text(im, (400, 157), "ARRIVAL", 14, "#243432", bold=True)
+    return im
+
+
+def evidence_pullquote(t: float) -> Image.Image:
+    im = shade(frame("newspaper-pages", t + .2), .5)
+    rect(im, (28, 26, 326, 51), "#e7d9bd")
+    text(im, (38, 31), "SOURCE / PUBLIC RECORD", 12, "#263430", bold=True)
+    if t > .7:
+        rect(im, (35, 108, 604, 275), "#eee7d6")
+        text(im, (58, 127), "“THE EVIDENCE", 41, "#263430", bold=True)
+        text(im, (58, 177), "TELLS A STORY.”", 41, "#263430", bold=True)
+        rect(im, (58, 240, 290, 244), "#c7583d")
+    text(im, (37, 316), "VERIFY WORDING  /  NAME THE SOURCE", 13, "#fff7e9", bold=True)
+    return im
+
+
+def journey_cuts(t: float) -> Image.Image:
+    source = "crosswalk-crowd" if t < 1.3 else "subway-arrival" if t < 2.6 else "winding-road"
+    local = t if t < 1.3 else t - 1.3 if t < 2.6 else t - 2.6
+    im = shade(frame(source, local + .4), .25)
+    labels = ("LEAVE", "IN MOTION", "ARRIVE")
+    stage = 0 if t < 1.3 else 1 if t < 2.6 else 2
+    rect(im, (25, 25, 31, 71), "#f0724a")
+    text(im, (44, 27), f"0{stage + 1} / {labels[stage]}", 22, "#fff7e9", bold=True)
+    for i in range(3):
+        rect(im, (25 + i * 60, 325, 73 + i * 60, 329), "#f0724a" if i <= stage else "#aaa39a")
+    return im
+
+
+def data_contrast(t: float) -> Image.Image:
+    im = shade(frame("city-aerial", t + .5), .72)
+    text(im, (31, 28), "ONE QUESTION / TWO MEASURES", 16, "#eee9dc", bold=True)
+    first = ease((t - .35) / .6)
+    second = ease((t - 1.35) / .6)
+    rect(im, (53, 222 - int(first * 104), 272, 260), "#e7d5af")
+    rect(im, (368, 222 - int(second * 157), 587, 260), "#e66d4c")
+    if first > .95:
+        text(im, (67, 130), "40%", 42, "#263632", bold=True)
+    if second > .95:
+        text(im, (382, 77), "60%", 42, "#263632", bold=True)
+    text(im, (61, 275), "BEFORE", 18, "#eee9dc", bold=True)
+    text(im, (378, 275), "AFTER", 18, "#eee9dc", bold=True)
+    text(im, (31, 328), "DEMO VALUES  /  REPLACE WITH SOURCED DATA", 12, "#eee9dc", bold=True)
+    return im
+
+
+def process_closeups(t: float) -> Image.Image:
+    sources = ("hands", "microscope-scientist", "market-fruit")
+    stage = min(2, int(t / 1.3))
+    im = frame(sources[stage], (t % 1.3) + .3)
+    rect(im, (0, 274, W, H), "#263632")
+    label = ("PREPARE", "EXAMINE", "RESULT")[stage]
+    text(im, (27, 288), f"0{stage + 1}   {label}", 34, "#fff5e7", bold=True)
+    rect(im, (28, 338, 28 + int(584 * min(1, t / 4)), 342), "#ef7152")
+    return im
+
+
 STYLES = {
     "kinetic-quote": kinetic,
     "beat-grid": beat,
@@ -380,6 +456,11 @@ STYLES = {
     "video-mask-title": mask_title,
     "contact-grid": grid,
     "explainer-dossier": dossier,
+    "route-reveal": route_reveal,
+    "evidence-pullquote": evidence_pullquote,
+    "journey-cuts": journey_cuts,
+    "data-contrast": data_contrast,
+    "process-closeups": process_closeups,
 }
 
 
@@ -396,7 +477,7 @@ def render(name: str, painter) -> None:
     try:
         for i in range(DURATION * FPS):
             image = painter(i / FPS).convert("RGB")
-            if i == 44:
+            if i == (72 if name == "route-reveal" else 60 if name == "data-contrast" else 44):
                 poster = image.copy()
             pipe.stdin.write(image.tobytes())
     finally:

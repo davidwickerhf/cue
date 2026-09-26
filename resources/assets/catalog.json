@@ -132,5 +132,430 @@
       "evidence",
       "explainer"
     ]
+  },
+  {
+    "id": "newspaper-pages",
+    "name": "Newspaper pages",
+    "category": "Evidence",
+    "description": "A point-of-view browse through printed news for an archival or research beat.",
+    "sourcePage": "https://mixkit.co/free-stock-video/pov-flipping-through-a-newspaper-41192/",
+    "downloadUrl": "https://assets.mixkit.co/videos/41192/41192-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "newspaper-pages.mp4",
+    "tags": [
+      "newspaper",
+      "print",
+      "research",
+      "archive"
+    ]
+  },
+  {
+    "id": "forest-glide",
+    "name": "Forest glide",
+    "category": "Nature",
+    "description": "A slow forward move through a green forest, useful for an opening or a quiet reset.",
+    "sourcePage": "https://mixkit.co/free-stock-video/the-camera-slowly-slides-into-the-tranquil-forest-on-a-50847/",
+    "downloadUrl": "https://assets.mixkit.co/videos/50847/50847-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "forest-glide.mp4",
+    "tags": [
+      "forest",
+      "trees",
+      "forward motion",
+      "calm"
+    ]
+  },
+  {
+    "id": "shore-waves",
+    "name": "Shore waves",
+    "category": "Nature",
+    "description": "A clean shore wash with repeating movement for a visual pause or chapter bridge.",
+    "sourcePage": "https://mixkit.co/free-stock-video/waves-coming-to-the-beach-5016/",
+    "downloadUrl": "https://assets.mixkit.co/videos/5016/5016-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "shore-waves.mp4",
+    "tags": [
+      "sea",
+      "waves",
+      "shore",
+      "texture"
+    ]
+  },
+  {
+    "id": "subway-arrival",
+    "name": "Subway arrival",
+    "category": "Transit",
+    "description": "A train enters a station; a clear arrival beat for a journey or city story.",
+    "sourcePage": "https://mixkit.co/free-stock-video/train-arriving-to-a-subway-station-1622/",
+    "downloadUrl": "https://assets.mixkit.co/videos/1622/1622-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "subway-arrival.mp4",
+    "tags": [
+      "train",
+      "station",
+      "arrival",
+      "urban"
+    ]
+  },
+  {
+    "id": "crosswalk-crowd",
+    "name": "Crosswalk crowd",
+    "category": "People",
+    "description": "Pedestrians crossing together for a city scale or population sequence.",
+    "sourcePage": "https://mixkit.co/free-stock-video/crowds-of-people-cross-a-street-junction-4401/",
+    "downloadUrl": "https://assets.mixkit.co/videos/4401/4401-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "crosswalk-crowd.mp4",
+    "tags": [
+      "crowd",
+      "pedestrian",
+      "street",
+      "movement"
+    ]
+  },
+  {
+    "id": "microscope-scientist",
+    "name": "At the microscope",
+    "category": "Science",
+    "description": "A researcher looking through a microscope for a lab or discovery sequence.",
+    "sourcePage": "https://mixkit.co/free-stock-video/female-scientist-observing-through-a-microscope-4773/",
+    "downloadUrl": "https://assets.mixkit.co/videos/4773/4773-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "microscope-scientist.mp4",
+    "tags": [
+      "science",
+      "research",
+      "microscope",
+      "lab"
+    ]
+  },
+  {
+    "id": "business-graphs",
+    "name": "Presenting graphs",
+    "category": "Work",
+    "description": "A presenter explains charts, providing human context for a data story.",
+    "sourcePage": "https://mixkit.co/free-stock-video/business-man-exposing-graphs-42648/",
+    "downloadUrl": "https://assets.mixkit.co/videos/42648/42648-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "business-graphs.mp4",
+    "tags": [
+      "presentation",
+      "charts",
+      "business",
+      "data"
+    ]
+  },
+  {
+    "id": "winding-road",
+    "name": "Winding road",
+    "category": "Transit",
+    "description": "An aerial bend through a tree-covered hill for a route or geographic move.",
+    "sourcePage": "https://mixkit.co/free-stock-video/curvy-road-on-a-tree-covered-hill-41537/",
+    "downloadUrl": "https://assets.mixkit.co/videos/41537/41537-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "winding-road.mp4",
+    "tags": [
+      "aerial",
+      "road",
+      "route",
+      "landscape"
+    ]
+  },
+  {
+    "id": "tokyo-walk",
+    "name": "Tokyo crossing",
+    "category": "City",
+    "description": "A busy Tokyo pedestrian scene with layered signs and movement.",
+    "sourcePage": "https://mixkit.co/free-stock-video/pedestrian-walk-in-tokyo-4231/",
+    "downloadUrl": "https://assets.mixkit.co/videos/4231/4231-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "tokyo-walk.mp4",
+    "tags": [
+      "tokyo",
+      "street",
+      "pedestrian",
+      "neon"
+    ]
+  },
+  {
+    "id": "market-fruit",
+    "name": "Choosing fruit",
+    "category": "People",
+    "description": "An everyday market interaction that gives a story a human scale.",
+    "sourcePage": "https://mixkit.co/free-stock-video/a-woman-choosing-fruit-at-a-market-993/",
+    "downloadUrl": "https://assets.mixkit.co/videos/993/993-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "market-fruit.mp4",
+    "tags": [
+      "market",
+      "food",
+      "commerce",
+      "human"
+    ]
+  },
+  {
+    "id": "city-aerial",
+    "name": "City aerial",
+    "category": "City",
+    "description": "An aerial view of dense buildings and traffic for urban geography and scale.",
+    "sourcePage": "https://mixkit.co/free-stock-video/aerial-view-of-the-glass-corporate-buildings-of-a-big-49845/",
+    "downloadUrl": "https://assets.mixkit.co/videos/49845/49845-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "city-aerial.mp4",
+    "tags": [
+      "aerial",
+      "skyline",
+      "traffic",
+      "urban"
+    ]
+  },
+  {
+    "id": "forest-path",
+    "name": "Forest path",
+    "category": "Nature",
+    "description": "A walk along a wooded path with strong forward perspective.",
+    "sourcePage": "https://mixkit.co/free-stock-video/walking-a-path-that-crosses-a-dense-forest-41574/",
+    "downloadUrl": "https://assets.mixkit.co/videos/41574/41574-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "forest-path.mp4",
+    "tags": [
+      "forest",
+      "path",
+      "journey",
+      "walking"
+    ]
+  },
+  {
+    "id": "beach-sunset",
+    "name": "Beach sunset",
+    "category": "Nature",
+    "description": "A warm orange horizon for a closing beat or clear passage of time.",
+    "sourcePage": "https://mixkit.co/free-stock-video/bright-orange-sunset-on-beach-2168/",
+    "downloadUrl": "https://assets.mixkit.co/videos/2168/2168-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "beach-sunset.mp4",
+    "tags": [
+      "sunset",
+      "beach",
+      "horizon",
+      "warm"
+    ]
+  },
+  {
+    "id": "sowing-seed",
+    "name": "Sowing a seed",
+    "category": "People",
+    "description": "A hand plants a seed, a small action for an agriculture or growth story.",
+    "sourcePage": "https://mixkit.co/free-stock-video/a-person-sowing-a-seed-2851/",
+    "downloadUrl": "https://assets.mixkit.co/videos/2851/2851-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "sowing-seed.mp4",
+    "tags": [
+      "agriculture",
+      "soil",
+      "growth",
+      "hands"
+    ]
+  },
+  {
+    "id": "library-shelves",
+    "name": "Library shelves",
+    "category": "Evidence",
+    "description": "A hand passes along book spines, grounding a research sequence in physical sources.",
+    "sourcePage": "https://mixkit.co/free-stock-video/a-hand-runs-through-the-book-spines-in-the-library-50726/",
+    "downloadUrl": "https://assets.mixkit.co/videos/50726/50726-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "library-shelves.mp4",
+    "tags": [
+      "books",
+      "library",
+      "research",
+      "archive"
+    ]
+  },
+  {
+    "id": "stacked-books",
+    "name": "Stacked books",
+    "category": "Evidence",
+    "description": "A layered stack of books for a source, education, or history passage.",
+    "sourcePage": "https://mixkit.co/free-stock-video/a-stack-of-different-types-of-books-50733/",
+    "downloadUrl": "https://assets.mixkit.co/videos/50733/50733-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "stacked-books.mp4",
+    "tags": [
+      "books",
+      "reading",
+      "education",
+      "archive"
+    ]
+  },
+  {
+    "id": "city-buildings",
+    "name": "City buildings",
+    "category": "City",
+    "description": "A broad urban view for an establishing shot or geographic context.",
+    "sourcePage": "https://mixkit.co/free-stock-video/city-full-of-buildings-4339/",
+    "downloadUrl": "https://assets.mixkit.co/videos/4339/4339-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "city-buildings.mp4",
+    "tags": [
+      "city",
+      "buildings",
+      "architecture",
+      "wide"
+    ]
+  },
+  {
+    "id": "corporate-buildings",
+    "name": "Corporate buildings",
+    "category": "City",
+    "description": "Clean glass facades for business or policy context.",
+    "sourcePage": "https://mixkit.co/free-stock-video/corporate-and-business-buildings-in-the-city-4170/",
+    "downloadUrl": "https://assets.mixkit.co/videos/4170/4170-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "corporate-buildings.mp4",
+    "tags": [
+      "architecture",
+      "business",
+      "building",
+      "urban"
+    ]
+  },
+  {
+    "id": "sea-flyover",
+    "name": "Sea flyover",
+    "category": "Nature",
+    "description": "A low aerial pass above open water and shoreline for travel or climate context.",
+    "sourcePage": "https://mixkit.co/free-stock-video/flying-low-over-the-sea-of-a-beach-44392/",
+    "downloadUrl": "https://assets.mixkit.co/videos/44392/44392-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "sea-flyover.mp4",
+    "tags": [
+      "ocean",
+      "aerial",
+      "coast",
+      "travel"
+    ]
+  },
+  {
+    "id": "fruit-bowl",
+    "name": "Fruit bowl",
+    "category": "People",
+    "description": "Hands assemble yogurt and fruit for a tactile food process sequence.",
+    "sourcePage": "https://mixkit.co/free-stock-video/preparing-a-bowl-with-yogurt-and-fruit-43925/",
+    "downloadUrl": "https://assets.mixkit.co/videos/43925/43925-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "fruit-bowl.mp4",
+    "tags": [
+      "food",
+      "preparation",
+      "hands",
+      "close-up"
+    ]
+  },
+  {
+    "id": "parmesan-detail",
+    "name": "Parmesan detail",
+    "category": "People",
+    "description": "A close food detail for a process cut or sensory montage.",
+    "sourcePage": "https://mixkit.co/free-stock-video/serving-parmesan-cheese-in-spaghetti-bolognese-close-up-engraving-12171/",
+    "downloadUrl": "https://assets.mixkit.co/videos/12171/12171-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "parmesan-detail.mp4",
+    "tags": [
+      "food",
+      "cooking",
+      "texture",
+      "close-up"
+    ]
+  },
+  {
+    "id": "phone-typing",
+    "name": "Phone typing",
+    "category": "Work",
+    "description": "Hands typing on a phone for a communication or digital-life beat.",
+    "sourcePage": "https://mixkit.co/free-stock-video/hands-of-a-person-typing-on-a-cell-phone-4915/",
+    "downloadUrl": "https://assets.mixkit.co/videos/4915/4915-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "phone-typing.mp4",
+    "tags": [
+      "phone",
+      "typing",
+      "communication",
+      "hands"
+    ]
+  },
+  {
+    "id": "programmer-phone",
+    "name": "Programmer at desk",
+    "category": "Work",
+    "description": "A worker checks a phone at a desk, giving a technology story a human scale.",
+    "sourcePage": "https://mixkit.co/free-stock-video/programmer-using-his-cell-phone-while-working-at-his-desk-41638/",
+    "downloadUrl": "https://assets.mixkit.co/videos/41638/41638-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "programmer-phone.mp4",
+    "tags": [
+      "programmer",
+      "phone",
+      "technology",
+      "desk"
+    ]
+  },
+  {
+    "id": "woman-texting",
+    "name": "Texting",
+    "category": "People",
+    "description": "A person composing a message on a phone, useful for a communication story.",
+    "sourcePage": "https://mixkit.co/free-stock-video/woman-typing-on-her-cell-phone-43270/",
+    "downloadUrl": "https://assets.mixkit.co/videos/43270/43270-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "woman-texting.mp4",
+    "tags": [
+      "phone",
+      "message",
+      "portrait",
+      "communication"
+    ]
+  },
+  {
+    "id": "globe-in-dark",
+    "name": "Illuminated globe",
+    "category": "Graphics",
+    "description": "A hand turns a lit globe against darkness for a broad geography or world-story beat.",
+    "sourcePage": "https://mixkit.co/free-stock-video/hand-turning-a-luminous-earth-globe-in-the-dark-21607/",
+    "downloadUrl": "https://assets.mixkit.co/videos/21607/21607-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "globe-in-dark.mp4",
+    "tags": [
+      "globe",
+      "geography",
+      "earth",
+      "dark"
+    ]
   }
 ]

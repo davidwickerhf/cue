@@ -3,6 +3,7 @@ import { ArrowRight, Play, Trash } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import type { Recipe } from "../../../electron/core/recipes";
 import { notify, run } from "../../lib/api";
+import { librarySelection } from "../../lib/assetLibrary";
 import { agentDraft } from "../../lib/chat";
 import { editor } from "../../lib/state";
 import { styleSelection } from "../../lib/styleLibrary";
@@ -72,13 +73,16 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 	const visible = styles.filter(
 		(r) =>
 			(category === "All" || r.category === category) &&
-			`${r.name} ${r.description} ${r.category ?? ""}`.toLowerCase().includes(query.toLowerCase()),
+			`${r.name} ${r.description} ${r.category ?? ""} ${r.guide?.goal ?? ""} ${(r.assetIds ?? []).join(" ")}`
+				.toLowerCase()
+				.includes(query.toLowerCase()),
 	);
 	return (
 		<>
 			<Section title="Style library">
 				<p className="text-[12px] leading-relaxed text-muted">
-					Editing ideas your agent can adapt to your footage. Open one to see the structure.
+					{styles.length} footage-backed editing ideas your agent can adapt to your project. Open a
+					study to see its plan.
 				</p>
 				<input
 					type="search"
@@ -105,6 +109,7 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 				{visible.length === 0 && (
 					<p className="text-[12px] text-muted">No styles match that search.</p>
 				)}
+				<p className="text-[11px] text-muted">{visible.length} shown</p>
 				<ul className="flex flex-col gap-2">
 					{visible.map((r) => (
 						<li
@@ -113,13 +118,23 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 							className="overflow-hidden rounded-lg border border-border bg-default/35"
 						>
 							<details className="group">
-								<summary className="flex cursor-pointer items-center gap-3 p-2.5 focus-visible:outline-2 focus-visible:outline-accent">
+								<summary className="flex cursor-pointer flex-col gap-2.5 p-2.5 focus-visible:outline-2 focus-visible:outline-accent">
 									<StyleThumb recipe={r} />
-									<span className="min-w-0 flex-1">
-										<span className="block text-[12px] font-semibold">{r.name}</span>
-										<span className="block text-[11px] text-muted">{r.category}</span>
+									<span className="flex w-full min-w-0 items-center gap-2">
+										<span className="min-w-0 flex-1">
+											<span className="block text-[13px] font-semibold">{r.name}</span>
+											<span className="block text-[11px] text-muted">
+												{r.category} ·{" "}
+												{r.preview
+													? `${Math.round(r.preview.durationMs / 1000)} sec study`
+													: "Style guide"}
+											</span>
+										</span>
+										<ArrowRight className="size-3 shrink-0 text-muted transition-transform group-open:rotate-90" />
 									</span>
-									<ArrowRight className="size-3 shrink-0 text-muted transition-transform group-open:rotate-90" />
+									<span className="line-clamp-2 text-[11px] leading-relaxed text-muted">
+										{r.description}
+									</span>
 								</summary>
 								<div className="border-t border-border px-3 pb-3 text-[11px] leading-relaxed">
 									{r.preview && (
@@ -144,16 +159,24 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 											<GuideList title="Direction" items={r.guide.directions} />
 											<GuideList title="Check" items={r.guide.review} />
 											{r.assetIds && r.assetIds.length > 0 && (
-												<p className="mt-2 text-muted">
-													Recommended assets: {r.assetIds.join(", ").replaceAll("-", " ")}{" "}
-													<button
-														type="button"
-														className="text-accent underline underline-offset-2"
-														onClick={() => editor.set({ panel: "library" })}
-													>
-														Browse assets
-													</button>
-												</p>
+												<div className="mt-3">
+													<p className="font-semibold">Footage to try</p>
+													<div className="mt-1 flex flex-wrap gap-1">
+														{r.assetIds.map((id) => (
+															<button
+																key={id}
+																type="button"
+																onClick={() => {
+																	librarySelection.set({ id });
+																	editor.set({ panel: "library" });
+																}}
+																className="rounded-full border border-border px-2 py-1 text-accent hover:border-accent"
+															>
+																{id.replaceAll("-", " ")}
+															</button>
+														))}
+													</div>
+												</div>
 											)}
 										</>
 									)}
@@ -259,7 +282,7 @@ function StyleThumb({ recipe }: { recipe: Recipe }) {
 	return (
 		<span
 			aria-hidden="true"
-			className="relative flex h-12 w-20 shrink-0 overflow-hidden rounded-md bg-default"
+			className="relative block aspect-video w-full overflow-hidden rounded-md bg-default"
 		>
 			{poster && <img src={poster} alt="" className="size-full object-cover" />}
 		</span>

@@ -557,7 +557,9 @@
       "cartographic-grid",
       "document-paper",
       "mountain-aerial",
-      "city-night-drive"
+      "city-night-drive",
+      "library-shelves",
+      "business-graphs"
     ],
     "references": [
       {
@@ -574,5 +576,231 @@
       "poster": "explainer-dossier.jpg",
       "durationMs": 4000
     }
+  },
+  {
+    "id": "style-route-reveal",
+    "name": "Route reveal",
+    "category": "Editorial",
+    "description": "A journey is explained through a moving route, then grounded in the place it crosses.",
+    "guide": {
+      "goal": "Turn geography into a clear sequence of decisions and consequences.",
+      "requires": [
+        "A verified route or location",
+        "At least two shots from the journey or destination"
+      ],
+      "structure": [
+        "Begin with a wide location view and one named place.",
+        "Trace only the route segment relevant to the story.",
+        "Cut from the map to footage at a recognizable point on the route.",
+        "Return to the map for the next leg or outcome."
+      ],
+      "directions": [
+        "Replace every illustrative map label with sourced locations.",
+        "Use add_overlay lines or arrows and text labels; animate the route in short, readable stages.",
+        "Match the direction of travel from map to footage."
+      ],
+      "review": [
+        "Every place name and route is accurate.",
+        "The move from map to footage is spatially understandable."
+      ]
+    },
+    "preview": {
+      "video": "route-reveal.mp4",
+      "poster": "route-reveal.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "cartographic-grid",
+      "winding-road",
+      "subway-arrival"
+    ],
+    "references": [
+      {
+        "label": "Motion Array map transitions",
+        "url": "https://motionarray.com/browse/search/map%20transitions/"
+      }
+    ]
+  },
+  {
+    "id": "style-evidence-pullquote",
+    "name": "Evidence pull quote",
+    "category": "Editorial",
+    "description": "A source document becomes a clean quotation, with the speaker or publication clearly credited.",
+    "guide": {
+      "goal": "Show a primary source without losing the chain between quote and claim.",
+      "requires": [
+        "A verified short quotation",
+        "The source document or relevant research footage"
+      ],
+      "structure": [
+        "Establish the document in a full frame or close detail.",
+        "Highlight the exact passage being quoted.",
+        "Lift only the necessary words into a readable title.",
+        "Return to the document or the next piece of evidence."
+      ],
+      "directions": [
+        "Use a brief zoom and text overlay; preserve the original wording and punctuation.",
+        "Keep the source name and date visible long enough to read.",
+        "Do not present library newspaper footage as the actual cited document."
+      ],
+      "review": [
+        "Compare the on-screen quote with its source.",
+        "Check attribution and publication date."
+      ]
+    },
+    "preview": {
+      "video": "evidence-pullquote.mp4",
+      "poster": "evidence-pullquote.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "newspaper-pages",
+      "document-paper",
+      "library-shelves",
+      "stacked-books"
+    ],
+    "references": [
+      {
+        "label": "Mixkit news templates",
+        "url": "https://mixkit.co/free-after-effects-templates/news/"
+      }
+    ]
+  },
+  {
+    "id": "style-journey-cuts",
+    "name": "Journey cuts",
+    "category": "Montage",
+    "description": "A trip moves from departure to transit to arrival through matched direction and sound.",
+    "guide": {
+      "goal": "Compress a real movement through space while preserving orientation.",
+      "requires": [
+        "Departure, transit, and arrival footage",
+        "A clear destination or outcome"
+      ],
+      "structure": [
+        "Open on the place being left.",
+        "Cut on movement into a vehicle, road, or crowd.",
+        "Use one geographic wide shot as a reset.",
+        "Land on an arrival action and let it play."
+      ],
+      "directions": [
+        "Match movement direction between adjacent shots.",
+        "Carry one piece of ambience across a cut before changing sound.",
+        "Use speed changes sparingly and keep labels tied to real locations."
+      ],
+      "review": [
+        "A viewer can identify departure and arrival.",
+        "The sequence works without music."
+      ]
+    },
+    "preview": {
+      "video": "journey-cuts.mp4",
+      "poster": "journey-cuts.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "subway-arrival",
+      "crosswalk-crowd",
+      "winding-road",
+      "tokyo-walk",
+      "city-buildings"
+    ],
+    "references": [
+      {
+        "label": "Motion Array travel transitions",
+        "url": "https://motionarray.com/browse/search/travel%20transitions/"
+      }
+    ]
+  },
+  {
+    "id": "style-data-contrast",
+    "name": "Data contrast",
+    "category": "Layouts",
+    "description": "A visual comparison gives each number a unit, a source, and a real-world image.",
+    "guide": {
+      "goal": "Make a measured comparison understandable without decorative chart motion.",
+      "requires": [
+        "Two comparable values from cited sources",
+        "Footage or images related to each side"
+      ],
+      "structure": [
+        "Introduce the question and the shared unit.",
+        "Reveal the first value with a relevant shot.",
+        "Bring in the second value using the same visual scale.",
+        "Hold the comparison, then return to the real-world implication."
+      ],
+      "directions": [
+        "Use simple text and shape overlays with a common baseline.",
+        "Animate values only if the motion clarifies the change.",
+        "State dates and units directly on screen."
+      ],
+      "review": [
+        "Both values use the same scale and period.",
+        "A source is visible for each claim."
+      ]
+    },
+    "preview": {
+      "video": "data-contrast.mp4",
+      "poster": "data-contrast.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "business-graphs",
+      "city-aerial",
+      "hands-at-work",
+      "corporate-buildings"
+    ],
+    "references": [
+      {
+        "label": "Remotion charts",
+        "url": "https://www.remotion.dev/templates"
+      }
+    ]
+  },
+  {
+    "id": "style-process-closeups",
+    "name": "Process close-ups",
+    "category": "Montage",
+    "description": "Small physical actions build a process sequence from preparation to result.",
+    "guide": {
+      "goal": "Show how something is made or investigated through meaningful details.",
+      "requires": [
+        "At least three distinct action shots",
+        "A visible result or completed action"
+      ],
+      "structure": [
+        "Start with an establishing view of the workspace.",
+        "Cut to a hand or tool beginning the task.",
+        "Alternate tight details with one wider orientation shot.",
+        "End on the result, not another preparation shot."
+      ],
+      "directions": [
+        "Cut on actions, not arbitrary beat intervals.",
+        "Keep left-to-right direction consistent when possible.",
+        "Use natural sound to connect detail shots."
+      ],
+      "review": [
+        "The steps are in a truthful order.",
+        "Every insert reveals new information."
+      ]
+    },
+    "preview": {
+      "video": "process-closeups.mp4",
+      "poster": "process-closeups.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "hands-at-work",
+      "microscope-scientist",
+      "market-fruit",
+      "sowing-seed",
+      "fruit-bowl"
+    ],
+    "references": [
+      {
+        "label": "Mixkit slideshow templates",
+        "url": "https://mixkit.co/free-after-effects-templates/slideshow/"
+      }
+    ]
   }
 ]
