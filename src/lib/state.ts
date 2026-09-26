@@ -57,8 +57,13 @@ export function startSync() {
 	void window.cue
 		.getState()
 		.then((state) => app.set((current) => ({ state: merge(current.state, state) })));
-	return window.cue.onState((state) =>
-		app.set((current) => ({ state: merge(current.state, state) })),
+	return window.cue.onState((state, projectUnchanged) =>
+		app.set((current) => ({
+			state: merge(
+				current.state,
+				projectUnchanged ? { ...state, project: current.state?.project ?? null } : state,
+			),
+		})),
 	);
 }
 

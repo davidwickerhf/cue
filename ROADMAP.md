@@ -36,17 +36,17 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 
 ## 3. Performance
 
-- [ ] Timeline draws only visible clips (zoom at 500 clips is about 30 fps).
-- [ ] Send project changes instead of the whole project on every edit (170 KB at 500 clips).
-- [ ] Tune HEVC quality so it is smaller than H.264.
-- [ ] Trim the 460 KB stylesheet.
+- [x] Timeline draws only visible clips (zoom at 500 clips is about 30 fps).
+- [x] Send project changes instead of the whole project on every edit (170 KB at 500 clips).
+- [x] Tune HEVC quality so it is smaller than H.264.
+- [x] Trim the 460 KB stylesheet.
 
 ## 4. Standard editor features
 
 - [ ] Rubber-band selection
 - [ ] Resizable track heights
 - [ ] Keyframe lanes and a curve editor
-- [ ] Waveforms on video clips
+- [x] Waveforms on video clips
 - [ ] Effects library: blur, sharpen, vignette, glow, stabilisation
 - [ ] More transitions: wipes, slides, zoom, blur
 - [ ] Shapes and overlays: arrows, callouts, blur and redact boxes

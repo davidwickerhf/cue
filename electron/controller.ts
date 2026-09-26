@@ -124,9 +124,10 @@ export class Controller extends EventEmitter {
 		void this.refreshAi();
 	}
 
-	state(): AppState {
+	/** The editor's state; without the project (which is large) when the window already has it. */
+	state(withProject = true): AppState {
 		return {
-			project: this.store.snapshot(),
+			project: withProject ? this.store.snapshot() : null,
 			selectedLineId: this.selectedLineId,
 			selectedClipIds: this.selectedClipIds,
 			recorder: this.recorder,

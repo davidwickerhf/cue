@@ -43,6 +43,7 @@ import {
 	useState,
 } from "react";
 import type {
+	Asset,
 	Clip,
 	LineView,
 	MediaClip,
@@ -122,6 +123,7 @@ export function Timeline() {
 	}, [revision, committed]);
 	const [menu, setMenu] = useState<{ x: number; y: number; clip: Clip; atMs: number } | null>(null);
 	const [viewWidth, setViewWidth] = useState(1000);
+	const scrollBucket = useScrollBucket(scroller);
 
 	useEffect(() => {
 		const el = scroller.current;
@@ -213,6 +215,11 @@ export function Timeline() {
 	const tracks = project.data.tracks;
 	const clipsByTrack = new Map<string, Clip[]>(tracks.map((t) => [t.id, []]));
 	for (const c of project.data.clips) clipsByTrack.get(c.trackId)?.push(c);
+	const assetsById = new Map(project.data.assets.map((a) => [a.id, a]));
+	// Only clips within a screen of the view are drawn (and only their visible part of
+	// filmstrips and waveforms), so long timelines stay smooth to zoom and scroll.
+	const windowStart = scrollBucket - viewWidth;
+	const windowEnd = scrollBucket + SCROLL_BUCKET + 2 * viewWidth;
 
 	// ---------------------------------------------------------------------
 	// Pointer handling
@@ -591,6 +598,7 @@ export function Timeline() {
 						<Ruler
 							width={contentWidth}
 							pxPerMs={pxPerMs}
+							window={[windowStart, windowEnd]}
 							markers={project.data.markers}
 							onDown={(e) => {
 								playback.seek(Math.round(timeAt(e.clientX)));
@@ -662,13 +670,20 @@ export function Timeline() {
 							>
 								{(clipsByTrack.get(track.id) ?? []).map((clip) => {
 									const view = preview(clip);
+									const left = toX(view.left);
+									const width = Math.max(2, toX(view.width));
+									const moving = !!liveDrag && "ids" in liveDrag && liveDrag.ids.includes(clip.id);
+									if (!moving && (left + width < windowStart || left > windowEnd)) return null;
 									return (
 										<ClipView
 											key={clip.id}
 											clip={clip}
 											project={project}
-											left={toX(view.left)}
-											width={Math.max(2, toX(view.width))}
+											asset={clip.type === "media" ? assetsById.get(clip.assetId) : undefined}
+											track={track}
+											left={left}
+											width={width}
+											visible={[Math.max(0, windowStart - left), Math.min(width, windowEnd - left)]}
 											inMs={view.inMs}
 											height={TRACK_H[track.kind]}
 											pxPerMs={pxPerMs}
@@ -1198,11 +1213,14 @@ function AddTrackRow() {
 function Ruler({
 	width,
 	pxPerMs,
+	window: [from, to],
 	markers,
 	onDown,
 }: {
 	width: number;
 	pxPerMs: number;
+	/** Only ticks in this range (px) are drawn. */
+	window: [number, number];
 	markers: ProjectSnapshot["data"]["markers"];
 	onDown: (e: ReactPointerEvent) => void;
 }) {
@@ -1210,7 +1228,8 @@ function Ruler({
 	const outPoint = editor.use((s) => s.outPoint);
 	const steps = [100, 250, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000];
 	const step = steps.find((s) => s * pxPerMs >= 72) ?? 120000;
-	const count = Math.ceil(width / (step * pxPerMs));
+	const first = Math.max(0, Math.floor(from / (step * pxPerMs)));
+	const last = Math.min(Math.ceil(width / (step * pxPerMs)), Math.ceil(to / (step * pxPerMs)));
 	return (
 		<div
 			data-ruler
@@ -1222,8 +1241,8 @@ function Ruler({
 			className="relative flex-1 cursor-text border-b border-separator bg-surface"
 			style={{ width }}
 		>
-			{Array.from({ length: count + 1 }, (_, i) => {
-				const ms = i * step;
+			{Array.from({ length: Math.max(0, last - first + 1) }, (_, n) => {
+				const ms = (first + n) * step;
 				return (
 					<div key={ms} className="absolute top-0 bottom-0" style={{ left: ms * pxPerMs }}>
 						<div className="h-full w-px bg-foreground/10" />
@@ -1273,6 +1292,24 @@ function Ruler({
 			))}
 		</div>
 	);
+}
+
+/** Clips are culled against the scroll position rounded to this many pixels. */
+const SCROLL_BUCKET = 512;
+
+/** The scroll position in steps of SCROLL_BUCKET, so scrolling re-renders rarely. */
+function useScrollBucket(scroller: React.RefObject<HTMLDivElement | null>) {
+	const [bucket, setBucket] = useState(0);
+	useEffect(() => {
+		const el = scroller.current;
+		if (!el) return;
+		const update = () =>
+			setBucket(Math.floor(el.scrollLeft / SCROLL_BUCKET) * SCROLL_BUCKET);
+		update();
+		el.addEventListener("scroll", update, { passive: true });
+		return () => el.removeEventListener("scroll", update);
+	}, [scroller]);
+	return bucket;
 }
 
 /** The timeline's horizontal scroll position, updated as it scrolls. */
@@ -1362,8 +1399,11 @@ const CLIP_TONE: Record<string, string> = {
 function ClipView({
 	clip,
 	project,
+	asset,
+	track,
 	left,
 	width,
+	visible,
 	inMs,
 	height,
 	pxPerMs,
@@ -1378,8 +1418,12 @@ function ClipView({
 }: {
 	clip: Clip;
 	project: ProjectSnapshot;
+	asset: Asset | undefined;
+	track: Track;
 	left: number;
 	width: number;
+	/** The part of the clip (px from its left edge) worth drawing. */
+	visible: [number, number];
 	/** In-point while slipping. */
 	inMs?: number;
 	height: number;
@@ -1393,9 +1437,6 @@ function ClipView({
 	onEdgeDown: (edge: "start" | "end", e: ReactPointerEvent) => void;
 	onContext: (e: React.MouseEvent) => void;
 }) {
-	const asset =
-		clip.type === "media" ? project.data.assets.find((a) => a.id === clip.assetId) : undefined;
-	const track = project.data.tracks.find((t) => t.id === clip.trackId);
 	const tone =
 		clip.type === "text"
 			? "text"
@@ -1473,6 +1514,7 @@ function ClipView({
 					width={width}
 					height={inner}
 					pxPerMs={pxPerMs}
+					visible={visible}
 				/>
 			)}
 			{media && asset?.kind === "image" && (
@@ -1486,8 +1528,25 @@ function ClipView({
 					spanMs={media.durationMs * media.speed}
 					width={width}
 					height={inner - 14}
+					visible={visible}
 					color="rgba(255,255,255,0.55)"
 				/>
+			)}
+			{/* The sound of a video clip, as a thin strip along its bottom edge. */}
+			{media && asset?.kind === "video" && asset.hasAudio && track?.kind === "video" && media.volume > 0 && (
+				<>
+					<div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-black/60 to-transparent" />
+					<Waveform
+						assetId={asset.id}
+						file={asset.path}
+						inMs={sourceIn}
+						spanMs={media.durationMs * media.speed}
+						width={width}
+						height={14}
+						visible={visible}
+						color="rgba(255,255,255,0.5)"
+					/>
+				</>
 			)}
 			{media && track?.kind === "video" && (
 				<div className="absolute inset-x-0 top-0 h-5 bg-gradient-to-b from-black/55 to-transparent" />

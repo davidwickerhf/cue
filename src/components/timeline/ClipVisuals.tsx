@@ -34,6 +34,7 @@ export function Waveform({
 	spanMs,
 	width,
 	height,
+	visible,
 	color = "rgba(255,255,255,0.85)",
 }: {
 	assetId: string;
@@ -43,8 +44,14 @@ export function Waveform({
 	spanMs: number;
 	width: number;
 	height: number;
+	/** Only this part (px from the left) is drawn; the whole width by default. */
+	visible?: [number, number];
 	color?: string;
 }) {
+	// Draw only the visible part: long clips at high zoom would need huge canvases.
+	const from = Math.max(0, Math.min(width, visible?.[0] ?? 0));
+	const to = Math.max(from, Math.min(width, visible?.[1] ?? width));
+	const shown = to - from;
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const [peaks, setPeaks] = useState<number[] | null>(null);
 	useEffect(() => {
@@ -56,9 +63,9 @@ export function Waveform({
 	}, [assetId, file]);
 	useEffect(() => {
 		const el = canvas.current;
-		if (!el || !peaks || width <= 0) return;
+		if (!el || !peaks || shown <= 0) return;
 		const dpr = window.devicePixelRatio || 1;
-		const w = Math.min(8192, Math.max(1, Math.round(width * dpr)));
+		const w = Math.min(8192, Math.max(1, Math.round(shown * dpr)));
 		const h = Math.max(1, Math.round(height * dpr));
 		el.width = w;
 		el.height = h;
@@ -66,8 +73,9 @@ export function Waveform({
 		if (!ctx) return;
 		ctx.clearRect(0, 0, w, h);
 		ctx.fillStyle = color;
-		const first = (inMs / 1000) * PEAKS_PER_SECOND;
-		const perPx = ((spanMs / 1000) * PEAKS_PER_SECOND) / w;
+		const msPerPx = spanMs / Math.max(1, width);
+		const first = ((inMs + from * msPerPx) / 1000) * PEAKS_PER_SECOND;
+		const perPx = ((shown * msPerPx) / 1000) * PEAKS_PER_SECOND / w;
 		const mid = h / 2;
 		for (let x = 0; x < w; x++) {
 			const a = Math.floor(first + x * perPx);
@@ -77,12 +85,12 @@ export function Waveform({
 			const amp = (max / 255) * mid * 0.92;
 			ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
 		}
-	}, [peaks, inMs, spanMs, width, height, color]);
+	}, [peaks, inMs, spanMs, width, height, color, from, shown]);
 	return (
 		<canvas
 			ref={canvas}
-			className="pointer-events-none absolute inset-x-0 bottom-0"
-			style={{ width, height }}
+			className="pointer-events-none absolute bottom-0"
+			style={{ left: from, width: shown, height }}
 		/>
 	);
 }
@@ -96,6 +104,7 @@ export function Filmstrip({
 	width,
 	height,
 	pxPerMs,
+	visible,
 }: {
 	assetId: string;
 	/** The media's file, so a new file loads new frames. */
@@ -105,6 +114,8 @@ export function Filmstrip({
 	width: number;
 	height: number;
 	pxPerMs: number;
+	/** Only tiles in this part (px from the left) are drawn. */
+	visible?: [number, number];
 }) {
 	const [thumbs, setThumbs] = useState<{ intervalMs: number; urls: string[] } | null>(null);
 	useEffect(() => {
@@ -116,10 +127,12 @@ export function Filmstrip({
 	}, [assetId, file]);
 	if (!thumbs || thumbs.urls.length === 0) return null;
 	const tileW = Math.max(24, height * (16 / 9));
-	const count = Math.min(200, Math.ceil(width / tileW));
+	const first = Math.max(0, Math.floor((visible?.[0] ?? 0) / tileW));
+	const last = Math.min(Math.ceil(width / tileW), Math.ceil((visible?.[1] ?? width) / tileW));
 	return (
-		<div className="pointer-events-none absolute inset-0 flex overflow-hidden opacity-90">
-			{Array.from({ length: count }, (_, i) => {
+		<div className="pointer-events-none absolute inset-0 overflow-hidden opacity-90">
+			{Array.from({ length: Math.max(0, last - first) }, (_, n) => {
+				const i = first + n;
 				const sourceMs = inMs + ((i * tileW) / pxPerMs) * speed;
 				const index = Math.min(
 					thumbs.urls.length - 1,
@@ -131,8 +144,8 @@ export function Filmstrip({
 						src={thumbs.urls[index]}
 						alt=""
 						draggable={false}
-						className="h-full shrink-0 object-cover"
-						style={{ width: tileW }}
+						className="absolute top-0 h-full object-cover"
+						style={{ left: i * tileW, width: tileW }}
 					/>
 				);
 			})}

@@ -148,6 +148,11 @@ export class ProjectStore extends EventEmitter {
 		return this.data;
 	}
 
+	/** Changes whenever the snapshot would: another project, an edit, a save. */
+	get snapshotKey(): string {
+		return this.file ? `${this.file}|${this.revision}|${this.dirty}` : "";
+	}
+
 	snapshot(): ProjectSnapshot | null {
 		if (!this.data || !this.file) return null;
 		const dir = path.dirname(this.file);

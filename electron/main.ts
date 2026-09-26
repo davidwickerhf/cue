@@ -274,11 +274,17 @@ const controller = new Controller(store, {
 });
 
 let stateTimer: NodeJS.Timeout | null = null;
+/** The project version the window has; unchanged projects aren't sent again. */
+let sentProject: string | null = null;
 controller.on("state", () => {
 	if (stateTimer) return;
 	stateTimer = setTimeout(() => {
 		stateTimer = null;
-		if (win && !win.isDestroyed()) win.webContents.send("cue:state", controller.state());
+		if (!win || win.isDestroyed()) return;
+		const key = store.snapshotKey;
+		const same = key === sentProject;
+		sentProject = key;
+		win.webContents.send("cue:state", controller.state(!same), same);
 	}, 16);
 });
 store.on("error", (error: Error) => store.log("system", `Autosave failed: ${error.message}`));
@@ -473,8 +479,13 @@ function createWindow() {
 				win.webContents.invalidate();
 		}, 250);
 	} else win.once("ready-to-show", () => win?.show());
+	// A (re)loaded page has no project yet.
+	win.webContents.on("did-start-loading", () => {
+		sentProject = null;
+	});
 	win.on("closed", () => {
 		win = null;
+		sentProject = null;
 		// Nothing will answer requests sent to the old window.
 		for (const [id, request] of waiting) {
 			waiting.delete(id);

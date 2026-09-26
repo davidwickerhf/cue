@@ -348,14 +348,16 @@ function encoder(data: ProjectData): string[] {
 			"-pix_fmt",
 			"yuv422p10le",
 		];
-	const bitrate = { draft: "4M", standard: "10M", high: "20M" }[videoQuality];
 	if (hardware && mac) {
 		const name = codec === "hevc" ? "hevc_videotoolbox" : "h264_videotoolbox";
+		// Constant quality (Apple Silicon) rather than a fixed bitrate: about the quality of
+		// x264 at the same setting, at a fraction of the size, and HEVC smaller than H.264.
+		const quality = { draft: "55", standard: "70", high: "82" }[videoQuality];
 		return [
 			"-c:v",
 			name,
-			"-b:v",
-			bitrate,
+			"-q:v",
+			quality,
 			"-pix_fmt",
 			"yuv420p",
 			...(codec === "hevc" ? ["-tag:v", "hvc1"] : []),

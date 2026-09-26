@@ -7,8 +7,10 @@ const api = {
 	call: <T = unknown>(method: MethodName, params?: unknown) =>
 		ipcRenderer.invoke("cue:call", method, params) as Promise<T>,
 	getState: () => ipcRenderer.invoke("cue:state") as Promise<AppState>,
-	onState: (listener: (state: AppState) => void) => {
-		const handler = (_event: IpcRendererEvent, state: AppState) => listener(state);
+	/** `projectUnchanged`: the project was left out because the window already has this version. */
+	onState: (listener: (state: AppState, projectUnchanged: boolean) => void) => {
+		const handler = (_event: IpcRendererEvent, state: AppState, projectUnchanged = false) =>
+			listener(state, projectUnchanged);
 		ipcRenderer.on("cue:state", handler);
 		return () => {
 			ipcRenderer.removeListener("cue:state", handler);
