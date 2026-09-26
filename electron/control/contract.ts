@@ -903,7 +903,7 @@ export const contract = {
 	// --- Settings, markers, history, export ------------------------------------------------
 	update_settings: {
 		description:
-			"Recording settings: prerollMs, postrollMs, autoStop, monitor (mute/timeline), padMs, silenceDb.",
+			"Project settings: recording (prerollMs, postrollMs, autoStop, monitor mute/timeline, padMs, silenceDb), useProxies, and separateAudio (a placed video's sound goes on an audio track, linked; default true).",
 		input: { settings: settingsSchema.partial() },
 	},
 	update_export: {

@@ -227,6 +227,17 @@ export function SettingsPanel() {
 					Keeps playback smooth with large or 4K footage. Exports always use the originals.
 				</p>
 			</Section>
+
+			<Section title="Placing video">
+				<Toggle
+					label="Put a video's sound on an audio track"
+					checked={settings.separateAudio}
+					onChange={(separateAudio) => setSettings({ separateAudio })}
+				/>
+				<p className="text-[11px] text-muted">
+					The sound is linked to the picture, so they move together; unlink them to edit apart.
+				</p>
+			</Section>
 			<Section>
 				<p className="text-[12px] text-muted">
 					Models, API keys and agent access apply to every project.{" "}

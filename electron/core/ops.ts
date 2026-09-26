@@ -76,6 +76,8 @@ export const mediaClipInput = z.object({
 	transform: transformSchema.partial().extend({ crop: cropSchema.partial() }).partial().optional(),
 	denoise: z.boolean().optional(),
 	name: z.string().max(120).optional(),
+	/** false keeps a video's sound on the picture clip instead of an audio track (see settings.separateAudio). */
+	linkedAudio: z.boolean().optional(),
 });
 
 export const textClipInput = z.object({
@@ -536,6 +538,31 @@ function withWords(
 	return next;
 }
 
+/**
+ * With the project's separateAudio setting (on by default), a video with sound
+ * placed on a picture track gets its sound on an audio track, linked to the
+ * picture, as editors do: the picture's own sound is turned off.
+ */
+function withSeparateSound(
+	data: ProjectData,
+	clipIds: string[],
+): { data: ProjectData; created: string[] } {
+	if (data.settings.separateAudio === false) return { data, created: [] };
+	let next = data;
+	const created: string[] = [];
+	for (const id of clipIds) {
+		const c = next.clips.find((x) => x.id === id);
+		if (!c || c.type !== "media" || c.volume === 0) continue;
+		const a = next.assets.find((x) => x.id === c.assetId);
+		const track = next.tracks.find((t) => t.id === c.trackId);
+		if (!a || a.kind !== "video" || !a.hasAudio || track?.kind !== "video") continue;
+		const before = new Set(next.clips.map((x) => x.id));
+		next = applyOp(next, { type: "detachAudio", id }).data;
+		created.push(...next.clips.filter((x) => !before.has(x.id)).map((x) => x.id));
+	}
+	return { data: next, created };
+}
+
 /** Removes every clip of a media item, in every sequence. */
 function withoutAssetClips(data: ProjectData, assetId: string): ProjectData {
 	const keep = (c: Clip) => !(c.type === "media" && c.assetId === assetId);
@@ -860,8 +887,9 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				trackId: rawOp.placeOn.trackId,
 				startMs: rawOp.placeOn.startMs,
 			});
-			next = { ...next, clips: [...next.clips, c] };
-			created = [c.id];
+			const sound = withSeparateSound({ ...next, clips: [...next.clips, c] }, [c.id]);
+			next = sound.data;
+			created = [c.id, ...sound.created];
 		}
 		return { data: next, summary: `Added ${rawOp.asset.kind} "${rawOp.asset.name}"`, created };
 	}
@@ -1178,16 +1206,23 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "addClips": {
 			let next = data;
 			const created: string[] = [];
+			const separate: string[] = [];
 			for (const input of op.clips) {
 				const c = buildClip(next, input);
 				next = { ...next, clips: [...next.clips, c] };
 				created.push(c.id);
+				if (!(input.type === "media" && input.linkedAudio === false)) separate.push(c.id);
 			}
 			assertUnique(
 				next.clips.map((c) => c.id),
 				"clip",
 			);
-			return { data: next, summary: `Added ${created.length} clip(s)`, created };
+			const sound = withSeparateSound(next, separate);
+			return {
+				data: sound.data,
+				summary: `Added ${created.length} clip(s)`,
+				created: [...created, ...sound.created],
+			};
 		}
 		case "updateClip": {
 			const current = clip(data, op.id);
@@ -1833,10 +1868,17 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				inMs: a.kind === "image" ? 0 : inMs,
 				durationMs: width,
 			});
+			if (op.mode === "overwrite") {
+				// The sound it brings replaces what was on the sound track there too.
+				const soundTrack = next.tracks.find((t) => t.kind === "audio" && !t.voiceover && !t.locked);
+				if (soundTrack && a.kind === "video" && a.hasAudio && next.settings.separateAudio !== false)
+					next = clearRange(next, op.atMs, op.atMs + width, new Set([soundTrack.id]));
+			}
+			const sound = withSeparateSound({ ...next, clips: [...next.clips, c] }, [c.id]);
 			return {
-				data: { ...next, clips: [...next.clips, c] },
+				data: sound.data,
 				summary: `${op.mode === "insert" ? "Inserted" : "Overwrote with"} ${a.name} (${sec(width)})`,
-				created: [c.id],
+				created: [c.id, ...sound.created],
 			};
 		}
 		case "detachAudio": {
@@ -1857,7 +1899,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 						),
 				)?.id;
 			if (!trackId) {
-				const created = applyOp(next, { type: "addTrack", kind: "audio", name: "Detached audio" });
+				const created = applyOp(next, { type: "addTrack", kind: "audio", name: "Sound" });
 				next = created.data;
 				trackId = created.created?.[0];
 			}

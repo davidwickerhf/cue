@@ -21,7 +21,7 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 
 ## Tracks
 - Tracks are listed top to bottom. Picture tracks (video, text) always sit above sound tracks (audio); upper picture tracks draw over lower ones.
-- Video tracks play their clips' sound too. Text tracks hold titles and captions.
+- When a video with sound is placed on a picture track, its sound goes on an audio track as a linked clip (moves with the picture) and the picture clip's own volume is 0; add_clips with linkedAudio false keeps the sound on the picture, and settings.separateAudio false turns this off. Text tracks hold titles and captions.
 - A track can be muted, soloed (only soloed tracks are heard), hidden, locked (no edits), have volume 0–2 and pan -1…1, be the voiceover track, or duck (dip under the voiceover). Use update_track, add_track, move_track, remove_track.
 
 ## Editing tools by task

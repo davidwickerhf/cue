@@ -37,6 +37,7 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
 	padMs: 250,
 	silenceDb: -42,
 	useProxies: true,
+	separateAudio: true,
 };
 
 export const DEFAULT_EXPORT: ExportSettings = {
@@ -147,6 +148,7 @@ export const settingsSchema = z.object({
 	padMs: z.number().min(0).max(2000),
 	silenceDb: z.number().min(-80).max(-10),
 	useProxies: z.boolean(),
+	separateAudio: z.boolean(),
 });
 
 export const keyframeSchema = z.object({

@@ -412,6 +412,8 @@ export interface RecordingSettings {
 	silenceDb: number;
 	/** Play lightweight copies of large videos in the editor (exports always use the originals). */
 	useProxies: boolean;
+	/** A video's sound goes on an audio track (linked to the picture) when it is placed. */
+	separateAudio: boolean;
 }
 
 export interface ExportSettings {
