@@ -1,0 +1,1952 @@
+{
+	"source": "electron/control/contract.ts",
+	"count": 118,
+	"groups": [
+		{
+			"title": "Overview",
+			"tools": [
+				{
+					"name": "get_guide",
+					"description": "How Cue works and how to edit with these tools: concepts, units, track order, workflows and which tool does what. Read it once before editing.",
+					"inputs": []
+				},
+				{
+					"name": "get_state",
+					"description": "Overview of the open project: canvas, tracks, media, script lines with take status (empty/ok/tight/over), selection and recorder. Call this first. Clips are summarised; use get_timeline for details.",
+					"inputs": []
+				},
+				{
+					"name": "get_timeline",
+					"description": "Every clip (id, track, start, duration, source in-point, text, style) optionally limited to a time range.",
+					"inputs": [
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "render_frame",
+					"description": "Render what the viewer sees at a moment as a PNG and return its path, so you can look at the edit (text layout, framing, captions).",
+					"inputs": [
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "get_activity",
+					"description": "Recent edits with who made them (user or agent).",
+					"inputs": [
+						{
+							"name": "limit",
+							"type": "integer",
+							"required": false,
+							"default": "30"
+						}
+					]
+				}
+			]
+		},
+		{
+			"title": "Projects",
+			"tools": [
+				{
+					"name": "list_recent_projects",
+					"description": "Recently opened projects.",
+					"inputs": []
+				},
+				{
+					"name": "list_projects",
+					"description": "Every project in the projects overview (recent ones and those in the projects folder) with length, canvas, clip count and last change.",
+					"inputs": []
+				},
+				{
+					"name": "close_project",
+					"description": "Save and close the open project, back to the projects overview.",
+					"inputs": []
+				},
+				{
+					"name": "save_project_as",
+					"description": "Save a copy of the project (.cueproj) at a new path and switch to it. Media stays where it is.",
+					"inputs": [
+						{
+							"name": "path",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "relink_media",
+					"description": "Point offline media (moved, renamed or on a disconnected drive; see offlineMedia in get_state) at its new file. Other offline media in the same folder is relinked too.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "file",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "find_offline_media",
+					"description": "Search near the project (and optionally in extra folders) for offline media that moved, and relink what is found.",
+					"inputs": [
+						{
+							"name": "folders",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "import_timeline",
+					"description": "Import an OpenTimelineIO (.otio) timeline from DaVinci Resolve, Premiere, Kdenlive and others as new tracks. Media is linked in place.",
+					"inputs": [
+						{
+							"name": "file",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "open_project",
+					"description": "Open a .cueproj project (or a folder containing one; older .cue.json files work too).",
+					"inputs": [
+						{
+							"name": "path",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "create_project",
+					"description": "Create a project. Optionally start from a video (placed on track V1, canvas matches its size) and a voiceover script from an .srt file or a list of lines.",
+					"inputs": [
+						{
+							"name": "path",
+							"type": "string",
+							"required": true,
+							"note": "Project file or folder."
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "video",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "srt",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "lines",
+							"type": "array",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "rename_project",
+					"description": "Rename the project.",
+					"inputs": [
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "set_canvas",
+					"description": "Output size, frame rate and background colour.",
+					"inputs": [
+						{
+							"name": "width",
+							"type": "integer",
+							"required": false
+						},
+						{
+							"name": "height",
+							"type": "integer",
+							"required": false
+						},
+						{
+							"name": "fps",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "background",
+							"type": "string",
+							"required": false
+						}
+					]
+				}
+			]
+		},
+		{
+			"title": "Media and tracks",
+			"tools": [
+				{
+					"name": "import_media",
+					"description": "Add video, audio or image files to the media library. With trackId, also place them back to back from startMs.",
+					"inputs": [
+						{
+							"name": "files",
+							"type": "string[]",
+							"required": true
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false,
+							"default": "0"
+						}
+					]
+				},
+				{
+					"name": "list_media",
+					"description": "The media library: id, kind, duration, origin (import/recording/tts/generated), which line a take belongs to.",
+					"inputs": []
+				},
+				{
+					"name": "remove_media",
+					"description": "Remove a media item and every clip that uses it.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "add_track",
+					"description": "Add a video, audio or text track. index 0 is the top.",
+					"inputs": [
+						{
+							"name": "kind",
+							"type": "\"video\" | \"audio\" | \"text\"",
+							"required": true
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "index",
+							"type": "integer",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "update_track",
+					"description": "Rename, mute, solo, lock, hide, set volume (0–2) or pan (-1 left to 1 right), mark as the voiceover track, or duck it (lower it automatically while the voiceover speaks).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "patch",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "remove_track",
+					"description": "Delete a track and its clips.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "move_track",
+					"description": "Reorder a track (0 = top; upper video tracks draw over lower ones). Video and text tracks always stay above audio tracks.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "index",
+							"type": "integer",
+							"required": true
+						}
+					]
+				}
+			]
+		},
+		{
+			"title": "Clip editing",
+			"tools": [
+				{
+					"name": "add_clips",
+					"description": "Place clips. Media clip: {type:'media', trackId, assetId, startMs, durationMs?, inMs?, speed?, volume?, fadeInMs?, fadeOutMs?, transform?}. Text clip: {type:'text', trackId, startMs, durationMs?, text, style?, animationIn?, animationOut?}.",
+					"inputs": [
+						{
+							"name": "clips",
+							"type": "array",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "add_text",
+					"description": "Add a title from a template (preset): title, headline, outline, gradient, lower-third, caption, subtitle (yellow outlined), minimal, quote, label or big-number. Style and animations can be changed after with update_clip. Uses the first text track unless trackId is given.",
+					"inputs": [
+						{
+							"name": "text",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false,
+							"default": "3000"
+						},
+						{
+							"name": "preset",
+							"type": "\"title\" | \"headline\" | \"outline\" | \"gradient\" | \"lower-third\" | \"caption\" | \"subtitle\" | \"minimal\" | \"quote\" | \"label\" | \"big-number\"",
+							"required": false,
+							"default": "\"title\""
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "style",
+							"type": "object",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "update_clip",
+					"description": "Change a clip: timing, in-point, speed, volume, fades, denoise, color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "patch",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "move_clips",
+					"description": "Move clips by deltaMs, optionally onto another track.",
+					"inputs": [
+						{
+							"name": "deltaMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "trim_clip",
+					"description": "Move a clip's start or end edge to toMs. Extending is limited by the source media.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "edge",
+							"type": "\"start\" | \"end\"",
+							"required": true
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "split_clip",
+					"description": "Split one clip at a timeline position.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "split_at",
+					"description": "Blade: split every clip crossing atMs (optionally only on some tracks).",
+					"inputs": [
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "trackIds",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "delete_clips",
+					"description": "Delete clips; ripple closes the gap on their tracks.",
+					"inputs": [
+						{
+							"name": "ripple",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						}
+					]
+				},
+				{
+					"name": "detach_audio",
+					"description": "Split a video clip's sound onto its own audio track (the video clip is muted).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "remove_ranges",
+					"description": "Cut time ranges out of the timeline on every (or the given) track and close the gaps. Script lines and markers after a range move with it.",
+					"inputs": [
+						{
+							"name": "ranges",
+							"type": "object[]",
+							"required": true
+						},
+						{
+							"name": "trackIds",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "get_history",
+					"description": "The project's complete history, newest first: every change with its step number, who made it (user, agent or system), when, and on which timeline. It persists across sessions.",
+					"inputs": [
+						{
+							"name": "limit",
+							"type": "integer",
+							"required": false,
+							"default": "100"
+						},
+						{
+							"name": "before",
+							"type": "integer",
+							"required": false,
+							"note": "only steps before this number (paging)"
+						},
+						{
+							"name": "after",
+							"type": "integer",
+							"required": false,
+							"note": "only steps after this number (what's new)"
+						}
+					]
+				},
+				{
+					"name": "restore_history",
+					"description": "Bring the project back to how it was right after a history step. This is a new step itself, so it can be undone.",
+					"inputs": [
+						{
+							"name": "n",
+							"type": "integer",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "list_sequences",
+					"description": "Every timeline (sequence) in the project, which one is open, and which appear nested inside others.",
+					"inputs": []
+				},
+				{
+					"name": "new_sequence",
+					"description": "Create a timeline (sequence) and open it (open: false keeps the current one open).",
+					"inputs": [
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "open",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						}
+					]
+				},
+				{
+					"name": "open_sequence",
+					"description": "Open another timeline. Editing tools always work on the open one.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "rename_sequence",
+					"description": "Rename a timeline.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "duplicate_sequence",
+					"description": "Copy a timeline (e.g. to try a different cut).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "delete_sequence",
+					"description": "Delete a timeline that is not open and not nested anywhere.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "nest_clips",
+					"description": "Nest clips (Premiere's Nest): move them into a new sequence that takes their place as one clip. Open the new sequence to edit inside it; the nested clip updates when you come back.",
+					"inputs": [
+						{
+							"name": "ids",
+							"type": "string[]",
+							"required": true
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "add_adjustment_layer",
+					"description": "Add an adjustment layer: a clip on a video track whose colour grade (update_clip color) and mask apply to everything on the tracks below it for as long as it lasts. Without trackId it goes on a new top track.",
+					"inputs": [
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false,
+							"default": "5000"
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "speed_ramp",
+					"description": "Speed ramp part of a media clip (fromMs–toMs in clip time, default all of it): up = ease to peak speed, down = ease from peak back to normal, inOut = fast in the middle (montage), outIn with peak < 1 = slow-motion hit. Later clips on the track move to make room.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "shape",
+							"type": "\"up\" | \"down\" | \"inOut\" | \"outIn\"",
+							"required": true
+						},
+						{
+							"name": "peak",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "steps",
+							"type": "integer",
+							"required": false,
+							"default": "10"
+						}
+					]
+				},
+				{
+					"name": "lift_range",
+					"description": "Remove everything between two times (the in and out points) but leave the gap, like Premiere's Lift. Use remove_ranges to close the gap (Extract).",
+					"inputs": [
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "endMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "trackIds",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "insert_edit",
+					"description": "Three-point edit: put a media item's range (inMs–outMs, default whole) on a track at atMs. insert pushes later material along on every unlocked track; overwrite replaces what is there.",
+					"inputs": [
+						{
+							"name": "mode",
+							"type": "\"insert\" | \"overwrite\"",
+							"required": true
+						},
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "inMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "outMs",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "freeze_frame",
+					"description": "Hold the frame at atMs (inside a video clip) for durationMs; later clips on that track move along.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false,
+							"default": "2000"
+						}
+					]
+				},
+				{
+					"name": "remove_silence",
+					"description": "Find pauses in the speech (video and voiceover audio, or given clips) and cut them out across all tracks. keepMs leaves a little air on each side. Use dryRun to preview the ranges first.",
+					"inputs": [
+						{
+							"name": "clipIds",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "thresholdDb",
+							"type": "number",
+							"required": false,
+							"default": "-38"
+						},
+						{
+							"name": "minSilenceMs",
+							"type": "number",
+							"required": false,
+							"default": "600"
+						},
+						{
+							"name": "keepMs",
+							"type": "number",
+							"required": false,
+							"default": "150"
+						},
+						{
+							"name": "dryRun",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						}
+					]
+				},
+				{
+					"name": "slip_clip",
+					"description": "Change which part of the source a clip shows without moving it (deltaMs of source time).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "deltaMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "roll_edit",
+					"description": "Move the cut between two adjacent clips on a track to toMs (one gets longer, the other shorter).",
+					"inputs": [
+						{
+							"name": "leftId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "rightId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "slide_clip",
+					"description": "Move a clip between its neighbours; the neighbour before grows and the one after shrinks so nothing else moves.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "deltaMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "group_clips",
+					"description": "Link clips so they move and delete together (e.g. picture and its sound).",
+					"inputs": [
+						{
+							"name": "ids",
+							"type": "string[]",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "ungroup_clips",
+					"description": "Unlink clips.",
+					"inputs": [
+						{
+							"name": "ids",
+							"type": "string[]",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "add_transition",
+					"description": "Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the two clips (later clips move left by the overlap) and crossfades their sound: crossfade, wipe-left / wipe-right (a hard edge sweeps across), slide-left (enters from the right) / slide-right (from the left), zoom (settles in from larger while fading in), blur (sharpens while fading in). dip fades through black. Adding one to a clip that has one replaces it.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "kind",
+							"type": "\"crossfade\" | \"dip\" | \"wipe-left\" | \"wipe-right\" | \"slide-left\" | \"slide-right\" | \"zoom\" | \"blur\"",
+							"required": false,
+							"default": "\"crossfade\""
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false,
+							"default": "600"
+						}
+					]
+				},
+				{
+					"name": "remove_transition",
+					"description": "Remove a clip's transition (a crossfade's overlap is undone).",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "set_keyframe",
+					"description": "Animate a media clip: set x or y (0–1, centre on canvas), scale (1 = fit) or volume (0–2) at a clip-local time. ease: linear, ease or hold.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "prop",
+							"type": "\"x\" | \"y\" | \"scale\" | \"volume\"",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "value",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "ease",
+							"type": "\"linear\" | \"ease\" | \"hold\"",
+							"required": false,
+							"default": "\"ease\""
+						}
+					]
+				},
+				{
+					"name": "remove_keyframe",
+					"description": "Remove one keyframe.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "prop",
+							"type": "\"x\" | \"y\" | \"scale\" | \"volume\"",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "clear_keyframes",
+					"description": "Remove all keyframes of a property (or of the clip).",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "prop",
+							"type": "\"x\" | \"y\" | \"scale\" | \"volume\"",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "add_zoom",
+					"description": "Push in on part of a video clip, like a screen recorder's auto-zoom: startMs/endMs are clip-local, x/y is the point of the source to zoom into (0–1), scale 1.2–4.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "endMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "scale",
+							"type": "number",
+							"required": false,
+							"default": "1.8"
+						},
+						{
+							"name": "x",
+							"type": "number",
+							"required": false,
+							"default": "0.5"
+						},
+						{
+							"name": "y",
+							"type": "number",
+							"required": false,
+							"default": "0.5"
+						},
+						{
+							"name": "easeMs",
+							"type": "number",
+							"required": false,
+							"default": "450"
+						}
+					]
+				},
+				{
+					"name": "update_zoom",
+					"description": "Change a zoom.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "zoomId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "patch",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "remove_zoom",
+					"description": "Remove a zoom.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "zoomId",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "transcribe_media",
+					"description": "Word-level transcript of a media item (stored on it). Needed for text-based editing.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "language",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "get_transcript",
+					"description": "Words of a transcribed media item with their index and source time. Optionally search for a phrase to get its word indices.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "search",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "cut_words",
+					"description": "Text-based editing: remove words (inclusive index ranges from get_transcript) from the timeline on every track, closing the gaps.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "ranges",
+							"type": "object[]",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "remove_filler_words",
+					"description": "Cut um, uh, erm and similar from a transcribed media item across all tracks.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "fillers",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "build_proxies",
+					"description": "Create lightweight playback copies of large videos so the editor plays and scrubs smoothly.",
+					"inputs": []
+				},
+				{
+					"name": "duplicate_clips",
+					"description": "Copy clips right after themselves, or offsetMs from their start; trackId puts the copies on another track.",
+					"inputs": [
+						{
+							"name": "offsetMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "select_clips",
+					"description": "Select clips in the editor so the user sees what you mean.",
+					"inputs": [
+						{
+							"name": "ids",
+							"type": "string[]",
+							"required": true
+						}
+					]
+				}
+			]
+		},
+		{
+			"title": "Voiceover script and takes",
+			"tools": [
+				{
+					"name": "set_lines",
+					"description": "Replace the voiceover script.",
+					"inputs": [
+						{
+							"name": "lines",
+							"type": "array",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "import_script",
+					"description": "Load script lines from an .srt file or a JSON array of lines. replace=false appends.",
+					"inputs": [
+						{
+							"name": "file",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "replace",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						}
+					]
+				},
+				{
+					"name": "add_line",
+					"description": "Add one script line.",
+					"inputs": []
+				},
+				{
+					"name": "update_line",
+					"description": "Change a line. Moving startMs also moves its voiceover clip.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "patch",
+							"type": "script line",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "remove_line",
+					"description": "Delete a script line (takes stay in the library).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "shift_lines",
+					"description": "Move lines starting at or after fromMs by deltaMs, with their clips.",
+					"inputs": [
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "deltaMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "select_line",
+					"description": "Focus a line in the editor (teleprompter and takes).",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "record_line",
+					"description": "Record a take with the user's microphone: the editor rolls from the pre-roll with a teleprompter and stops after the line's max + post-roll. Tell the user before calling. With wait=true returns the take with its speech length and fit.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "prerollMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "wait",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						},
+						{
+							"name": "timeoutMs",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "stop_recording",
+					"description": "Stop the current recording and keep it.",
+					"inputs": []
+				},
+				{
+					"name": "import_take",
+					"description": "Use an audio file as a take for a line. recordedAtMs is where the file starts on the timeline; otherwise its speech starts at the line start.",
+					"inputs": [
+						{
+							"name": "lineId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "file",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "recordedAtMs",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "list_takes",
+					"description": "Takes per line with speech length, fit and which one is used.",
+					"inputs": [
+						{
+							"name": "lineId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "choose_take",
+					"description": "Use a take for its line (null removes the line's voiceover clip).",
+					"inputs": [
+						{
+							"name": "lineId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true,
+							"nullable": true
+						}
+					]
+				},
+				{
+					"name": "delete_take",
+					"description": "Delete a take.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						}
+					]
+				}
+			]
+		},
+		{
+			"title": "Generative tools",
+			"tools": [
+				{
+					"name": "generate_take",
+					"description": "Generate a spoken take for a line with text-to-speech (placeholder or final voice). Optional voice and delivery instructions.",
+					"inputs": [
+						{
+							"name": "lineId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "voice",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "instructions",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "text",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "rewrite_line",
+					"description": "Rewrite a script line with the text model (OpenAI, Ollama or LM Studio per settings). goal fit makes it fit the line's max length; clearer, shorter, or custom with instructions. Returns before and after.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "goal",
+							"type": "\"fit\" | \"clearer\" | \"shorter\" | \"custom\"",
+							"required": false,
+							"default": "\"fit\""
+						},
+						{
+							"name": "instructions",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "review_changes",
+					"description": "The user's decision on an agent's proposed changes (review mode): accept keeps them, reject undoes them; clipIds limits it to those clips. Agents cannot call this: when get_state shows pendingReview, tell the user what you changed and let them decide.",
+					"inputs": [
+						{
+							"name": "action",
+							"type": "\"accept\" | \"reject\"",
+							"required": true
+						},
+						{
+							"name": "clipIds",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "make_variants",
+					"description": "Make other versions of the edit without changing the open timeline: other frame shapes (9:16 vertical, 1:1, 4:5, 16:9; full-frame pictures are centre-cropped) and/or shorter cuts (e.g. 15, 30, 60 s). Every combination is exported as a video to the project's export folder; saveProjects also saves each as a project next to this one to fine-tune later. For short cuts, pass keep: the timeline stretches worth keeping (e.g. found with find_moments or from the transcript); otherwise the edit ends at the last cut before the target length.",
+					"inputs": [
+						{
+							"name": "aspects",
+							"type": "(\"9:16\" | \"1:1\" | \"4:5\" | \"16:9\")[]",
+							"required": false
+						},
+						{
+							"name": "lengthsSec",
+							"type": "number[]",
+							"required": false
+						},
+						{
+							"name": "keep",
+							"type": "object[]",
+							"required": false
+						},
+						{
+							"name": "saveProjects",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						},
+						{
+							"name": "exportVideos",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						}
+					]
+				},
+				{
+					"name": "split_at_scenes",
+					"description": "Find the shot changes in the part of a video clip's source it plays and cut the clip (and its linked sound) there, or add 'Shot' markers instead with split false. threshold 0.05–0.9: lower finds more (dissolves), higher only hard cuts. Returns the cut times on the timeline.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "threshold",
+							"type": "number",
+							"required": false,
+							"default": "0.3"
+						},
+						{
+							"name": "split",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						}
+					]
+				},
+				{
+					"name": "detect_beats",
+					"description": "Tempo (BPM) and beats of a media item with sound. addMarkers puts a green 'Beat' marker on every beat (or every Nth with every) where the item is used on the timeline.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "addMarkers",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						},
+						{
+							"name": "every",
+							"type": "integer",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "snap_cuts_to_beats",
+					"description": "Move each cut on a track to the nearest beat of a music item on the timeline (rolling edits, within toleranceMs).",
+					"inputs": [
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "musicAssetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "toleranceMs",
+							"type": "number",
+							"required": false,
+							"default": "350"
+						}
+					]
+				},
+				{
+					"name": "find_moments",
+					"description": "Search the edit by meaning using the transcript and the text model, e.g. 'where they talk about pricing'. Returns timeline ranges with reasons. Transcribe first.",
+					"inputs": [
+						{
+							"name": "query",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "generate_chapters",
+					"description": "Chapters from the transcript: adds chapter markers and returns a YouTube-ready chapter list.",
+					"inputs": [
+						{
+							"name": "addMarkers",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						}
+					]
+				},
+				{
+					"name": "suggest_broll",
+					"description": "Suggest cutaway images (B-roll) for moments in the transcript: times, durations and image prompts. Nothing is generated yet.",
+					"inputs": [
+						{
+							"name": "count",
+							"type": "integer",
+							"required": false,
+							"default": "4"
+						}
+					]
+				},
+				{
+					"name": "add_broll",
+					"description": "Generate B-roll images and place them on a B-roll track above the picture, with short fades.",
+					"inputs": [
+						{
+							"name": "items",
+							"type": "object[]",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "reframe",
+					"description": "Change the frame size (e.g. 1080×1920 for vertical) and make full-frame pictures fill it with a centre crop. Adjust transform.x per clip afterwards to follow the subject.",
+					"inputs": [
+						{
+							"name": "width",
+							"type": "integer",
+							"required": true
+						},
+						{
+							"name": "height",
+							"type": "integer",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "get_ai_status",
+					"description": "Which providers handle voice, transcription, text and images (cloud or on this Mac), and whether each is ready.",
+					"inputs": []
+				},
+				{
+					"name": "generate_voiceover",
+					"description": "Generate takes for many lines at once (by default only lines without a take).",
+					"inputs": [
+						{
+							"name": "lineIds",
+							"type": "string[]",
+							"required": false
+						},
+						{
+							"name": "onlyMissing",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						},
+						{
+							"name": "voice",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "instructions",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "auto_captions",
+					"description": "Transcribe the voiceover track (or the full mix) and add timed caption clips on a new Captions track, with word timings. style plain gives classic subtitles; highlight, reveal, pop or bounce give animated word-by-word captions in a bold social style (wordColor for the word being said).",
+					"inputs": [
+						{
+							"name": "source",
+							"type": "\"voiceover\" | \"mix\"",
+							"required": false,
+							"default": "\"voiceover\""
+						},
+						{
+							"name": "maxChars",
+							"type": "integer",
+							"required": false
+						},
+						{
+							"name": "style",
+							"type": "\"plain\" | \"highlight\" | \"reveal\" | \"pop\" | \"bounce\"",
+							"required": false,
+							"default": "\"plain\""
+						},
+						{
+							"name": "wordColor",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "language",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "script_from_media",
+					"description": "Transcribe a media item's speech into script lines (e.g. to re-record an existing narration).",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "idPrefix",
+							"type": "string",
+							"required": false,
+							"default": "\"L\""
+						},
+						{
+							"name": "replace",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						}
+					]
+				},
+				{
+					"name": "generate_image",
+					"description": "Generate a still image (title card, B-roll, background). With trackId it is placed at startMs for 5 s.",
+					"inputs": [
+						{
+							"name": "prompt",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "orientation",
+							"type": "\"landscape\" | \"portrait\" | \"square\"",
+							"required": false,
+							"default": "\"landscape\""
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false,
+							"default": "0"
+						}
+					]
+				}
+			]
+		},
+		{
+			"title": "Playback",
+			"tools": [
+				{
+					"name": "seek",
+					"description": "Move the playhead.",
+					"inputs": [
+						{
+							"name": "ms",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "play",
+					"description": "Play from the playhead or fromMs (optionally stop at toMs).",
+					"inputs": [
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "pause",
+					"description": "Pause playback.",
+					"inputs": []
+				},
+				{
+					"name": "preview_media",
+					"description": "Play a media item (e.g. a take) on its own.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						}
+					]
+				}
+			]
+		},
+		{
+			"title": "Settings, markers, history, export",
+			"tools": [
+				{
+					"name": "update_settings",
+					"description": "Recording settings: prerollMs, postrollMs, autoStop, monitor (mute/timeline), padMs, silenceDb.",
+					"inputs": [
+						{
+							"name": "settings",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "update_export",
+					"description": "Export settings: stemsDir, stemPattern ({id},{index}), normalize, voiceoverFile, videoFile ({name}), videoQuality.",
+					"inputs": [
+						{
+							"name": "export",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "update_ai",
+					"description": "Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel.",
+					"inputs": [
+						{
+							"name": "ai",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "add_marker",
+					"description": "Add a timeline marker, e.g. to flag something for the user.",
+					"inputs": [
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "label",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "color",
+							"type": "\"accent\" | \"success\" | \"warning\" | \"danger\"",
+							"required": false,
+							"default": "\"accent\""
+						}
+					]
+				},
+				{
+					"name": "remove_marker",
+					"description": "Remove a marker.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "update_marker",
+					"description": "Rename, move or recolour a marker.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "patch",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "clear_markers",
+					"description": "Remove all markers, or only those with a given label (e.g. 'Beat').",
+					"inputs": [
+						{
+							"name": "label",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "undo",
+					"description": "Undo the last edit.",
+					"inputs": []
+				},
+				{
+					"name": "redo",
+					"description": "Redo.",
+					"inputs": []
+				},
+				{
+					"name": "export",
+					"description": "Export. stems: one WAV per script line + durations.json. voiceover: the voiceover track as one WAV. audio: full mix (with ducking); the file type follows out (.wav, .mp3, .m4a, .flac). gif: an animated GIF (up to 720 px wide, 15 fps), for short clips. video: rendered video with every visible track and the mix (codec, hardware encoding and scale from export settings). captions: SRT + VTT from the caption clips. otio / fcpxml / mlt / edl: the timeline for another editor (OpenTimelineIO for Resolve, Premiere, Kdenlive; FCPXML for Final Cut Pro and Resolve; MLT for Shotcut; CMX3600 EDL for anything), linking the original media.",
+					"inputs": [
+						{
+							"name": "kind",
+							"type": "\"stems\" | \"voiceover\" | \"audio\" | \"video\" | \"gif\" | \"captions\" | \"otio\" | \"fcpxml\" | \"mlt\" | \"edl\"",
+							"required": true
+						},
+						{
+							"name": "out",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "range",
+							"type": "object",
+							"required": false,
+							"note": "video/gif/audio only: export just this part, e.g. between the in and out points"
+						}
+					]
+				},
+				{
+					"name": "export_frame",
+					"description": "Save the frame at atMs as a PNG (as the viewer shows it) and return its path.",
+					"inputs": [
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "out",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "set_in_out",
+					"description": "Set the editor's in and/or out marks (the range for lift, extract, play-in-to-out and range export). null clears one.",
+					"inputs": [
+						{
+							"name": "inMs",
+							"type": "number",
+							"required": false,
+							"nullable": true
+						},
+						{
+							"name": "outMs",
+							"type": "number",
+							"required": false,
+							"nullable": true
+						}
+					]
+				},
+				{
+					"name": "set_view",
+					"description": "Show the user something: switch workspace (window layout), open a sidebar panel, fit the whole timeline in view, zoom the timeline (px per second), or open a media item in the source monitor.",
+					"inputs": [
+						{
+							"name": "panel",
+							"type": "\"media\" | \"script\" | \"transcript\" | \"text\" | \"mixer\" | \"generate\" | \"history\" | \"agent\" | \"settings\"",
+							"required": false
+						},
+						{
+							"name": "fitTimeline",
+							"type": "boolean",
+							"required": false
+						},
+						{
+							"name": "zoom",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "openSource",
+							"type": "string",
+							"required": false,
+							"note": "asset id"
+						},
+						{
+							"name": "workspace",
+							"type": "\"editing\" | \"audio\" | \"colour\" | \"voiceover\" | \"titles\" | \"agent\" | \"review\"",
+							"required": false,
+							"note": "editing; audio (mixer docked, tall audio tracks); colour (scopes, before/after, colour tools); voiceover (script and teleprompter); titles (safe areas, text tools); agent (chat and history); review (big viewer, markers list)"
+						}
+					]
+				},
+				{
+					"name": "get_app_settings",
+					"description": "App-wide settings: theme, projects folder, which AI providers and models are used (voice, transcription, text, images), and editing defaults.",
+					"inputs": []
+				},
+				{
+					"name": "update_app_settings",
+					"description": "Change app-wide settings, e.g. {ai: {tts: 'macos', macVoice: 'Samantha'}} or {editor: {snapping: false}} or {theme: 'light'}. API keys and agent access can only be changed by the user.",
+					"inputs": [
+						{
+							"name": "patch",
+							"type": "object",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "focus_window",
+					"description": "Bring the Cue window to the front.",
+					"inputs": []
+				}
+			]
+		}
+	]
+}

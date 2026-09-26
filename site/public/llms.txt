@@ -44,4 +44,6 @@ The MCP server starts Cue when needed and gives every client a written guide to 
 - [Edit video with Claude Code and MCP](https://cue.wicker.life/edit-video-with-claude-code)
 - [Text-based video editing](https://cue.wicker.life/text-based-video-editing)
 - [Changelog](https://cue.wicker.life/changelog)
-- [README and documentation](https://github.com/davidwickerhf/cue#readme)
+- [Docs](https://cue.wicker.life/docs): getting started, editing, look and motion, titles and captions, audio, AI and agents, export, projects and history
+- [Agent tool reference](https://cue.wicker.life/docs/tools): every MCP tool with its inputs
+- [README](https://github.com/davidwickerhf/cue#readme)

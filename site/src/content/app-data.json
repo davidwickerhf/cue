@@ -1,0 +1,444 @@
+{
+	"shortcuts": [
+		{
+			"title": "Playback",
+			"items": [
+				{
+					"label": "Play / pause",
+					"keys": [
+						"Space"
+					]
+				},
+				{
+					"label": "Shuttle back / stop / forward",
+					"keys": [
+						"J",
+						"K",
+						"L"
+					],
+					"note": "Press L again to play faster"
+				},
+				{
+					"label": "Previous / next frame",
+					"keys": [
+						"←",
+						"→"
+					]
+				},
+				{
+					"label": "Back / forward 5 frames",
+					"keys": [
+						"⇧←",
+						"⇧→"
+					]
+				},
+				{
+					"label": "Previous / next edit point",
+					"keys": [
+						"↑",
+						"↓"
+					]
+				},
+				{
+					"label": "Go to start / end",
+					"keys": [
+						"Home",
+						"End"
+					]
+				},
+				{
+					"label": "Mark in / out",
+					"keys": [
+						"I",
+						"O"
+					]
+				},
+				{
+					"label": "Play in to out",
+					"keys": [
+						"/"
+					]
+				},
+				{
+					"label": "Clear in and out",
+					"keys": [
+						"⌥X"
+					]
+				}
+			]
+		},
+		{
+			"title": "Tools",
+			"items": [
+				{
+					"label": "Selection",
+					"keys": [
+						"V"
+					]
+				},
+				{
+					"label": "Blade (razor)",
+					"keys": [
+						"C"
+					],
+					"note": "B works too"
+				},
+				{
+					"label": "Slip",
+					"keys": [
+						"Y"
+					],
+					"note": "Drag a clip to change which part of the source it shows"
+				},
+				{
+					"label": "Rolling edit",
+					"keys": [
+						"N"
+					],
+					"note": "Drag a cut between two clips"
+				},
+				{
+					"label": "Slide",
+					"keys": [
+						"U"
+					],
+					"note": "Drag a clip between its neighbours"
+				},
+				{
+					"label": "Snapping",
+					"keys": [
+						"S"
+					]
+				}
+			]
+		},
+		{
+			"title": "Editing",
+			"items": [
+				{
+					"label": "Split at playhead",
+					"keys": [
+						"⌘K"
+					],
+					"note": "⌘B also works"
+				},
+				{
+					"label": "Delete",
+					"keys": [
+						"⌫"
+					]
+				},
+				{
+					"label": "Ripple delete",
+					"keys": [
+						"⇧⌫"
+					]
+				},
+				{
+					"label": "Copy / cut / paste at playhead",
+					"keys": [
+						"⌘C",
+						"⌘X",
+						"⌘V"
+					]
+				},
+				{
+					"label": "Duplicate by dragging",
+					"keys": [
+						"⌥ drag"
+					]
+				},
+				{
+					"label": "Add crossfade",
+					"keys": [
+						"⌘D"
+					],
+					"note": "⌘T also works"
+				},
+				{
+					"label": "Link / unlink",
+					"keys": [
+						"⌘L"
+					]
+				},
+				{
+					"label": "Group / ungroup",
+					"keys": [
+						"⌘G",
+						"⇧⌘G"
+					]
+				},
+				{
+					"label": "Nudge clip one frame",
+					"keys": [
+						"⌥←",
+						"⌥→"
+					]
+				},
+				{
+					"label": "Select all / none",
+					"keys": [
+						"⌘A",
+						"Esc"
+					]
+				},
+				{
+					"label": "Add marker",
+					"keys": [
+						"M"
+					]
+				},
+				{
+					"label": "Undo / redo",
+					"keys": [
+						"⌘Z",
+						"⇧⌘Z"
+					]
+				}
+			]
+		},
+		{
+			"title": "Source monitor",
+			"items": [
+				{
+					"label": "Open a clip",
+					"keys": [
+						"Double-click in Media"
+					]
+				},
+				{
+					"label": "Mark in / out, play",
+					"keys": [
+						"I",
+						"O",
+						"Space"
+					],
+					"note": "While the source is showing"
+				},
+				{
+					"label": "Insert / overwrite at the playhead",
+					"keys": [
+						",",
+						"."
+					]
+				},
+				{
+					"label": "Back to the timeline",
+					"keys": [
+						"Esc"
+					]
+				}
+			]
+		},
+		{
+			"title": "Timeline",
+			"items": [
+				{
+					"label": "Zoom in / out",
+					"keys": [
+						"=",
+						"-"
+					]
+				},
+				{
+					"label": "Zoom to fit",
+					"keys": [
+						"\\"
+					]
+				},
+				{
+					"label": "Zoom around pointer",
+					"keys": [
+						"⌘ scroll"
+					]
+				}
+			]
+		},
+		{
+			"title": "Voiceover",
+			"items": [
+				{
+					"label": "Record the selected line",
+					"keys": [
+						"R"
+					]
+				},
+				{
+					"label": "Stop and keep the take",
+					"keys": [
+						"Space"
+					]
+				},
+				{
+					"label": "Discard the take",
+					"keys": [
+						"Esc"
+					]
+				}
+			]
+		},
+		{
+			"title": "App",
+			"items": [
+				{
+					"label": "Settings",
+					"keys": [
+						"⌘,"
+					]
+				},
+				{
+					"label": "New / open project",
+					"keys": [
+						"⌘N",
+						"⌘O"
+					]
+				},
+				{
+					"label": "Import media",
+					"keys": [
+						"⌘I"
+					]
+				}
+			]
+		}
+	],
+	"transitions": [
+		{
+			"kind": "crossfade",
+			"label": "Crossfade"
+		},
+		{
+			"kind": "dip",
+			"label": "Dip to black"
+		},
+		{
+			"kind": "wipe-left",
+			"label": "Wipe left"
+		},
+		{
+			"kind": "wipe-right",
+			"label": "Wipe right"
+		},
+		{
+			"kind": "slide-left",
+			"label": "Slide in from right"
+		},
+		{
+			"kind": "slide-right",
+			"label": "Slide in from left"
+		},
+		{
+			"kind": "zoom",
+			"label": "Zoom in"
+		},
+		{
+			"kind": "blur",
+			"label": "Blur"
+		}
+	],
+	"titles": [
+		{
+			"id": "title",
+			"label": "Title",
+			"animationIn": "pop",
+			"animationOut": "fade"
+		},
+		{
+			"id": "headline",
+			"label": "Headline",
+			"animationIn": "slide-up",
+			"animationOut": "fade"
+		},
+		{
+			"id": "outline",
+			"label": "Outline",
+			"animationIn": "zoom",
+			"animationOut": "fade"
+		},
+		{
+			"id": "gradient",
+			"label": "Gradient",
+			"animationIn": "pop",
+			"animationOut": "fade"
+		},
+		{
+			"id": "lower-third",
+			"label": "Lower third",
+			"animationIn": "slide-left",
+			"animationOut": "fade"
+		},
+		{
+			"id": "caption",
+			"label": "Caption",
+			"animationIn": null,
+			"animationOut": null
+		},
+		{
+			"id": "subtitle",
+			"label": "Yellow subtitle",
+			"animationIn": null,
+			"animationOut": null
+		},
+		{
+			"id": "minimal",
+			"label": "Minimal",
+			"animationIn": "fade",
+			"animationOut": "fade"
+		},
+		{
+			"id": "quote",
+			"label": "Quote",
+			"animationIn": "fade",
+			"animationOut": "fade"
+		},
+		{
+			"id": "label",
+			"label": "Label",
+			"animationIn": "pop",
+			"animationOut": "fade"
+		},
+		{
+			"id": "big-number",
+			"label": "Big number",
+			"animationIn": "zoom",
+			"animationOut": "fade"
+		}
+	],
+	"workspaces": [
+		{
+			"id": "editing",
+			"label": "Editing",
+			"keys": "⌥1"
+		},
+		{
+			"id": "audio",
+			"label": "Audio",
+			"keys": "⌥2"
+		},
+		{
+			"id": "colour",
+			"label": "Colour",
+			"keys": "⌥3"
+		},
+		{
+			"id": "voiceover",
+			"label": "Voiceover",
+			"keys": "⌥4"
+		},
+		{
+			"id": "titles",
+			"label": "Titles",
+			"keys": "⌥5"
+		},
+		{
+			"id": "agent",
+			"label": "Agent",
+			"keys": "⌥6"
+		},
+		{
+			"id": "review",
+			"label": "Review",
+			"keys": "⌥7"
+		}
+	]
+}
