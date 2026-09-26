@@ -365,6 +365,27 @@ def draw_original_assets() -> None:
         thumb.save(ASSET_POSTERS / f"{name}.jpg", quality=84)
         thumb.save(SITE_ASSETS / f"{name}.jpg", quality=84)
 
+    veil = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(veil)
+    for y in range(8, 720, 14):
+        for x in range(8, 1280, 14):
+            # Denser on the left, clearing space for a title or face on the right.
+            falloff = max(0, 1 - x / 1060)
+            radius = max(1, round(3 * falloff))
+            alpha = round(120 * falloff)
+            if alpha:
+                draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=(17, 27, 24, alpha))
+    draw.line((42, 42, 95, 42), fill=(17, 27, 24, 160), width=4)
+    draw.line((42, 42, 42, 95), fill=(17, 27, 24, 160), width=4)
+    draw.line((1185, 678, 1238, 678), fill=(17, 27, 24, 160), width=4)
+    draw.line((1238, 625, 1238, 678), fill=(17, 27, 24, 160), width=4)
+    veil.save(folder / "halftone-veil.png")
+    sample = frame("shore-waves", 1.5).resize((1280, 720), Image.Resampling.LANCZOS).convert("RGBA")
+    sample.alpha_composite(veil)
+    thumb = sample.convert("RGB").resize((640, 360), Image.Resampling.LANCZOS)
+    thumb.save(ASSET_POSTERS / "halftone-veil.jpg", quality=86)
+    thumb.save(SITE_ASSETS / "halftone-veil.jpg", quality=86)
+
 
 def route_reveal(t: float) -> Image.Image:
     im = Image.new("RGB", (W, H), "#d9d4c7")
@@ -477,54 +498,115 @@ def no_signal(t: float) -> Image.Image:
 
 
 def infographic_preview(t: float, kind: str) -> Image.Image:
-    import math
-    im = shade(frame("city-aerial" if kind != "cards" else "business-graphs", t + .4), .7)
-    rect(im, (44, 30, 596, 331), "#f3f1e8", 6)
-    rect(im, (44, 30, 49, 331), "#e06b43")
-    title = {"bars": "WHERE THE TIME GOES", "donut": "A CHANGING SHARE", "cards": "THE THREE NUMBERS", "line": "THE TREND OVER TIME", "timeline": "A SEQUENCE OF CHANGE"}[kind]
-    text(im, (72, 53), "CUE  /  DATA STUDY", 12, "#64736c", bold=True)
-    text(im, (72, 79), title, 29, "#1c2923", bold=True)
+    im = frame("city-aerial" if kind != "cards" else "business-graphs", t + .4)
+    draw = ImageDraw.Draw(im)
+    theme = "electric" if kind in ("donut", "timeline") else "mono" if kind == "cards" else "editorial"
+    paper, ink, quiet, rule, accent, second = {
+        "editorial": ("#efe9db", "#1b2822", "#64736b", "#b8c0b5", "#d65337", "#507f70"),
+        "electric": ("#10212b", "#f2f5e9", "#a9b9b4", "#49616a", "#d6ff38", "#69bcc0"),
+        "mono": ("#f2efe7", "#161b19", "#5e6661", "#acb3aa", "#161b19", "#7d8981"),
+    }[theme]
+    draw.rectangle((0, 0, W, 85), fill="#17231e")
+    draw.rectangle((27, 96, 613, 335), fill="#17231e")
+    draw.rectangle((30, 91, 610, 330), fill=paper)
+    draw.rectangle((30, 91, 65, 95), fill=accent)
+    title = {"bars": "Where the time goes", "donut": "A changing share", "cards": "The three numbers", "line": "The trend over time", "timeline": "A sequence of change"}[kind]
+    serif = ImageFont.truetype(Path("/System/Library/Fonts/Supplemental/Georgia Bold.ttf") if Path("/System/Library/Fonts/Supplemental/Georgia Bold.ttf").exists() else FONT_BOLD, 31)
+    draw.text((29, 13), "FIELD NOTE / DATA", font=font(10, True), fill="#f8f6ee")
+    draw.text((29, 33), title, font=serif, fill="#fffaf0")
+    draw.text((66, 105), f"FIG. 01   /   {kind.upper()}", font=font(10, True), fill=quiet)
+    draw.line((66, 122, 575, 122), fill=rule, width=1)
+    draw.line((66, 298, 575, 298), fill=rule, width=1)
+    draw.text((66, 306), "SOURCE  DEMO DATA — REPLACE WITH VERIFIED VALUES", font=font(9, True), fill=quiet)
     p = ease((t - .35) / 1.2)
     if kind == "bars":
         for i, (name, value) in enumerate((("RESEARCH", .75), ("EDIT", .58), ("REVIEW", .42))):
-            yy = 154 + i * 48
-            text(im, (73, yy), name, 17, "#24352d", bold=True)
-            rect(im, (216, yy, 495, yy + 18), "#d9ddd4", 3)
-            rect(im, (216, yy, 216 + int(279 * value * p), yy + 18), "#e06b43" if i == 0 else "#263b31", 3)
-            text(im, (508, yy - 2), f"{int(value * 100 * p)}%", 18, "#24352d", bold=True)
+            yy = 138 + i * 53
+            draw.text((67, yy), f"0{i + 1}", font=font(9, True), fill=quiet)
+            draw.text((95, yy - 4), name, font=font(19, True), fill=ink)
+            draw.rectangle((221, yy + 17, 221 + int(255 * value / .75 * p), yy + 27), fill=accent if i == 0 else ink)
+            draw.text((493, yy - 8), f"{int(value * 100 * p)}%", font=font(24, True), fill=ink)
+            if i < 2: draw.line((66, yy + 45, 575, yy + 45), fill=rule, width=1)
     elif kind == "donut":
-        draw = ImageDraw.Draw(im)
         start = -90
-        for i, (name, share, color) in enumerate((("DIRECT", .52, "#e06b43"), ("REFERRAL", .30, "#263b31"), ("OTHER", .18, "#92a89a"))):
+        for share, color in ((.52, accent), (.30, ink), (.18, second)):
             span = 360 * share * p
-            draw.arc((90, 130, 275, 315), start, start + span, fill=color, width=34)
+            draw.arc((95, 139, 260, 304), start + 2, start + max(3, span - 2), fill=color, width=28)
             start += span
-            text(im, (333, 159 + i * 43), f"{name}    {round(share * 100)}%", 18, "#24352d", bold=True)
+        draw.text((147, 197), f"{int(100 * p)}", font=font(28, True), fill=ink)
+        for i, (name, share, color) in enumerate((("DIRECT", 52, accent), ("REFERRAL", 30, ink), ("OTHER", 18, second))):
+            yy = 149 + i * 47
+            draw.rectangle((305, yy + 16, 323, yy + 19), fill=color)
+            draw.text((334, yy + 5), name, font=font(15, True), fill=ink)
+            draw.text((524, yy), f"{share}%", font=font(22, True), fill=ink)
+            if i < 2: draw.line((305, yy + 42, 575, yy + 42), fill=rule, width=1)
+    elif kind == "cards":
+        for i, (value, name) in enumerate((("72%", "REACHED"), ("3.4×", "GROWTH"), ("18K", "PEOPLE"))):
+            xx = 68 + i * 169
+            if i: draw.line((xx - 4, 138, xx - 4, 285), fill=rule, width=1)
+            draw.text((xx + 9, 170), value if p > .7 else "—", font=font(44, True), fill=accent if i == 0 else ink)
+            draw.text((xx + 9, 260), name, font=font(12, True), fill=quiet)
     elif kind == "line":
-        draw = ImageDraw.Draw(im)
-        points = ((89, 264), (195, 223), (302, 238), (408, 171), (520, 143))
-        draw.line(points[:max(1, int(1 + p * 4))], fill="#e06b43", width=6, joint="curve")
+        points = ((86, 261), (205, 227), (325, 239), (445, 177), (564, 153))
+        values = (22, 35, 30, 58, 66)
+        draw.line((86, 267, 564, 267), fill=ink, width=1)
+        draw.line(points[:max(1, int(1 + p * 4))], fill=accent, width=4, joint="curve")
         for i, (px, py) in enumerate(points):
             if i <= p * 4:
-                draw.ellipse((px - 6, py - 6, px + 6, py + 6), fill="#e06b43")
-                text(im, (px, 277), str(2020 + i), 14, "#64736c", bold=True, anchor="mt")
-    elif kind == "timeline":
-        draw = ImageDraw.Draw(im)
-        draw.line((88, 211, 548, 211), fill="#c4d0c5", width=5)
-        draw.line((88, 211, 88 + int(460 * p), 211), fill="#e06b43", width=5)
-        for i, (label, value) in enumerate((("START", "12"), ("EXPAND", "34"), ("NOW", "68"))):
-            xx = 88 + i * 230
-            draw.ellipse((xx - 10, 201, xx + 10, 221), fill="#e06b43" if p >= i / 2 else "#a9b6aa")
-            text(im, (xx, 150), value, 31, "#24352d", bold=True, anchor="mt")
-            text(im, (xx, 243), label, 15, "#64736c", bold=True, anchor="mt")
+                draw.ellipse((px - 5, py - 5, px + 5, py + 5), fill=paper, outline=accent, width=2)
+                draw.text((px, 275), str(2020 + i), font=font(10, True), fill=quiet, anchor="mt")
+                draw.text((px, py - 28), str(values[i]), font=font(13, True), fill=ink, anchor="mt")
     else:
-        for i, (value, label) in enumerate((("72%", "REACHED"), ("3.4×", "GROWTH"), ("18K", "PEOPLE"))):
-            xx = 73 + i * 165
-            rect(im, (xx, 147, xx + 148, 278), "#e5e8df", 4)
-            text(im, (xx + 13, 169), value if p > .7 else "—", 35, "#e06b43" if i == 0 else "#24352d", bold=True)
-            text(im, (xx + 13, 242), label, 15, "#64736c", bold=True)
-    text(im, (72, 305), "DEMO DATA  /  REPLACE WITH SOURCED VALUES", 11, "#64736c", bold=True)
+        draw.line((85, 212, 565, 212), fill=rule, width=3)
+        draw.line((85, 212, 85 + int(480 * p), 212), fill=accent, width=3)
+        for i, (name, value) in enumerate((("START", "12"), ("EXPAND", "34"), ("NOW", "68"))):
+            xx = 85 + i * 240
+            draw.ellipse((xx - 7, 205, xx + 7, 219), fill=accent if p >= i / 2 else rule)
+            draw.text((xx, 155), value, font=font(29, True), fill=ink, anchor="mt")
+            draw.text((xx, 236), name, font=font(12, True), fill=quiet, anchor="mt")
     return im
+
+
+def evidence_callout(t: float) -> Image.Image:
+    im = shade(frame("subway-arrival", t + .4), .22)
+    draw = ImageDraw.Draw(im)
+    p = ease((t - .3) / .9)
+    tx, ty = 201, 242
+    draw.ellipse((tx - 12, ty - 12, tx + 12, ty + 12), outline="#d65337", width=3)
+    draw.ellipse((tx - 3, ty - 3, tx + 3, ty + 3), fill="#d65337")
+    elbow = (int(tx + (338 - tx) * min(1, p * 2)), ty)
+    draw.line((tx, ty, *elbow), fill="#d65337", width=3)
+    if p > .5:
+        draw.line((*elbow, elbow[0], 148 + int((ty - 148) * (1 - p) * 2)), fill="#d65337", width=3)
+    if p > .7:
+        draw.rectangle((330, 87, 596, 165), fill="#101b18")
+        draw.rectangle((325, 82, 591, 160), fill="#efe9db")
+        draw.rectangle((325, 82, 330, 160), fill="#d65337")
+        text(im, (341, 92), "FIELD NOTE", 10, "#64736b", bold=True)
+        text(im, (341, 109), "CENTRAL STATION", 19, "#1b2822", bold=True)
+        text(im, (341, 134), "42%  /  RIDERSHIP", 14, "#d65337", bold=True)
+    text(im, (25, 28), "01  /  EVIDENCE CALLOUT", 15, "#fffaf0", bold=True, stroke=2, stroke_color="#17231e")
+    text(im, (25, 329), "DEMO DATA  /  REPLACE WITH SOURCED VALUES", 11, "#fffaf0", bold=True, stroke=2, stroke_color="#17231e")
+    return im
+
+
+def ink_blot(t: float) -> Image.Image:
+    import math
+    back = frame("newspaper-pages", t + .4)
+    front = frame("forest-glide", t + .3)
+    p = ease((t - .45) / 1.7)
+    points = []
+    for i in range(96):
+        angle = i * math.pi * 2 / 96
+        radius = .82 * p + .02 * math.sin(i * .38) + .015 * math.sin(i * .91)
+        points.append((int(W * (.5 + radius * math.cos(angle))), int(H * (.5 + radius * math.sin(angle)))))
+    mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(mask).polygon(points, fill=255)
+    back.paste(front, (0, 0), mask)
+    if p < .88:
+        ImageDraw.Draw(back).line(points + [points[0]], fill="#18251f", width=5)
+    text(back, (28, 25), "02  /  INK REVEAL", 18, "#fffaf0", bold=True, stroke=2, stroke_color="#18251f")
+    return back
 
 
 STYLES = {
@@ -553,6 +635,8 @@ STYLES = {
 	"data-cards": lambda t: infographic_preview(t, "cards"),
 	"data-line": lambda t: infographic_preview(t, "line"),
 	"data-timeline": lambda t: infographic_preview(t, "timeline"),
+	"evidence-callout": evidence_callout,
+	"ink-blot": ink_blot,
 }
 
 
@@ -569,7 +653,7 @@ def render(name: str, painter) -> None:
     try:
         for i in range(DURATION * FPS):
             image = painter(i / FPS).convert("RGB")
-            if i == (72 if name == "route-reveal" else 60 if name == "data-contrast" else 44):
+            if i == (36 if name == "ink-blot" else 72 if name == "route-reveal" else 60 if name == "data-contrast" else 44):
                 poster = image.copy()
             pipe.stdin.write(image.tobytes())
     finally:

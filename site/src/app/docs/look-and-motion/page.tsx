@@ -35,6 +35,7 @@ const TRANSITION_NOTES: Record<string, string> = {
 	blur: "The incoming clip sharpens from a blur while it fades in.",
 	"paper-tear": "A jagged paper edge reveals the incoming picture with a light fibrous rim.",
 	"signal-glitch": "Offset horizontal bands and scanlines disrupt the incoming picture before it settles.",
+	"ink-blot": "An irregular ink shape grows from the centre to reveal the incoming picture.",
 };
 
 export default function Page() {
@@ -156,6 +157,9 @@ export default function Page() {
 				Cue can create animated bars, donut charts, metric cards, trend lines and milestone timelines. Each is a single text clip with editable title, values, unit, palette and source in the inspector. Agents can create one with <C>add_infographic</C> and revise its data with <C>update_clip</C>.
 			</p>
 			<p>Use verified values for a finished video. The <A href="/styles">style library</A> includes footage-backed studies with clearly labelled demo data.</p>
+			<p>
+				For facts tied to a person, object or place in the shot, an agent can use <C>add_data_callout</C> to position a target ring and leader line. The label, value, source and positions remain editable in the inspector.
+			</p>
 
 			<H2 id="scopes">Scopes and compare</H2>
 			<p>The Colour workspace (<Kbd>⌥3</Kbd>) docks scopes beside the viewer and opens the colour tools in the inspector.</p>

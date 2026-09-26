@@ -10,6 +10,7 @@ import {
 	colorSchema,
 	cropSchema,
 	curveSchema,
+	dataCalloutSchema,
 	DEFAULT_FRAME,
 	DEFAULT_KEY,
 	DEFAULT_MASK,
@@ -115,6 +116,7 @@ export const textClipInput = z.object({
 	/** A graphic under the text: box, ellipse, line or arrow (text may be empty). */
 	shape: shapeSchema.partial().optional(),
 	infographic: infographicSchema.optional(),
+	dataCallout: dataCalloutSchema.optional(),
 	wordStyle: wordStyleSchema.optional(),
 });
 
@@ -146,7 +148,8 @@ export const clipPatch = z
 		frame: frameSchema.partial().nullable(),
 		wordStyle: wordStyleSchema.nullable(),
 		shape: shapeSchema.partial().nullable(),
-		infographic: infographicSchema.nullable(),
+		infographic: infographicSchema.partial().nullable(),
+		dataCallout: dataCalloutSchema.partial().nullable(),
 		words: z.array(captionWordSchema).max(400).nullable(),
 	})
 	.partial();
@@ -720,6 +723,7 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 			...(input.name ? { name: input.name } : {}),
 			...(input.shape ? { shape: shapeSchema.parse({ ...DEFAULT_SHAPE, ...input.shape }) } : {}),
 			...(input.infographic ? { infographic: input.infographic } : {}),
+			...(input.dataCallout ? { dataCallout: input.dataCallout } : {}),
 			...(input.wordStyle
 				? {
 						wordStyle: input.wordStyle,
@@ -1312,6 +1316,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				words,
 				shape,
 				infographic,
+				dataCallout,
 				...patch
 			} = op.patch;
 			// null clears a label, mask or key; a partial mask or key merges with what is there.
@@ -1382,14 +1387,34 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 													? undefined
 													: shapeSchema.parse({ ...DEFAULT_SHAPE, ...current.shape, ...shape }),
 										}),
-								...(infographic === undefined ? {} : { infographic: infographic ?? undefined }),
+								...(infographic === undefined
+									? {}
+									: {
+											infographic:
+												infographic === null
+													? undefined
+													: infographicSchema.parse({ ...current.infographic, ...infographic }),
+										}),
+								...(dataCallout === undefined
+									? {}
+									: {
+											dataCallout:
+												dataCallout === null
+													? undefined
+													: dataCalloutSchema.parse({ ...current.dataCallout, ...dataCallout }),
+										}),
 							},
 							words,
 							wordStyle,
 						);
 			if (
 				current.type === "media" &&
-				(op.patch.text !== undefined || style || wordStyle || words || infographic !== undefined)
+				(op.patch.text !== undefined ||
+					style ||
+					wordStyle ||
+					words ||
+					infographic !== undefined ||
+					dataCallout !== undefined)
 			)
 				throw new Error("Only text clips have text, style and word timing.");
 			const next = validateClip(data, merged as Clip);

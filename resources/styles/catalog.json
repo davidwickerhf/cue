@@ -950,7 +950,7 @@
         "Follow with the segment most relevant to the story."
       ],
       "directions": [
-        "Use add_infographic kind donut. Cue derives slice angles and percentages from the supplied values.",
+        "Use add_infographic kind donut with the electric palette. Cue derives slice angles and percentages from the supplied values.",
         "Use a source field and avoid mixing categories that overlap."
       ],
       "review": [
@@ -991,7 +991,7 @@
         "Cut to evidence that explains the most important number."
       ],
       "directions": [
-        "Use add_infographic kind cards; edit the values in the inspector or with update_clip.",
+        "Use add_infographic kind cards with the mono palette; edit the values in the inspector or with update_clip.",
         "For different units, omit the shared unit and include units in each label.",
         "Replace the demo values before publishing."
       ],
@@ -1077,7 +1077,7 @@
         "Return to the latest scene or outcome."
       ],
       "directions": [
-        "Use add_infographic kind timeline; each item is one milestone label and its associated value.",
+        "Use add_infographic kind timeline with the electric palette; each item is one milestone label and its associated value.",
         "Keep the labels short and use the source field.",
         "For more than six moments, split the story across multiple clips."
       ],
@@ -1099,6 +1099,91 @@
       {
         "label": "Motion Array infographic gallery",
         "url": "https://motionarray.com/after-effects-templates/infographics/"
+      }
+    ]
+  },
+  {
+    "id": "style-evidence-callout",
+    "name": "Evidence callout",
+    "category": "Infographics",
+    "description": "An anchored point and leader line identify a place, object or sourced fact directly in the footage.",
+    "guide": {
+      "goal": "Connect a claim to the precise thing the viewer should notice in the shot.",
+      "requires": [
+        "A shot with a clear target point",
+        "A short label, optional value and a source for factual claims"
+      ],
+      "structure": [
+        "Hold the picture long enough to establish the setting.",
+        "Animate the target ring and leader line toward a compact label.",
+        "Let the value remain readable, then clear the callout before the next cut."
+      ],
+      "directions": [
+        "Use add_data_callout with targetX and targetY on the subject, and x and y where the label can sit without covering faces.",
+        "Include the source field for a factual value.",
+        "Choose the editorial, electric or mono palette to suit the surrounding sequence."
+      ],
+      "review": [
+        "Confirm the line ends on the intended object throughout the shot.",
+        "Check that label and value remain readable at phone size and do not obscure important footage."
+      ]
+    },
+    "preview": {
+      "video": "evidence-callout.mp4",
+      "poster": "evidence-callout.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "subway-arrival",
+      "city-aerial"
+    ],
+    "references": [
+      {
+        "label": "Motion Array call-out examples",
+        "url": "https://motionarray.com/after-effects-templates/call-out-pack-37975/"
+      }
+    ]
+  },
+  {
+    "id": "style-ink-blot",
+    "name": "Ink blot reveal",
+    "category": "Transitions",
+    "description": "An irregular dark-edged blot expands across the frame to uncover a new scene.",
+    "guide": {
+      "goal": "Make a chapter shift feel like an idea spreading across a page.",
+      "requires": [
+        "Two adjacent shots with distinct visual content",
+        "A motivated chapter or location change"
+      ],
+      "structure": [
+        "Hold the outgoing shot long enough to register its subject.",
+        "Overlap the incoming clip for 600–1000 ms.",
+        "Let the ink shape expand from the centre and clear fully.",
+        "Continue on the clean incoming shot."
+      ],
+      "directions": [
+        "Apply add_transition kind ink-blot to the incoming clip.",
+        "Use it between archival, map, document or nature material when a tactile transition fits the story.",
+        "Keep titles away from the reveal interval."
+      ],
+      "review": [
+        "Check that the expanding edge never hides critical text for too long.",
+        "Confirm the outgoing shot is completely replaced when the overlap ends."
+      ]
+    },
+    "preview": {
+      "video": "ink-blot.mp4",
+      "poster": "ink-blot.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "newspaper-pages",
+      "forest-glide"
+    ],
+    "references": [
+      {
+        "label": "Motion Array ink transition examples",
+        "url": "https://motionarray.com/after-effects-templates/ink-transitions-738022/"
       }
     ]
   }

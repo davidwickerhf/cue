@@ -544,7 +544,8 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	);
 	const textClips = layers.filter(
 		(c): c is TextClip =>
-			c.type === "text" && (c.text.trim().length > 0 || !!c.shape || !!c.infographic),
+			c.type === "text" &&
+			(c.text.trim().length > 0 || !!c.shape || !!c.infographic || !!c.dataCallout),
 	);
 	const rendered = textClips.length
 		? await (ctx.renderText?.(textClips, { width: W, height: H }) ??
@@ -697,6 +698,14 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 						const edge = `W*(${enteredAt("T")}+0.13*sin(floor(Y/H*16)*13.2+floor(T*24)*2.3))`;
 						const scan = `if(lt(mod(Y,4),1),0.7,1)`;
 						return `,geq=r='r(min(W-1,X+7),Y)*${scan}':g='g(X,Y)*${scan}':b='b(max(0,X-7),Y)*${scan}':a='alpha(X,Y)*lte(X,${edge})':enable='lt(t,${s(tr.durationMs)})'`;
+					})()
+				: "") +
+			(tr?.kind === "ink-blot"
+				? (() => {
+						const dist = `sqrt((X/W-0.5)*(X/W-0.5)+(Y/H-0.5)*(Y/H-0.5))`;
+						const edge = `${enteredAt("T")}*0.82+0.02*sin(X/W*35)+0.015*sin(Y/H*51)`;
+						const rim = `between(${dist},${edge}-0.012,${edge})`;
+						return `,geq=r='if(${rim},18,r(X,Y))':g='if(${rim},28,g(X,Y))':b='if(${rim},23,b(X,Y))':a='alpha(X,Y)*lte(${dist},${edge})':enable='lt(t,${s(tr.durationMs)})'`;
 					})()
 				: "");
 		const fades = [

@@ -1172,6 +1172,8 @@ export class Controller extends EventEmitter {
 				return this.store.addOverlay(parseInput("add_overlay", params), actor);
 			case "add_infographic":
 				return this.store.addInfographic(parseInput("add_infographic", params), actor);
+			case "add_data_callout":
+				return this.store.addDataCallout(parseInput("add_data_callout", params), actor);
 			case "review_changes": {
 				const { action, clipIds } = parseInput("review_changes", params);
 				if (actor === "agent")

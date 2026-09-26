@@ -377,6 +377,10 @@
 		{
 			"kind": "signal-glitch",
 			"label": "No signal"
+		},
+		{
+			"kind": "ink-blot",
+			"label": "Ink blot"
 		}
 	],
 	"titles": [

@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 153,
+	"count": 154,
 	"groups": [
 		{
 			"title": "Overview",
@@ -1241,7 +1241,7 @@
 				},
 				{
 					"name": "add_transition",
-					"description": "Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the clips and crossfades their sound: crossfade, wipe-left/right, slide-left/right, zoom, blur, paper-tear (ragged paper edge), signal-glitch (staggered horizontal signal breakup). Dip fades through black. Adding one to a clip that has one replaces it.",
+					"description": "Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the clips and crossfades their sound: crossfade, wipe-left/right, slide-left/right, zoom, blur, paper-tear (ragged paper edge), signal-glitch (staggered horizontal signal breakup), ink-blot (organic radial reveal). Dip fades through black. Adding one to a clip that has one replaces it.",
 					"inputs": [
 						{
 							"name": "clipId",
@@ -1250,7 +1250,7 @@
 						},
 						{
 							"name": "kind",
-							"type": "\"crossfade\" | \"dip\" | \"wipe-left\" | \"wipe-right\" | \"slide-left\" | \"slide-right\" | \"zoom\" | \"blur\" | \"paper-tear\" | \"signal-glitch\"",
+							"type": "\"crossfade\" | \"dip\" | \"wipe-left\" | \"wipe-right\" | \"slide-left\" | \"slide-right\" | \"zoom\" | \"blur\" | \"paper-tear\" | \"signal-glitch\" | \"ink-blot\"",
 							"required": false,
 							"default": "\"crossfade\""
 						},
@@ -1853,7 +1853,7 @@
 				},
 				{
 					"name": "add_infographic",
-					"description": "Create an editable animated data graphic over the video. bars compares values, donut shows parts of a whole, cards highlights key metrics, line shows a numerical trend, and timeline shows ordered milestones with values. Give real numbers and a source when available. The graphic is one text clip, so it can be moved, trimmed, undone, and edited with update_clip {infographic:{...}}. Palette: editorial (paper and coral), electric (dark and mint), mono (paper and red).",
+					"description": "Create an editable animated data graphic over the video. bars compares values, donut shows parts of a whole, cards highlights key metrics, line shows a numerical trend, and timeline shows ordered milestones with values. Give real numbers and a source when available. The graphic is one text clip, so it can be moved, trimmed, undone, and edited with update_clip {infographic:{...}}. Palette: editorial (warm newsprint), electric (dark signal with lime), mono (black and white).",
 					"inputs": [
 						{
 							"name": "kind",
@@ -1896,6 +1896,66 @@
 							"type": "number",
 							"required": false,
 							"default": "4000"
+						}
+					]
+				},
+				{
+					"name": "add_data_callout",
+					"description": "Pin an animated evidence callout to a point in the video. A target ring and leader line connect to a compact label and optional value/source. Positions are shares of the frame, 0–1. The result is one editable clip; use update_clip with a partial dataCallout patch to revise it. Use for a place, person, object, or sourced fact visible in the shot.",
+					"inputs": [
+						{
+							"name": "label",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "value",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "source",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "x",
+							"type": "number",
+							"required": false,
+							"default": "0.72"
+						},
+						{
+							"name": "y",
+							"type": "number",
+							"required": false,
+							"default": "0.38"
+						},
+						{
+							"name": "targetX",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "targetY",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "palette",
+							"type": "\"editorial\" | \"electric\" | \"mono\"",
+							"required": false,
+							"default": "\"editorial\""
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false,
+							"default": "3500"
 						}
 					]
 				},

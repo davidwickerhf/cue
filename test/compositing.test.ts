@@ -36,6 +36,47 @@ async function pixel(file: string, sec: number, x: number, y: number, w: number)
 }
 
 describe("compositing", () => {
+	it("adds an editable point callout as one undoable clip", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-callout-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Callout" });
+		const { clipId } = await store.addDataCallout(
+			{
+				label: "Train station",
+				value: "42%",
+				source: "Example",
+				x: 0.72,
+				y: 0.35,
+				targetX: 0.34,
+				targetY: 0.61,
+				palette: "editorial",
+				startMs: 0,
+				durationMs: 3500,
+			},
+			"user",
+		);
+		expect(
+			(store.current.clips.find((c) => c.id === clipId) as TextClip).dataCallout?.targetX,
+		).toBe(0.34);
+		store.apply(
+			{
+				type: "updateClip",
+				id: clipId,
+				patch: { dataCallout: { targetX: 0.36, palette: "electric" } },
+			},
+			"user",
+		);
+		expect(
+			(store.current.clips.find((c) => c.id === clipId) as TextClip).dataCallout?.palette,
+		).toBe("electric");
+		store.undo("user");
+		store.undo("user");
+		expect(store.current.clips.some((c) => c.id === clipId)).toBe(false);
+	}, 30000);
 	it("adds editable infographic data as one undoable clip", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-chart-"));
 		const store = new ProjectStore({
@@ -393,7 +434,7 @@ describe("compositing", () => {
 		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(1);
 	}, 90000);
 
-	it("exports wipes, slides, zoom, blur, paper and signal transitions", async () => {
+	it("exports wipes, slides, zoom, blur, paper, signal and ink transitions", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-transitions-"));
 		const red = path.join(dir, "red.mp4");
 		const blue = path.join(dir, "blue.mp4");
@@ -421,6 +462,7 @@ describe("compositing", () => {
 			"blur",
 			"paper-tear",
 			"signal-glitch",
+			"ink-blot",
 		] as const) {
 			const store = new ProjectStore({
 				mediaUrl: (f) => f,
@@ -468,6 +510,9 @@ describe("compositing", () => {
 			) {
 				expect(isBlue(leftPx)).toBe(true);
 				expect(isRed(rightPx)).toBe(true);
+			} else if (kind === "ink-blot") {
+				expect(isBlue(await pixel(out, 1.5, 160, 90, 320))).toBe(true);
+				expect(isRed(await pixel(out, 1.5, 2, 2, 320))).toBe(true);
 			} else {
 				// Fading in: a mix of both.
 				expect(isRed(leftPx) || isBlue(leftPx)).toBe(false);

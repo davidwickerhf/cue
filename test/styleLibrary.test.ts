@@ -23,8 +23,8 @@ describe("style and asset library", () => {
 	it("keeps every style preview and recommended asset resolvable", async () => {
 		const ids = new Set(LIBRARY_ASSETS.map((asset) => asset.id));
 		const styles = BUILT_IN_RECIPES.filter((item) => item.format === "style");
-		expect(styles).toHaveLength(25);
-		expect(LIBRARY_ASSETS).toHaveLength(33);
+		expect(styles).toHaveLength(27);
+		expect(LIBRARY_ASSETS).toHaveLength(34);
 		for (const asset of LIBRARY_ASSETS) {
 			expect(
 				(await fs.stat(path.join("resources/assets/posters", `${asset.id}.jpg`))).size,

@@ -409,6 +409,17 @@ export const infographicSchema = z.object({
 	palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
 });
 
+export const dataCalloutSchema = z.object({
+	label: z.string().min(1).max(80),
+	value: z.string().max(40).optional(),
+	source: z.string().max(120).optional(),
+	x: z.number().min(0).max(1),
+	y: z.number().min(0).max(1),
+	targetX: z.number().min(0).max(1),
+	targetY: z.number().min(0).max(1),
+	palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
+});
+
 const textClipSchema = z.object({
 	id,
 	type: z.literal("text"),
@@ -424,6 +435,7 @@ const textClipSchema = z.object({
 	wordStyle: wordStyleSchema.optional(),
 	shape: shapeSchema.optional(),
 	infographic: infographicSchema.optional(),
+	dataCallout: dataCalloutSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),
 	label: z.enum(CLIP_LABELS).optional(),

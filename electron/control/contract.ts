@@ -540,7 +540,7 @@ export const contract = {
 	ungroup_clips: { description: "Unlink clips.", input: { ids: z.array(z.string()).min(1) } },
 	add_transition: {
 		description:
-			"Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the clips and crossfades their sound: crossfade, wipe-left/right, slide-left/right, zoom, blur, paper-tear (ragged paper edge), signal-glitch (staggered horizontal signal breakup). Dip fades through black. Adding one to a clip that has one replaces it.",
+			"Transition into a clip from the clip right before it on the same track. Every kind but dip overlaps the clips and crossfades their sound: crossfade, wipe-left/right, slide-left/right, zoom, blur, paper-tear (ragged paper edge), signal-glitch (staggered horizontal signal breakup), ink-blot (organic radial reveal). Dip fades through black. Adding one to a clip that has one replaces it.",
 		input: {
 			clipId: z.string(),
 			kind: z.enum(TRANSITION_KINDS).default("crossfade"),
@@ -770,7 +770,7 @@ export const contract = {
 	},
 	add_infographic: {
 		description:
-			"Create an editable animated data graphic over the video. bars compares values, donut shows parts of a whole, cards highlights key metrics, line shows a numerical trend, and timeline shows ordered milestones with values. Give real numbers and a source when available. The graphic is one text clip, so it can be moved, trimmed, undone, and edited with update_clip {infographic:{...}}. Palette: editorial (paper and coral), electric (dark and mint), mono (paper and red).",
+			"Create an editable animated data graphic over the video. bars compares values, donut shows parts of a whole, cards highlights key metrics, line shows a numerical trend, and timeline shows ordered milestones with values. Give real numbers and a source when available. The graphic is one text clip, so it can be moved, trimmed, undone, and edited with update_clip {infographic:{...}}. Palette: editorial (warm newsprint), electric (dark signal with lime), mono (black and white).",
 		input: {
 			kind: z.enum(["bars", "donut", "cards", "line", "timeline"]),
 			title: z.string().min(1).max(120),
@@ -783,6 +783,22 @@ export const contract = {
 			palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
 			startMs: z.number().min(0),
 			durationMs: z.number().min(1000).default(4000),
+		},
+	},
+	add_data_callout: {
+		description:
+			"Pin an animated evidence callout to a point in the video. A target ring and leader line connect to a compact label and optional value/source. Positions are shares of the frame, 0–1. The result is one editable clip; use update_clip with a partial dataCallout patch to revise it. Use for a place, person, object, or sourced fact visible in the shot.",
+		input: {
+			label: z.string().min(1).max(80),
+			value: z.string().max(40).optional(),
+			source: z.string().max(120).optional(),
+			x: z.number().min(0).max(1).default(0.72),
+			y: z.number().min(0).max(1).default(0.38),
+			targetX: z.number().min(0).max(1),
+			targetY: z.number().min(0).max(1),
+			palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
+			startMs: z.number().min(0),
+			durationMs: z.number().min(1000).default(3500),
 		},
 	},
 	review_changes: {

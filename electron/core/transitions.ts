@@ -17,6 +17,7 @@ export const TRANSITIONS = [
 	{ kind: "blur", label: "Blur" },
 	{ kind: "paper-tear", label: "Paper tear" },
 	{ kind: "signal-glitch", label: "No signal" },
+	{ kind: "ink-blot", label: "Ink blot" },
 ] as const;
 
 export type TransitionKind = (typeof TRANSITIONS)[number]["kind"];
@@ -63,11 +64,25 @@ export function transitionEdge(
 
 /** A ragged reveal edge, bounded by the clip's own crop. */
 export function transitionClipPath(
-	kind: "paper-tear" | "signal-glitch",
+	kind: "paper-tear" | "signal-glitch" | "ink-blot",
 	progress: number,
 	crop: { left: number; top: number; right: number; bottom: number },
 	tick = 0,
 ): string {
+	if (kind === "ink-blot") {
+		const points: string[] = [];
+		for (let i = 0; i < 96; i++) {
+			const angle = (i * Math.PI * 2) / 96;
+			let radius = progress * 0.82;
+			let x = 0.5 + radius * Math.cos(angle);
+			let y = 0.5 + radius * Math.sin(angle);
+			radius += 0.02 * Math.sin(x * 35) + 0.015 * Math.sin(y * 51);
+			x = Math.max(crop.left, Math.min(1 - crop.right, 0.5 + radius * Math.cos(angle)));
+			y = Math.max(crop.top, Math.min(1 - crop.bottom, 0.5 + radius * Math.sin(angle)));
+			points.push(`${(x * 100).toFixed(2)}% ${(y * 100).toFixed(2)}%`);
+		}
+		return `polygon(${points.join(",")})`;
+	}
 	const top = crop.top;
 	const bottom = 1 - crop.bottom;
 	const edge = (row: number) =>

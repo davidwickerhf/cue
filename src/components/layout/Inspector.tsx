@@ -851,6 +851,85 @@ function TextInspector({ clip }: { clip: TextClip }) {
 	const patch = (p: Record<string, unknown>) => void run("update_clip", { id: clip.id, patch: p });
 	const style = (p: Partial<typeof s>) => patch({ style: p });
 	const fonts = useFonts();
+	if (clip.dataCallout) {
+		const note = clip.dataCallout;
+		const update = (changes: Partial<typeof note>) =>
+			patch({ dataCallout: { ...note, ...changes } });
+		return (
+			<>
+				<Section title="Data callout">
+					<Field label="Label">
+						<TextInput value={note.label} onCommit={(label) => update({ label })} />
+					</Field>
+					<Field label="Value">
+						<TextInput value={note.value ?? ""} onCommit={(value) => update({ value })} />
+					</Field>
+					<Field label="Source">
+						<TextInput value={note.source ?? ""} onCommit={(source) => update({ source })} />
+					</Field>
+					<Field label="Palette">
+						<select
+							className="h-8 rounded-lg border border-border bg-field px-2 text-[12px]"
+							value={note.palette}
+							onChange={(e) => update({ palette: e.target.value as typeof note.palette })}
+						>
+							<option value="editorial">Newsprint</option>
+							<option value="electric">Signal</option>
+							<option value="mono">Black &amp; white</option>
+						</select>
+					</Field>
+				</Section>
+				<Section title="Position">
+					<p className="text-[11px] text-muted">
+						Coordinates are shares of the frame: 0 is left or top, 1 is right or bottom.
+					</p>
+					<div className="grid grid-cols-2 gap-2">
+						<Field label="Label X">
+							<NumberInput
+								value={note.x}
+								min={0}
+								max={1}
+								step={0.01}
+								digits={2}
+								onCommit={(x) => update({ x })}
+							/>
+						</Field>
+						<Field label="Label Y">
+							<NumberInput
+								value={note.y}
+								min={0}
+								max={1}
+								step={0.01}
+								digits={2}
+								onCommit={(y) => update({ y })}
+							/>
+						</Field>
+						<Field label="Point X">
+							<NumberInput
+								value={note.targetX}
+								min={0}
+								max={1}
+								step={0.01}
+								digits={2}
+								onCommit={(targetX) => update({ targetX })}
+							/>
+						</Field>
+						<Field label="Point Y">
+							<NumberInput
+								value={note.targetY}
+								min={0}
+								max={1}
+								step={0.01}
+								digits={2}
+								onCommit={(targetY) => update({ targetY })}
+							/>
+						</Field>
+					</div>
+				</Section>
+				<Timing clip={clip} />
+			</>
+		);
+	}
 	if (clip.infographic) {
 		const chart = clip.infographic;
 		const update = (changes: Partial<typeof chart>) =>
@@ -881,9 +960,9 @@ function TextInspector({ clip }: { clip: TextClip }) {
 								value={chart.palette}
 								onChange={(e) => update({ palette: e.target.value as typeof chart.palette })}
 							>
-								<option value="editorial">Editorial</option>
-								<option value="electric">Electric</option>
-								<option value="mono">Mono</option>
+								<option value="editorial">Newsprint</option>
+								<option value="electric">Signal</option>
+								<option value="mono">Black &amp; white</option>
 							</select>
 						</Field>
 					</div>

@@ -76,6 +76,7 @@ import type {
 	Actor,
 	Asset,
 	Clip,
+	DataCallout,
 	DenoiseMode,
 	MediaClip,
 	MediaInfo,
@@ -442,6 +443,40 @@ export class ProjectStore extends EventEmitter {
 							animationIn: "none",
 							animationOut: "none",
 							name: infographic.title,
+						},
+					],
+				},
+				actor,
+			).created?.[0] as string;
+			return { clipId, trackId };
+		});
+	}
+
+	/** Adds a point annotation as one editable clip and one undo step. */
+	async addDataCallout(
+		input: DataCallout & { startMs: number; durationMs: number },
+		actor: Actor,
+	): Promise<{ clipId: string; trackId: string }> {
+		return this.transaction(actor, `Added data callout`, () => {
+			const trackId =
+				this.current.tracks.find((t) => t.kind === "text" && t.name === "Callouts")?.id ??
+				(this.apply({ type: "addTrack", kind: "text", name: "Callouts", index: 0 }, actor)
+					.created?.[0] as string);
+			const { startMs, durationMs, ...dataCallout } = input;
+			const clipId = this.apply(
+				{
+					type: "addClips",
+					clips: [
+						{
+							type: "text",
+							trackId,
+							startMs,
+							durationMs,
+							text: "",
+							dataCallout,
+							animationIn: "none",
+							animationOut: "fade",
+							name: dataCallout.label,
 						},
 					],
 				},

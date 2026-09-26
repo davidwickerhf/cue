@@ -374,6 +374,8 @@ export interface TextClip {
 	shape?: Shape;
 	/** Editable, data-driven graphic rendered identically in preview and export. */
 	infographic?: Infographic;
+	/** A leader line and data label anchored to a point in the picture. */
+	dataCallout?: DataCallout;
 	/** The words of `text` with their timing, for word-by-word animation. */
 	words?: CaptionWord[];
 	wordStyle?: WordStyle;
@@ -389,6 +391,17 @@ export interface Infographic {
 	items: { label: string; value: number }[];
 	unit?: string;
 	source?: string;
+	palette: "editorial" | "electric" | "mono";
+}
+
+export interface DataCallout {
+	label: string;
+	value?: string;
+	source?: string;
+	x: number;
+	y: number;
+	targetX: number;
+	targetY: number;
 	palette: "editorial" | "electric" | "mono";
 }
 

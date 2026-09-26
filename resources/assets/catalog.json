@@ -134,6 +134,23 @@
     ]
   },
   {
+    "id": "halftone-veil",
+    "name": "Halftone veil",
+    "category": "Graphics",
+    "description": "Original transparent ink-dot overlay with a left-to-right fade and registration corners; layer it over footage for an archival print texture.",
+    "file": "halftone-veil.png",
+    "localPath": "resources/assets/original/halftone-veil.png",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "tags": [
+      "halftone",
+      "print",
+      "texture",
+      "overlay",
+      "documentary"
+    ]
+  },
+  {
     "id": "newspaper-pages",
     "name": "Newspaper pages",
     "category": "Evidence",

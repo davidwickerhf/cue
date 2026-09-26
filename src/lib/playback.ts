@@ -798,7 +798,9 @@ class PlaybackEngine {
 		const px = W / Math.max(1, project.data.canvas.width);
 		const round = clip.frame?.radius ? ` round ${clip.frame.radius * px}px` : "";
 		frame.clipPath =
-			tr && (tr.kind === "paper-tear" || tr.kind === "signal-glitch") && p < 1
+			tr &&
+			(tr.kind === "paper-tear" || tr.kind === "signal-glitch" || tr.kind === "ink-blot") &&
+			p < 1
 				? transitionClipPath(tr.kind, p, c, Math.floor((local / 1000) * 24))
 				: left || c.top || right || c.bottom || round
 					? `inset(${c.top * 100}% ${right * 100}% ${c.bottom * 100}% ${left * 100}%${round})`
@@ -806,7 +808,9 @@ class PlaybackEngine {
 		frame.filter =
 			tr?.kind === "paper-tear" && p < 1
 				? `drop-shadow(${Math.max(2, 7 * px)}px 0 0 #f7efda)`
-				: "none";
+				: tr?.kind === "ink-blot" && p < 1
+					? `drop-shadow(0 0 ${Math.max(2, 9 * px)}px #101b18)`
+					: "none";
 		const root = slot.frame.parentElement;
 		const shadow = clip.frame?.shadow
 			? `drop-shadow(0 ${14 * px}px ${36 * px}px rgba(0,0,0,${(0.75 * clip.frame.shadow).toFixed(3)}))`
