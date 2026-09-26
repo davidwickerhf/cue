@@ -29,6 +29,8 @@ import {
 	sortLines,
 	takeClip,
 	textStyleSchema,
+	trackCompressorSchema,
+	trackEqSchema,
 	transformSchema,
 	transitionSchema,
 	voiceoverTrack,
@@ -128,6 +130,9 @@ const trackPatch = z
 		duck: z.boolean(),
 		solo: z.boolean(),
 		pan: z.number().min(-1).max(1),
+		/** Merged into the current EQ; null resets it to flat. */
+		eq: trackEqSchema.partial().nullable(),
+		compressor: trackCompressorSchema.nullable(),
 	})
 	.partial();
 
@@ -924,7 +929,17 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		}
 		case "updateTrack": {
 			track(data, op.id);
-			let tracks = data.tracks.map((t) => (t.id === op.id ? { ...t, ...op.patch } : t));
+			const { eq, compressor, ...rest } = op.patch;
+			let tracks = data.tracks.map((t) => {
+				if (t.id !== op.id) return t;
+				const next: Track = { ...t, ...rest };
+				// EQ bands are merged, so one band can change without resending the others.
+				if (eq === null) delete next.eq;
+				else if (eq) next.eq = { low: 0, mid: 0, high: 0, ...t.eq, ...eq };
+				if (compressor === null) delete next.compressor;
+				else if (compressor) next.compressor = compressor;
+				return next;
+			});
 			if (op.patch.voiceover)
 				tracks = tracks.map((t) => (t.id === op.id ? t : { ...t, voiceover: false }));
 			return {

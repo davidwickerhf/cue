@@ -265,6 +265,11 @@ const assetSchema = z.object({
 		.optional(),
 });
 
+const eqBand = z.number().min(-12).max(12);
+export const trackEqSchema = z.object({ low: eqBand, mid: eqBand, high: eqBand });
+
+export const trackCompressorSchema = z.object({ amount: z.number().min(0).max(1) });
+
 const trackSchema = z.object({
 	id,
 	kind: z.enum(["video", "audio", "text"]),
@@ -277,6 +282,8 @@ const trackSchema = z.object({
 	duck: z.boolean().optional(),
 	solo: z.boolean().optional(),
 	pan: z.number().min(-1).max(1).optional(),
+	eq: trackEqSchema.optional(),
+	compressor: trackCompressorSchema.optional(),
 });
 
 const mediaClipSchema = z.object({

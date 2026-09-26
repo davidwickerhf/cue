@@ -1,4 +1,10 @@
 import { valueAt, zoomAt } from "../../electron/core/anim";
+import {
+	COMPRESSOR_KNEE_DB,
+	compressorSettings,
+	EQ_BANDS,
+	FLAT_EQ,
+} from "../../electron/core/audio";
 import { BLUR_FROM, entered, overlaps, ZOOM_FROM } from "../../electron/core/transitions";
 import type {
 	Asset,
@@ -144,10 +150,7 @@ class PlaybackEngine {
 	readonly meter = createStore({ left: 0, right: 0 });
 	/** Peak level per track (0–1), for the mixer. */
 	readonly trackMeters = createStore<{ levels: Record<string, number> }>({ levels: {} });
-	private buses = new Map<
-		string,
-		{ gain: GainNode; pan: StereoPannerNode; analyser: AnalyserNode }
-	>();
+	private buses = new Map<string, Bus>();
 	private project: ProjectSnapshot | null = null;
 	private index: Index | null = null;
 	private stage: HTMLDivElement | null = null;
@@ -872,18 +875,46 @@ class PlaybackEngine {
 		return this.ctx;
 	}
 
-	/** Per-track mixer strip: level, pan and a meter, feeding the master. */
+	/**
+	 * Per-track mixer strip, like a desk channel: EQ, compressor, fader, pan and
+	 * a meter, feeding the master. The export applies the same chain to each
+	 * track's submix. Nodes live as long as the track, so changes never rebuild.
+	 */
 	private bus(trackId: string, master: GainNode) {
 		let bus = this.buses.get(trackId);
 		if (!bus) {
 			const ctx = this.audio();
+			const input = ctx.createGain();
+			const band = (type: BiquadFilterType, frequency: number, q?: number) => {
+				const f = ctx.createBiquadFilter();
+				f.type = type;
+				f.frequency.value = frequency;
+				if (q) f.Q.value = q;
+				f.gain.value = 0;
+				return f;
+			};
+			const low = band(EQ_BANDS.low.type, EQ_BANDS.low.frequency);
+			const mid = band(EQ_BANDS.mid.type, EQ_BANDS.mid.frequency, EQ_BANDS.mid.q);
+			const high = band(EQ_BANDS.high.type, EQ_BANDS.high.frequency);
+			const compressor = ctx.createDynamicsCompressor();
+			compressor.knee.value = COMPRESSOR_KNEE_DB;
+			compressor.ratio.value = 1;
+			const makeup = ctx.createGain();
 			const gain = ctx.createGain();
 			const pan = ctx.createStereoPanner();
 			const analyser = ctx.createAnalyser();
 			analyser.fftSize = 512;
-			gain.connect(pan).connect(master);
+			input
+				.connect(low)
+				.connect(mid)
+				.connect(high)
+				.connect(compressor)
+				.connect(makeup)
+				.connect(gain)
+				.connect(pan)
+				.connect(master);
 			pan.connect(analyser);
-			bus = { gain, pan, analyser };
+			bus = { input, low, mid, high, compressor, makeup, gain, pan, analyser };
 			this.buses.set(trackId, bus);
 			const track = this.index?.tracks.get(trackId);
 			if (track) this.levelBus(bus, track);
@@ -891,10 +922,28 @@ class PlaybackEngine {
 		return bus;
 	}
 
-	private levelBus(bus: { gain: GainNode; pan: StereoPannerNode }, track: Track) {
+	private levelBus(bus: Bus, track: Track) {
 		const ctx = this.audio();
 		bus.gain.gain.setTargetAtTime(track.volume, ctx.currentTime, 0.015);
 		bus.pan.pan.setTargetAtTime(track.pan ?? 0, ctx.currentTime, 0.015);
+		this.toneBus(bus, track.eq ?? FLAT_EQ, track.compressor?.amount ?? 0, 0.015);
+	}
+
+	/** EQ and compressor settings, eased in so a change never clicks. */
+	private toneBus(bus: Bus, eq: Track["eq"] & {}, amount: number, smoothing: number) {
+		const now = this.audio().currentTime;
+		bus.low.gain.setTargetAtTime(eq.low, now, smoothing);
+		bus.mid.gain.setTargetAtTime(eq.mid, now, smoothing);
+		bus.high.gain.setTargetAtTime(eq.high, now, smoothing);
+		const c = compressorSettings(amount);
+		const ratio = c.active ? c.ratio : 1;
+		bus.compressor.threshold.setTargetAtTime(c.thresholdDb, now, smoothing);
+		bus.compressor.ratio.setTargetAtTime(ratio, now, smoothing);
+		bus.compressor.attack.setTargetAtTime(c.attackMs / 1000, now, smoothing);
+		bus.compressor.release.setTargetAtTime(c.releaseMs / 1000, now, smoothing);
+		// Web Audio's compressor adds its own makeup gain; swap it for ours so the preview matches the export.
+		const makeupDb = c.active ? c.makeupDb - builtInMakeupDb(c.thresholdDb, ratio) : 0;
+		bus.makeup.gain.setTargetAtTime(10 ** (makeupDb / 20), now, smoothing);
 	}
 
 	/** Moves a fader or pan knob live while it is dragged (the edit is saved on release). */
@@ -904,6 +953,22 @@ class PlaybackEngine {
 		if (mix.volume !== undefined)
 			bus.gain.gain.setTargetAtTime(mix.volume, this.ctx.currentTime, 0.01);
 		if (mix.pan !== undefined) bus.pan.pan.setTargetAtTime(mix.pan, this.ctx.currentTime, 0.01);
+	}
+
+	/** Moves an EQ band or the compressor live while it is dragged. */
+	previewTrackTone(
+		trackId: string,
+		tone: { eq?: Partial<NonNullable<Track["eq"]>>; compressor?: number },
+	) {
+		const bus = this.buses.get(trackId);
+		const track = this.index?.tracks.get(trackId);
+		if (!bus || !track || !this.ctx) return;
+		this.toneBus(
+			bus,
+			{ ...FLAT_EQ, ...track.eq, ...tone.eq },
+			tone.compressor ?? track.compressor?.amount ?? 0,
+			0.01,
+		);
 	}
 
 	private updateBuses(project: ProjectSnapshot) {
@@ -1095,12 +1160,34 @@ class PlaybackEngine {
 					tail = duck;
 				}
 				source.connect(fades).connect(volume);
-				tail.connect(this.bus(track.id, master).gain);
+				tail.connect(this.bus(track.id, master).input);
 				source.start(toCtx(from), offset, duration);
 				this.scheduled.push(source);
 			});
 		}
 	}
+}
+
+interface Bus {
+	/** Clips connect here. */
+	input: GainNode;
+	low: BiquadFilterNode;
+	mid: BiquadFilterNode;
+	high: BiquadFilterNode;
+	compressor: DynamicsCompressorNode;
+	makeup: GainNode;
+	/** The track's fader, after the dynamics (as on a desk). */
+	gain: GainNode;
+	pan: StereoPannerNode;
+	analyser: AnalyserNode;
+}
+
+/**
+ * The makeup gain the Web Audio spec builds into its compressor: 0.6 of what
+ * a full-scale signal loses (the knee is ignored, it is small).
+ */
+function builtInMakeupDb(thresholdDb: number, ratio: number): number {
+	return -0.6 * thresholdDb * (1 - 1 / ratio);
 }
 
 /** A hidden slot loads the next clip this long before it starts. */

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { keyframeExpr, zoomExprs } from "./anim";
+import { trackAudioFilters } from "./audio";
 import { toSrt, toVtt } from "./captions";
 import { ffmpeg } from "./media";
 import { resolveInProject } from "./paths";
@@ -98,13 +99,11 @@ function tempo(speed: number): string {
 interface AudioSource {
 	clip: MediaClip;
 	file: string;
+	/** The clip's own level; the track's fader is applied to the track's submix. */
 	gain: number;
-	voiceover: boolean;
-	duck: boolean;
+	track: Track;
 	/** Fade-out including any crossfade into the next clip on the track. */
 	fadeOutMs: number;
-	/** Stereo balance, -1 to 1. */
-	pan: number;
 }
 
 /** How long a clip's sound should fade out: its own fade, or the crossfade overlap with the next clip. */
@@ -147,11 +146,9 @@ function audibleClips(ctx: ExportContext, onlyTracks?: Set<string>): AudioSource
 				{
 					clip: c,
 					file: resolveInProject(ctx.dir, a.path),
-					gain: c.volume * t.volume,
-					voiceover: !!t.voiceover,
-					duck: !!t.duck && !t.voiceover,
+					gain: c.volume,
+					track: t,
 					fadeOutMs: effectiveFadeOut(data, c),
-					pan: t.pan ?? 0,
 				},
 			];
 		});
@@ -186,14 +183,15 @@ function audioChain(input: string, src: AudioSource, label: string): string {
 		`${input}atrim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},asetpts=PTS-STARTPTS${tempo(clip.speed)}` +
 		`,aresample=48000,aformat=channel_layouts=stereo${clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : ""},${volume}` +
 		(fades.length ? `,${fades.join(",")}` : "") +
-		(src.pan ? `,${panFilter(src.pan)}` : "") +
 		`,adelay=${Math.round(clip.startMs)}:all=1[${label}]`
 	);
 }
 
 /**
- * Mixes audio sources into [label]. Tracks marked `duck` are compressed by
- * the voiceover (sidechain), so music dips while someone is speaking.
+ * Mixes audio sources into [label]. Each track's clips are summed first, then
+ * the track's EQ, compressor, fader and pan are applied to that submix (like a
+ * mixing desk). Tracks marked `duck` are compressed by the voiceover
+ * (sidechain), so music dips while someone is speaking.
  */
 function mixGraph(
 	sources: AudioSource[],
@@ -205,14 +203,30 @@ function mixGraph(
 	const chains = sources.map((src, i) =>
 		audioChain(`[${firstInput + i}:a]`, src, `a${firstInput + i}`),
 	);
+	const tracks = [...new Map(sources.map((src) => [src.track.id, src.track])).values()];
+	const submix = new Map<string, string>();
+	tracks.forEach((track, k) => {
+		const clips = sources
+			.map((src, i) => (src.track.id === track.id ? `[a${firstInput + i}]` : ""))
+			.filter(Boolean);
+		const pan = track.pan ?? 0;
+		const filters = [
+			clips.length > 1 ? `amix=inputs=${clips.length}:normalize=0` : "",
+			...trackAudioFilters(track),
+			track.volume !== 1 ? `volume=${track.volume.toFixed(4)}` : "",
+			pan ? panFilter(pan) : "",
+		].filter(Boolean);
+		const out = `trk${firstInput}_${k}`;
+		chains.push(`${clips.join("")}${filters.length ? filters.join(",") : "anull"}[${out}]`);
+		submix.set(track.id, `[${out}]`);
+	});
 	const pad = `apad,atrim=0:${s(lengthMs)}`;
 	const post = normalize ? ",loudnorm=I=-16:TP=-1.5:LRA=11" : ",alimiter=limit=0.97";
-	const labels = (list: AudioSource[]) =>
-		list.map((src) => `[a${firstInput + sources.indexOf(src)}]`).join("");
-	const ducked = sources.filter((x) => x.duck);
-	const voice = sources.filter((x) => x.voiceover);
+	const labels = (list: Track[]) => list.map((t) => submix.get(t.id)).join("");
+	const ducked = tracks.filter((t) => t.duck && !t.voiceover);
+	const voice = tracks.filter((t) => t.voiceover);
 	if (ducked.length && voice.length) {
-		const rest = sources.filter((x) => !x.duck && !x.voiceover);
+		const rest = tracks.filter((t) => !ducked.includes(t) && !voice.includes(t));
 		chains.push(
 			`${labels(voice)}amix=inputs=${voice.length}:normalize=0,${pad},asplit=2[vo_mix][vo_key]`,
 		);
@@ -225,7 +239,7 @@ function mixGraph(
 		chains.push(`${parts.join("")}amix=inputs=${count}:normalize=0,${pad}${post}[${label}]`);
 	} else {
 		chains.push(
-			`${labels(sources)}amix=inputs=${sources.length}:normalize=0,${pad}${post}[${label}]`,
+			`${labels(tracks)}amix=inputs=${tracks.length}:normalize=0,${pad}${post}[${label}]`,
 		);
 	}
 	return chains;
@@ -330,6 +344,10 @@ export async function exportStems(ctx: ExportContext, outDir?: string): Promise<
 		const a = assetOf(ctx.data, clip.assetId);
 		const out = path.join(target, stemName(ctx.data.export.stemPattern, line.id, line.index));
 		const clean = clip.denoise ? ",highpass=f=80,afftdn=nf=-25:tn=1" : "";
+		// The line sounds as it does in the mix: with its track's EQ and compressor.
+		const processing = trackAudioFilters(trackOf(ctx.data, clip.trackId))
+			.map((f) => `,${f}`)
+			.join("");
 		await ffmpeg([
 			"-ss",
 			s(clip.inMs),
@@ -338,7 +356,7 @@ export async function exportStems(ctx: ExportContext, outDir?: string): Promise<
 			"-i",
 			resolveInProject(ctx.dir, a.path),
 			"-af",
-			`volume=${clip.volume.toFixed(3)}${tempo(clip.speed)}${clean}${ctx.data.export.normalize ? ",loudnorm=I=-18:TP=-2:LRA=11" : ""}`,
+			`volume=${clip.volume.toFixed(3)}${tempo(clip.speed)}${clean}${processing}${ctx.data.export.normalize ? ",loudnorm=I=-18:TP=-2:LRA=11" : ""}`,
 			"-ac",
 			"1",
 			"-ar",
@@ -368,6 +386,52 @@ export async function exportVoiceover(ctx: ExportContext, outFile?: string): Pro
 		.filter((l) => !l.clipId)
 		.map((l) => l.id);
 	return { kind: "voiceover", outputs: [out], missing, durationMs: lengthMs };
+}
+
+export interface Loudness {
+	/** Integrated loudness in LUFS; null when nothing was heard. */
+	integratedLufs: number | null;
+	/** Highest true peak in dBTP. */
+	truePeakDb: number | null;
+}
+
+/**
+ * Measures the mix (EBU R128) without writing a file: every audible track, or
+ * only `onlyTracks`. With `preFader` the tracks' faders are left at unity, which
+ * is what the auto-mix needs to work out new fader levels.
+ */
+export async function measureLoudness(
+	ctx: ExportContext,
+	options: { onlyTracks?: Set<string>; preFader?: boolean; normalize?: boolean } = {},
+): Promise<Loudness> {
+	const data = options.preFader
+		? { ...ctx.data, tracks: ctx.data.tracks.map((t) => ({ ...t, volume: 1 })) }
+		: ctx.data;
+	const sources = audibleClips({ ...ctx, data }, options.onlyTracks);
+	if (sources.length === 0) return { integratedLufs: null, truePeakDb: null };
+	const lengthMs = projectDuration(data);
+	const chains = mixGraph(sources, 0, lengthMs, options.normalize ?? data.export.normalize, "mix");
+	chains.push("[mix]ebur128=framelog=verbose:peak=true[out]");
+	const log = await ffmpeg([
+		...sources.flatMap((src) => ["-i", src.file]),
+		"-filter_complex",
+		chains.join(";"),
+		"-map",
+		"[out]",
+		...rangeArgs(ctx.range, lengthMs),
+		"-f",
+		"null",
+		"-",
+	]);
+	// The summary comes last: "I: -16.2 LUFS" and "Peak: -1.3 dBFS".
+	const summary = log.slice(log.lastIndexOf("Summary:"));
+	const integrated = Number(/I:\s+(-?[\d.]+) LUFS/.exec(summary)?.[1]);
+	const peak = Number(/Peak:\s+(-?[\d.]+|-inf) dBFS/.exec(summary)?.[1]);
+	return {
+		// ebur128 reports -70 (its gate) for silence.
+		integratedLufs: Number.isFinite(integrated) && integrated > -69.9 ? integrated : null,
+		truePeakDb: Number.isFinite(peak) ? peak : null,
+	};
 }
 
 /** Every audible track mixed down (with ducking). */
