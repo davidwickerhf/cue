@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { valueAt } from "../../../electron/core/anim";
 import type { Clip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
+import { keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { useApp, useProject } from "../../lib/state";
@@ -527,14 +528,15 @@ function EmptyProject({ project }: { project: ProjectSnapshot }) {
 				onClick={() => void window.cue.importDialog()}
 				className="h-9 rounded-lg bg-accent px-4 text-[13px] font-semibold text-accent-foreground"
 			>
-				Import media… <span className="ml-1 opacity-70">⌘I</span>
+				Import media… <span className="ml-1 opacity-70">{keyLabel("⌘I")}</span>
 			</button>
 			<ol className="grid max-w-xl grid-cols-2 gap-x-8 gap-y-2 text-[12px] text-white/65">
 				<li>
 					<b className="text-white/90">1. Arrange.</b> Drag clips from Media onto the timeline.
 				</li>
 				<li>
-					<b className="text-white/90">2. Cut.</b> Space plays, ⌘K splits, drag an edge to trim.
+					<b className="text-white/90">2. Cut.</b> Space plays, {keyLabel("⌘K")} splits, drag an
+					edge to trim.
 				</li>
 				<li>
 					<b className="text-white/90">3. Polish.</b> Titles in Text, colour and effects in the

@@ -7,8 +7,31 @@ import { Toaster } from "./components/ui/Toaster";
 import { Welcome } from "./components/Welcome";
 import { notify } from "./lib/api";
 import { startChatSync } from "./lib/chat";
+import { platform } from "./lib/platform";
 import { playback } from "./lib/playback";
 import { app, appSettings, startSettingsSync, startSync, useApp, useProject } from "./lib/state";
+
+/** Windows: the window buttons drawn over the header take its background and text colours. */
+function matchTitleBar() {
+	if (platform !== "win32") return;
+	const probe = document.createElement("div");
+	probe.className = "bg-surface text-foreground";
+	document.body.append(probe);
+	const style = getComputedStyle(probe);
+	const colors = [style.backgroundColor, style.color].map(toHex);
+	probe.remove();
+	window.cue.setTitleBarColors(colors[0], colors[1]);
+}
+
+/** Any CSS colour (oklch included) as #rrggbb, by painting it. */
+function toHex(color: string): string {
+	const ctx = document.createElement("canvas").getContext("2d");
+	if (!ctx) return "#18181b";
+	ctx.fillStyle = color;
+	ctx.fillRect(0, 0, 1, 1);
+	const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+	return `#${[r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
 
 export function App() {
 	useEffect(() => {
@@ -31,8 +54,13 @@ export function App() {
 				theme === "dark" || (theme === "system" && media.matches),
 			);
 		apply();
+		matchTitleBar();
 		media.addEventListener("change", apply);
-		return () => media.removeEventListener("change", apply);
+		media.addEventListener("change", matchTitleBar);
+		return () => {
+			media.removeEventListener("change", apply);
+			media.removeEventListener("change", matchTitleBar);
+		};
 	}, [theme]);
 
 	useEffect(() => {

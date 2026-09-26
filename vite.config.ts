@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import electron from "vite-plugin-electron/simple";
 
-const nodeExternals = ["ffmpeg-static", "electron"];
+const nodeExternals = ["ffmpeg-static", "electron", "electron-updater"];
 
 export default defineConfig(({ mode }) => ({
 	plugins: [

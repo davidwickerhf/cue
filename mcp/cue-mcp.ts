@@ -51,44 +51,90 @@ async function healthy(control: Control | null): Promise<boolean> {
 	}
 }
 
-/** Packaged: the bridge lives in Cue.app/Contents/Resources/mcp. Dev: <repo>/dist-mcp. */
+/**
+ * Packaged: the bridge lives in Cue.app/Contents/Resources/mcp (macOS) or
+ * <install dir>/resources/mcp (Windows, Linux). Dev: <repo>/dist-mcp. Cue also
+ * records its own executable in app.json on every launch, which is how an
+ * AppImage (whose files vanish when it quits) is found again.
+ */
 function launchApp(): void {
+	const target = launchTarget();
+	if (target)
+		spawn(target.command, target.args, {
+			cwd: target.cwd,
+			detached: true,
+			stdio: "ignore",
+			env: target.env,
+			windowsHide: true,
+		}).unref();
+}
+
+function launchTarget(): {
+	command: string;
+	args: string[];
+	cwd?: string;
+	env: NodeJS.ProcessEnv;
+} | null {
 	const env = { ...process.env };
 	delete env.ELECTRON_RUN_AS_NODE;
-	const bundle = path.resolve(here, "..", "..");
-	if (bundle.endsWith(".app")) {
-		spawn("open", ["-a", bundle], { detached: true, stdio: "ignore", env }).unref();
-		return;
-	}
-	if (existsSync("/Applications/Cue.app") && !process.env.CUE_DEV) {
-		spawn("open", ["-a", "/Applications/Cue.app"], {
-			detached: true,
-			stdio: "ignore",
-			env,
-		}).unref();
-		return;
+	const start = (command: string, args: string[] = [], cwd?: string) => ({
+		command,
+		args,
+		cwd,
+		env,
+	});
+	if (process.platform === "darwin") {
+		// Cue.app/Contents/Resources/mcp → Cue.app
+		const bundle = path.resolve(here, "..", "..", "..");
+		if (bundle.endsWith(".app")) return start("open", ["-a", bundle]);
+		if (existsSync("/Applications/Cue.app") && !process.env.CUE_DEV)
+			return start("open", ["-a", "/Applications/Cue.app"]);
+	} else if (!process.env.CUE_DEV) {
+		// <install dir>/resources/mcp → <install dir>/Cue.exe or cue
+		const exe = path.join(
+			path.resolve(here, "..", ".."),
+			process.platform === "win32" ? "Cue.exe" : "cue",
+		);
+		if (path.basename(path.resolve(here, "..")) === "resources" && existsSync(exe))
+			return start(exe);
+		const recorded = recordedExecutable();
+		if (recorded) return start(recorded);
 	}
 	const repo = path.resolve(here, "..");
-	const electron = path.join(
-		repo,
-		"node_modules",
-		"electron",
-		"dist",
-		"Electron.app",
-		"Contents",
-		"MacOS",
-		"Electron",
-	);
-	spawn(
-		existsSync(electron) ? electron : "npx",
-		existsSync(electron) ? [repo] : ["electron", repo],
-		{
-			cwd: repo,
-			detached: true,
-			stdio: "ignore",
-			env,
-		},
-	).unref();
+	const electron =
+		process.platform === "darwin"
+			? path.join(
+					repo,
+					"node_modules",
+					"electron",
+					"dist",
+					"Electron.app",
+					"Contents",
+					"MacOS",
+					"Electron",
+				)
+			: path.join(
+					repo,
+					"node_modules",
+					"electron",
+					"dist",
+					process.platform === "win32" ? "electron.exe" : "electron",
+				);
+	if (existsSync(electron)) return start(electron, [repo], repo);
+	// npx is a .cmd on Windows, which needs a shell; there the dev app is started by hand.
+	return process.platform === "win32" ? null : start("npx", ["electron", repo], repo);
+}
+
+/** The executable the last Cue launch recorded (app.json in the data folder). */
+function recordedExecutable(): string | null {
+	try {
+		const { executable } = JSON.parse(readFileSync(path.join(dataDir, "app.json"), "utf8")) as {
+			executable?: string;
+		};
+		return executable && existsSync(executable) ? executable : null;
+	} catch {
+		return null;
+	}
 }
 
 async function connect(): Promise<Control> {

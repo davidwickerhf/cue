@@ -1,6 +1,7 @@
 import { Button, Switch, Tooltip } from "@heroui/react";
 import { CaretRight } from "@phosphor-icons/react";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { keyLabel } from "../../lib/platform";
 import { cn } from "../../lib/utils";
 import { isCollapsed, layout, sections, toggleSection } from "../../lib/workspace";
 
@@ -42,8 +43,8 @@ export function IconButton({
 				{children}
 			</Button>
 			<Tooltip.Content className="text-xs">
-				{label}
-				{shortcut && <span className="ml-2 text-muted">{shortcut}</span>}
+				{keyLabel(label)}
+				{shortcut && <span className="ml-2 text-muted">{keyLabel(shortcut)}</span>}
 			</Tooltip.Content>
 		</Tooltip>
 	);

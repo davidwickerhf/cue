@@ -37,6 +37,16 @@ export function whisperModelDirs(appDataDir: string): string[] {
 }
 
 function whisperBinaries(): string[] {
+	if (process.platform === "win32")
+		return [
+			...onPath(["whisper-cli.exe", "whisper-cpp.exe"]),
+			path.join(home, "whisper.cpp", "build", "bin", "Release", "whisper-cli.exe"),
+		];
+	if (process.platform !== "darwin")
+		return [
+			...onPath(["whisper-cli", "whisper-cpp"]),
+			path.join(home, "whisper.cpp", "build", "bin", "whisper-cli"),
+		];
 	return [
 		"/opt/homebrew/bin/whisper-cli",
 		"/usr/local/bin/whisper-cli",
@@ -46,6 +56,24 @@ function whisperBinaries(): string[] {
 		// Recordly ships a whisper.cpp build.
 		"/Applications/Recordly.app/Contents/Resources/app.asar.unpacked/electron/native/bin/darwin-arm64/whisper-cli",
 	];
+}
+
+/** Candidate paths for these executables in each PATH folder (existence is checked by the caller). */
+function onPath(names: string[]): string[] {
+	const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+	return dirs.flatMap((dir) => names.map((name) => path.join(dir, name)));
+}
+
+/** Where Ollama's command-line binary may be. */
+function ollamaBinaries(): string[] {
+	if (process.platform === "win32")
+		return [
+			path.join(process.env.LOCALAPPDATA ?? home, "Programs", "Ollama", "ollama.exe"),
+			...onPath(["ollama.exe"]),
+		];
+	if (process.platform !== "darwin")
+		return ["/usr/local/bin/ollama", "/usr/bin/ollama", ...onPath(["ollama"])];
+	return ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"];
 }
 
 async function json(url: string, timeoutMs = 800): Promise<unknown | null> {
@@ -84,9 +112,8 @@ export async function detectLocal(appDataDir: string): Promise<LocalInventory> {
 		json("http://127.0.0.1:1234/v1/models") as Promise<{ data?: { id: string }[] } | null>,
 	]).catch(() => [[] as { name: string; locale: string }[], null, null] as const);
 	const ollamaInstalled =
-		existsSync("/opt/homebrew/bin/ollama") ||
-		existsSync("/usr/local/bin/ollama") ||
-		existsSync("/Applications/Ollama.app");
+		ollamaBinaries().some((b) => existsSync(b)) ||
+		(process.platform === "darwin" && existsSync("/Applications/Ollama.app"));
 	return {
 		whisper: { binary, models },
 		macVoices: [...voices],
@@ -100,9 +127,10 @@ export async function detectLocal(appDataDir: string): Promise<LocalInventory> {
 }
 
 export function startOllama(): void {
-	const binary = ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"].find((b) => existsSync(b));
-	if (binary) spawn(binary, ["serve"], { detached: true, stdio: "ignore" }).unref();
-	else if (existsSync("/Applications/Ollama.app"))
+	const binary = ollamaBinaries().find((b) => existsSync(b));
+	if (binary)
+		spawn(binary, ["serve"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+	else if (process.platform === "darwin" && existsSync("/Applications/Ollama.app"))
 		spawn("open", ["-a", "Ollama"], { detached: true, stdio: "ignore" }).unref();
 	else throw new Error("Ollama is not installed.");
 }
@@ -221,6 +249,8 @@ export async function transcribeLocal(
 
 /** Speech with the macOS synthesiser, as WAV bytes. `rate` is words per minute. */
 export async function speakMac(text: string, voice: string, rate?: number): Promise<Buffer> {
+	if (process.platform !== "darwin")
+		throw new Error("macOS voices are only available on a Mac. Choose OpenAI in Settings → AI.");
 	const work = await fs.mkdtemp(path.join(os.tmpdir(), "cue-say-"));
 	try {
 		const aiff = path.join(work, "out.aiff");

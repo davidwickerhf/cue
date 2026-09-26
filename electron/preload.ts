@@ -171,6 +171,24 @@ const api = {
 		};
 	},
 	mcpCommand: () => ipcRenderer.invoke("cue:mcpCommand") as Promise<string>,
+	updateStatus: () =>
+		ipcRenderer.invoke("cue:updateStatus") as Promise<import("./core/updates").UpdateStatus>,
+	onUpdateStatus: (listener: (status: import("./core/updates").UpdateStatus) => void) => {
+		const handler = (_event: IpcRendererEvent, status: import("./core/updates").UpdateStatus) =>
+			listener(status);
+		ipcRenderer.on("cue:updateStatus", handler);
+		return () => {
+			ipcRenderer.removeListener("cue:updateStatus", handler);
+		};
+	},
+	checkForUpdates: () =>
+		ipcRenderer.invoke("cue:checkForUpdates") as Promise<
+			import("./core/updates").UpdateStatus | undefined
+		>,
+	installUpdate: () => ipcRenderer.invoke("cue:installUpdate") as Promise<void>,
+	/** Windows: colours of the window buttons drawn over the header. */
+	setTitleBarColors: (color: string, symbolColor: string) =>
+		ipcRenderer.send("cue:titleBarColors", color, symbolColor),
 	/** Real path of a file dropped from Finder. */
 	pathForFile: (file: File) => webUtils.getPathForFile(file),
 	platform: process.platform,

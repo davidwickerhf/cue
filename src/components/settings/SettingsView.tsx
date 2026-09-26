@@ -14,12 +14,14 @@ import {
 } from "@phosphor-icons/react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { notify } from "../../lib/api";
+import { isMac, keyLabel, thisComputer } from "../../lib/platform";
 import { SHORTCUTS } from "../../lib/shortcuts";
 import { appSettings, useApp } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { Segmented, Toggle } from "../ui/controls";
 
 type Inventory = Awaited<ReturnType<typeof window.cue.localInventory>>;
+type UpdateStatus = Awaited<ReturnType<typeof window.cue.updateStatus>>;
 type Settings = NonNullable<ReturnType<typeof appSettings.get>["settings"]>;
 
 const SECTIONS = [
@@ -123,7 +125,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 		<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
 			<div className="min-w-0">
 				<p className="text-[13px]">{label}</p>
-				{hint && <p className="text-[11px] text-muted">{hint}</p>}
+				{hint && <p className="text-[11px] text-muted">{keyLabel(hint)}</p>}
 			</div>
 			<div className="flex shrink-0 items-center gap-2">{children}</div>
 		</div>
@@ -206,7 +208,66 @@ function General({ settings, save }: { settings: Settings; save: (p: Partial<Set
 					/>
 				</Row>
 			</Group>
+			<Updates settings={settings} save={save} />
 		</>
+	);
+}
+
+/** Settings → General → Updates: the automatic check and its current state. */
+function Updates({ settings, save }: { settings: Settings; save: (p: Partial<Settings>) => void }) {
+	const [status, setStatus] = useState<UpdateStatus | null>(null);
+	const [busy, setBusy] = useState(false);
+	useEffect(() => {
+		void window.cue.updateStatus().then(setStatus);
+		return window.cue.onUpdateStatus(setStatus);
+	}, []);
+	const hint =
+		status?.state === "unsupported"
+			? status.message
+			: status?.state === "ready"
+				? `Cue ${status.version} is ready: restart to install it.`
+				: status?.state === "downloading"
+					? `Downloading Cue ${status.version}… ${status.percent ?? 0}%`
+					: status?.state === "checking"
+						? "Checking…"
+						: status?.state === "error"
+							? `The last check failed: ${status.message}`
+							: status?.checkedAt
+								? `Up to date. Checked ${new Date(status.checkedAt).toLocaleString()}.`
+								: "Looks for new versions on GitHub at launch and every few hours, and downloads them in the background.";
+	return (
+		<Group title="Updates">
+			<Row label="Check for updates automatically" hint={hint}>
+				{status?.state === "ready" ? (
+					<Button
+						size="sm"
+						className="h-7 text-[12px]"
+						onPress={() => void window.cue.installUpdate()}
+					>
+						Restart to update
+					</Button>
+				) : (
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 text-[12px]"
+						isDisabled={busy || status?.state === "unsupported"}
+						onPress={async () => {
+							setBusy(true);
+							const next = await window.cue.checkForUpdates().finally(() => setBusy(false));
+							if (next) setStatus(next);
+						}}
+					>
+						Check now
+					</Button>
+				)}
+				<Toggle
+					label=""
+					checked={settings.autoUpdate}
+					onChange={(autoUpdate) => save({ autoUpdate })}
+				/>
+			</Row>
+		</Group>
 	);
 }
 
@@ -259,7 +320,7 @@ function AiSection({
 		<>
 			<Group
 				title="Providers"
-				description="Choose, per task, whether Cue uses the cloud or models on this Mac."
+				description={`Choose, per task, whether Cue uses the cloud or models on ${thisComputer}.`}
 			>
 				<Row label="Voices" hint="Generated takes for script lines">
 					<StatusPill
@@ -272,7 +333,10 @@ function AiSection({
 						onChange={(tts) => set({ tts })}
 						options={[
 							{ value: "openai", label: "OpenAI" },
-							{ value: "macos", label: "On this Mac" },
+							// The system voices are macOS's; elsewhere only a saved choice shows.
+							...(isMac || ai.tts === "macos"
+								? [{ value: "macos" as const, label: "On this Mac" }]
+								: []),
 						]}
 					/>
 				</Row>
@@ -325,7 +389,10 @@ function AiSection({
 				</Row>
 			</Group>
 
-			<Group title="OpenAI" description="The key is stored encrypted in your macOS keychain.">
+			<Group
+				title="OpenAI"
+				description={`The key is stored encrypted with your ${isMac ? "macOS keychain" : "system's credential store"}.`}
+			>
 				{openaiReady && status.some((s) => s.provider === "OpenAI" && s.ready) ? (
 					<Row label="API key" hint="Connected">
 						<Button
@@ -360,7 +427,7 @@ function AiSection({
 			</Group>
 
 			<Group
-				title="On this Mac"
+				title={isMac ? "On this Mac" : "On this computer"}
 				description="Found automatically. Nothing leaves your computer when these are used."
 			>
 				<Row label="Scan again">
@@ -373,43 +440,47 @@ function AiSection({
 						<ArrowClockwise className="size-3.5" /> Refresh
 					</Button>
 				</Row>
-				<Row
-					label="macOS voices"
-					hint={
-						local
-							? `${local.macVoices.length} installed. Add more in System Settings → Accessibility → Spoken Content.`
-							: "…"
-					}
-				>
-					<select
-						value={ai.macVoice}
-						onChange={(e) => set({ macVoice: e.target.value })}
-						className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+				{isMac && (
+					<Row
+						label="macOS voices"
+						hint={
+							local
+								? `${local.macVoices.length} installed. Add more in System Settings → Accessibility → Spoken Content.`
+								: "…"
+						}
 					>
-						{(local?.macVoices ?? [])
-							.filter((v) => v.locale.startsWith("en"))
-							.concat((local?.macVoices ?? []).filter((v) => !v.locale.startsWith("en")))
-							.map((v) => (
-								<option key={v.name} value={v.name}>
-									{v.name} · {v.locale}
-								</option>
-							))}
-					</select>
-					<Button
-						size="sm"
-						variant="secondary"
-						className="h-7 text-[12px]"
-						onPress={() => void window.cue.previewVoice(ai.macVoice)}
-					>
-						Listen
-					</Button>
-				</Row>
+						<select
+							value={ai.macVoice}
+							onChange={(e) => set({ macVoice: e.target.value })}
+							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+						>
+							{(local?.macVoices ?? [])
+								.filter((v) => v.locale.startsWith("en"))
+								.concat((local?.macVoices ?? []).filter((v) => !v.locale.startsWith("en")))
+								.map((v) => (
+									<option key={v.name} value={v.name}>
+										{v.name} · {v.locale}
+									</option>
+								))}
+						</select>
+						<Button
+							size="sm"
+							variant="secondary"
+							className="h-7 text-[12px]"
+							onPress={() => void window.cue.previewVoice(ai.macVoice)}
+						>
+							Listen
+						</Button>
+					</Row>
+				)}
 				<Row
 					label="whisper.cpp"
 					hint={
 						local?.whisper.binary
 							? `${local.whisper.binary.includes("Recordly") ? "Using Recordly's copy" : local.whisper.binary}`
-							: "Not found. Install with: brew install whisper-cpp"
+							: isMac
+								? "Not found. Install with: brew install whisper-cpp"
+								: "Not found. Build or install whisper.cpp and put whisper-cli on your PATH"
 					}
 				>
 					{local?.whisper.models.length ? (
@@ -623,7 +694,7 @@ function Shortcuts() {
 										key={k}
 										className="rounded-md border border-border bg-default px-1.5 py-0.5 font-sans text-[11px]"
 									>
-										{k}
+										{keyLabel(k)}
 									</kbd>
 								))}
 							</span>

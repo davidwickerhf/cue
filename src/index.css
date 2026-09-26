@@ -99,6 +99,20 @@
 	.app-drag {
 		-webkit-app-region: drag;
 	}
+	/* Headers that double as the title bar: room for the macOS traffic lights, or
+	   for the window buttons Windows draws over the right end (titleBarOverlay). */
+	.titlebar {
+		padding-left: 84px;
+		padding-right: 12px;
+	}
+	:root:not([data-platform="darwin"]) .titlebar {
+		padding-left: 12px;
+	}
+	:root[data-platform="win32"] .titlebar {
+		padding-right: calc(
+			100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px
+		);
+	}
 	.custom-scrollbar {
 		scrollbar-width: thin;
 		scrollbar-color: color-mix(in srgb, var(--foreground) 16%, transparent) transparent;

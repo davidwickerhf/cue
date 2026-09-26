@@ -13,6 +13,7 @@ import { valueAt } from "../../../electron/core/anim";
 import { TRANSITIONS } from "../../../electron/core/transitions";
 import type { MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { run } from "../../lib/api";
+import { isMac, keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
@@ -213,7 +214,7 @@ function Nothing({ count }: { count: number }) {
 					).map(([label, keys]) => (
 						<div key={label} className="contents">
 							<dt className="text-muted">{label}</dt>
-							<dd className="text-right font-mono text-[11px]">{keys}</dd>
+							<dd className="text-right font-mono text-[11px]">{keyLabel(keys)}</dd>
 						</div>
 					))}
 				</dl>
@@ -1370,7 +1371,7 @@ function ArrangeSection({ single }: { single?: string }) {
 					</button>
 				))}
 			</div>
-			{single && (
+			{single && isMac && (
 				<button
 					type="button"
 					title="Pan across the picture to keep the main face in the middle (found on this Mac)"
