@@ -325,7 +325,7 @@ function createWindow() {
 		minHeight: 760,
 		title: "Cue",
 		titleBarStyle: "hiddenInset",
-		trafficLightPosition: { x: 18, y: 20 },
+		trafficLightPosition: { x: 18, y: 15 },
 		backgroundColor: "#f4f4f5",
 		show: false,
 		webPreferences: {
