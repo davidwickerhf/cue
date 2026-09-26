@@ -189,7 +189,8 @@ function drawWords(
 	const style = clip.style;
 	const ws = clip.wordStyle as NonNullable<TextClip["wordStyle"]>;
 	const words = (clip.words ?? []).map((w) => (style.uppercase ? w.text.toUpperCase() : w.text));
-	const space = ctx.measureText(" ").width;
+	// A little wider than a space: the word being said grows and needs room.
+	const space = ctx.measureText(" ").width + style.fontSize * 0.1;
 	// Lines of word indices, wrapped like the rest of the text.
 	const lines: number[][] = [[]];
 	let width = 0;
