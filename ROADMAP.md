@@ -93,12 +93,12 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [ ] Alternative cuts as branches, compared side by side
 - [ ] Search shots by content, on device
 - [ ] Rough cut from a brief or script
-- [ ] Director's notes with one-click fixes
+- [x] Director's notes with one-click fixes
 - [ ] Voice editing
 - [ ] Smart reframe that follows faces
 - [x] One-click variants (lengths and aspect ratios)
 - [x] Animated word-by-word captions
-- [ ] Recipes: reusable edit templates for people and agents
+- [x] Recipes: reusable edit templates for people and agents
 - [ ] Music-driven montage
 - [ ] Auto-mix: levelled dialogue and ML noise removal (levelling done: auto_mix and the mixer's Auto-mix and LUFS readout; ML noise removal still to do)
 
