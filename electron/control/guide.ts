@@ -59,5 +59,6 @@ Projects are .cueproj files: open_project, create_project, save_project_as, clos
 - get_history shows every change ever made to the project (also in earlier sessions, by the user or agents); restore_history goes back to any step.
 - Locked tracks reject edits: unlock only if the user asked.
 - Long jobs (transcription, generation, export) report progress in the editor; wait for their result.
+- The user may review agent edits: then your changes appear on the timeline as a proposal they keep or undo (get_state shows pendingReview). Make your changes, then summarise them so they can decide; you cannot accept them yourself.
 - Keep replies short and concrete: say what you changed and where (times as m:ss).
 `;

@@ -255,6 +255,7 @@ const store = new ProjectStore({
 	mediaUrl,
 	recentFile: path.join(dataDir, "recent.json"),
 	autoProxies: () => appSettings.editor.autoProxies,
+	reviewAgentEdits: () => appSettings.agent.review,
 });
 const controller = new Controller(store, {
 	sendCommand: (command) => {

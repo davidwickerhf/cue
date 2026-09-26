@@ -525,6 +525,14 @@ export const contract = {
 			instructions: z.string().max(1000).optional(),
 		},
 	},
+	review_changes: {
+		description:
+			"The user's decision on an agent's proposed changes (review mode): accept keeps them, reject undoes them; clipIds limits it to those clips. Agents cannot call this: when get_state shows pendingReview, tell the user what you changed and let them decide.",
+		input: {
+			action: z.enum(["accept", "reject"]),
+			clipIds: z.array(z.string()).optional(),
+		},
+	},
 	make_variants: {
 		description:
 			"Make other versions of the edit without changing the open timeline: other frame shapes (9:16 vertical, 1:1, 4:5, 16:9; full-frame pictures are centre-cropped) and/or shorter cuts (e.g. 15, 30, 60 s). Every combination is exported as a video to the project's export folder; saveProjects also saves each as a project next to this one to fine-tune later. For short cuts, pass keep: the timeline stretches worth keeping (e.g. found with find_moments or from the transcript); otherwise the edit ends at the last cut before the target length.",

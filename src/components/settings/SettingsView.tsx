@@ -559,7 +559,17 @@ function AgentSection({
 					<Toggle
 						label=""
 						checked={settings.agent.enabled}
-						onChange={(enabled) => save({ agent: { enabled } })}
+						onChange={(enabled) => save({ agent: { ...settings.agent, enabled } })}
+					/>
+				</Row>
+				<Row
+					label="Review agent edits"
+					hint="An agent's changes are shown on the timeline as a proposal; keep or undo each clip, or all at once."
+				>
+					<Toggle
+						label=""
+						checked={settings.agent.review}
+						onChange={(review) => save({ agent: { ...settings.agent, review } })}
 					/>
 				</Row>
 				<Row

@@ -246,3 +246,53 @@ describe("word-by-word captions", () => {
 		expect((data.clips.find((c) => c.id === right.id) as TextClip).words).toHaveLength(3);
 	});
 });
+
+describe("reviewing agent edits", () => {
+	it("keeps or undoes an agent's changes clip by clip or all at once", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-review-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+			reviewAgentEdits: () => true,
+		});
+		await store.create({ path: path.join(dir, "P") });
+		const text = (startMs: number, t: string) => ({
+			type: "text" as const,
+			trackId: "T1",
+			startMs,
+			durationMs: 1000,
+			text: t,
+		});
+		const [a, b] = store.apply({ type: "addClips", clips: [text(0, "A"), text(2000, "B")] }, "user")
+			.created as string[];
+		// The user's own edits are never a proposal.
+		expect(store.snapshot()?.proposal).toBeNull();
+		store.apply({ type: "moveClips", ids: [a], deltaMs: 500 }, "agent");
+		const [c] = store.apply({ type: "addClips", clips: [text(4000, "C")] }, "agent")
+			.created as string[];
+		store.apply({ type: "removeClips", ids: [b] }, "agent");
+		let p = store.snapshot()?.proposal;
+		expect(p?.steps).toHaveLength(3);
+		expect(p?.changed).toEqual([a]);
+		expect(p?.added).toEqual([c]);
+		expect(p?.removed.map((x) => x.id)).toEqual([b]);
+
+		// Undo just the move; keep the new clip.
+		store.rejectProposal("user", [a]);
+		expect(store.current.clips.find((x) => x.id === a)?.startMs).toBe(0);
+		store.acceptProposal("user", [c]);
+		p = store.snapshot()?.proposal;
+		expect(p?.changed).toEqual([]);
+		expect(p?.added).toEqual([]);
+		expect(p?.removed.map((x) => x.id)).toEqual([b]);
+
+		// Undo the rest: B comes back, C (kept) stays.
+		store.rejectProposal("user");
+		expect(store.snapshot()?.proposal).toBeNull();
+		expect(store.current.clips.map((x) => x.id).sort()).toEqual([a, b, c].sort());
+		// And that is one undoable step.
+		store.undo("user");
+		expect(store.current.clips.some((x) => x.id === b)).toBe(false);
+	});
+});

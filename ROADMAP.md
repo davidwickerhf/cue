@@ -89,7 +89,7 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 
 ## 6. AI and new ideas
 
-- [ ] Edit review: agent changes arrive as proposals to accept or reject
+- [x] Edit review: agent changes arrive as proposals to accept or reject
 - [ ] Alternative cuts as branches, compared side by side
 - [ ] Search shots by content, on device
 - [ ] Rough cut from a brief or script

@@ -32,7 +32,13 @@ export const appSettingsSchema = z.object({
 			image: "openai",
 			macVoice: "Samantha",
 		}),
-	agent: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+	agent: z
+		.object({
+			enabled: z.boolean().default(true),
+			/** Agent edits wait for the user to accept or reject them. */
+			review: z.boolean().default(false),
+		})
+		.default({ enabled: true, review: false }),
 	editor: z
 		.object({
 			snapping: z.boolean().default(true),

@@ -437,6 +437,20 @@ export interface ProjectSnapshot {
 	dirty: boolean;
 	/** Media whose file can't be found (moved, renamed or on a disconnected drive). */
 	offline: string[];
+	/** Agent edits waiting for the user's decision (review mode). */
+	proposal: Proposal | null;
+}
+
+/** What an agent changed on the open timeline since the user last decided. */
+export interface Proposal {
+	/** What the agent did, in order. */
+	steps: string[];
+	added: string[];
+	changed: string[];
+	/** Clips the agent removed, as they were. */
+	removed: Clip[];
+	/** Changes outside the open timeline's clips (tracks, media, markers, settings). */
+	other: boolean;
 }
 
 export interface AgentStatus {

@@ -1,11 +1,13 @@
 import { Dropdown } from "@heroui/react";
 import {
+	ArrowCounterClockwise,
 	ArrowLineLeft,
 	ArrowsHorizontal,
 	ArrowsLeftRight,
 	ArrowsOutLineHorizontal,
 	CaretDown,
 	ChartLine,
+	Check,
 	Copy,
 	Cursor,
 	DotsSixVertical,
@@ -31,6 +33,7 @@ import {
 	TextT,
 	Trash,
 	Waveform as WaveIcon,
+	X,
 } from "@phosphor-icons/react";
 import {
 	Fragment,
@@ -266,6 +269,7 @@ export function Timeline() {
 	const clipsByTrack = new Map<string, Clip[]>(tracks.map((t) => [t.id, []]));
 	for (const c of project.data.clips) clipsByTrack.get(c.trackId)?.push(c);
 	const assetsById = new Map(project.data.assets.map((a) => [a.id, a]));
+	const proposal = project.proposal;
 	// Only clips within a screen of the view are drawn (and only their visible part of
 	// filmstrips and waveforms), so long timelines stay smooth to zoom and scroll.
 	const windowStart = scrollBucket - viewWidth;
@@ -659,6 +663,7 @@ export function Timeline() {
 	return (
 		<section className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
 			<SequenceTabs project={project} />
+			{proposal && <ProposalBar proposal={proposal} />}
 			<Toolbar
 				project={project}
 				viewWidth={viewWidth}
@@ -804,9 +809,28 @@ export function Timeline() {
 												if (!selected.includes(clip.id)) window.cue.selectClips([clip.id]);
 												setMenu({ x: e.clientX, y: e.clientY, clip, atMs: timeAt(e.clientX) });
 											}}
+											review={
+												proposal?.added.includes(clip.id)
+													? "added"
+													: proposal?.changed.includes(clip.id)
+														? "changed"
+														: undefined
+											}
 										/>
 									);
 								})}
+								{/* Clips an agent removed (review mode), shown where they were. */}
+								{proposal?.removed
+									.filter((c) => c.trackId === track.id)
+									.map((c) => (
+										<RemovedGhost
+											key={c.id}
+											clip={c}
+											left={toX(c.startMs)}
+											width={Math.max(2, toX(c.durationMs))}
+											height={heightOf(track, heights, kindHeights)}
+										/>
+									))}
 							</Row>
 						</Fragment>
 					))}
@@ -1420,6 +1444,112 @@ function Ruler({
 	);
 }
 
+/** Keep or undo one clip's proposed change. */
+function ReviewButtons({ clipId }: { clipId: string }) {
+	const button =
+		"flex size-5 items-center justify-center rounded bg-black/60 text-white/90 hover:bg-black/80";
+	return (
+		<div className="absolute top-1 right-1 z-20 hidden gap-0.5 group-hover:flex">
+			<button
+				type="button"
+				title="Keep this change"
+				className={button}
+				onPointerDown={(e) => e.stopPropagation()}
+				onClick={() => void run("review_changes", { action: "accept", clipIds: [clipId] })}
+			>
+				<Check className="size-3" weight="bold" />
+			</button>
+			<button
+				type="button"
+				title="Undo this change"
+				className={button}
+				onPointerDown={(e) => e.stopPropagation()}
+				onClick={() => void run("review_changes", { action: "reject", clipIds: [clipId] })}
+			>
+				<X className="size-3" weight="bold" />
+			</button>
+		</div>
+	);
+}
+
+/** Where a clip the agent removed used to be, with a way to bring it back. */
+function RemovedGhost({
+	clip,
+	left,
+	width,
+	height,
+}: {
+	clip: Clip;
+	left: number;
+	width: number;
+	height: number;
+}) {
+	return (
+		<div
+			className="group absolute top-[3px] z-[2] overflow-hidden rounded-[4px] border border-dashed border-rose-400/80 bg-rose-500/10"
+			style={{ left, width, height: height - 6 }}
+			title="Removed by the agent"
+		>
+			<span className="absolute top-1 left-1.5 truncate text-[10px] text-rose-200/80 line-through">
+				{clip.type === "text" ? clip.text : (clip.name ?? "Clip")}
+			</span>
+			<div className="absolute top-1 right-1 hidden gap-0.5 group-hover:flex">
+				<button
+					type="button"
+					title="Keep it removed"
+					className="flex size-5 items-center justify-center rounded bg-black/60 text-white/90 hover:bg-black/80"
+					onClick={() => void run("review_changes", { action: "accept", clipIds: [clip.id] })}
+				>
+					<Check className="size-3" weight="bold" />
+				</button>
+				<button
+					type="button"
+					title="Bring it back"
+					className="flex size-5 items-center justify-center rounded bg-black/60 text-white/90 hover:bg-black/80"
+					onClick={() => void run("review_changes", { action: "reject", clipIds: [clip.id] })}
+				>
+					<ArrowCounterClockwise className="size-3" weight="bold" />
+				</button>
+			</div>
+		</div>
+	);
+}
+
+/** The agent's pending changes, with keep and undo for all of them. */
+function ProposalBar({ proposal }: { proposal: NonNullable<ProjectSnapshot["proposal"]> }) {
+	const parts = [
+		proposal.added.length && `${proposal.added.length} added`,
+		proposal.changed.length && `${proposal.changed.length} changed`,
+		proposal.removed.length && `${proposal.removed.length} removed`,
+		proposal.other && "other changes",
+	].filter(Boolean);
+	return (
+		<div className="flex h-9 shrink-0 items-center gap-3 border-b border-separator bg-amber-500/10 px-3 text-[12px]">
+			<Robot className="size-4 text-amber-300" />
+			<span className="font-medium">The agent proposes changes</span>
+			<span className="truncate text-muted" title={proposal.steps.join("\n")}>
+				{parts.join(" · ")} · {proposal.steps.at(-1)}
+			</span>
+			<div className="ml-auto flex gap-1.5">
+				<button
+					type="button"
+					className="h-7 rounded-md px-2.5 text-muted hover:bg-default hover:text-foreground"
+					onClick={() => void run("review_changes", { action: "reject" })}
+				>
+					Undo all
+				</button>
+				<button
+					type="button"
+					className="h-7 rounded-md bg-accent px-3 font-medium text-accent-foreground"
+					onClick={() => void run("review_changes", { action: "accept" })}
+				>
+					Keep all
+				</button>
+			</div>
+		</div>
+	);
+}
+
 /** Volume 0–2 as a height inside a clip (1 = unity sits at a third from the top). */
 const volumeY = (v: number, h: number) =>
 	Math.max(2, h - 4 - (Math.min(2, Math.max(0, v)) / 2) * (h - 8) * 1.33);
@@ -1642,6 +1772,7 @@ function ClipView({
 	onDown,
 	onEdgeDown,
 	onContext,
+	review,
 }: {
 	clip: Clip;
 	project: ProjectSnapshot;
@@ -1663,6 +1794,8 @@ function ClipView({
 	onDown: (e: ReactPointerEvent) => void;
 	onEdgeDown: (edge: "start" | "end", e: ReactPointerEvent) => void;
 	onContext: (e: React.MouseEvent) => void;
+	/** Proposed by an agent and waiting for the user (review mode). */
+	review?: "added" | "changed";
 }) {
 	const tone =
 		clip.type === "text"
@@ -1719,7 +1852,11 @@ function ClipView({
 				CLIP_TONE[tone],
 				selected
 					? "outline outline-2 -outline-offset-1 outline-white/90"
-					: "outline outline-1 -outline-offset-1 outline-black/25",
+					: review === "added"
+						? "outline outline-2 -outline-offset-1 outline-emerald-400"
+						: review === "changed"
+							? "outline outline-2 -outline-offset-1 outline-amber-400"
+							: "outline outline-1 -outline-offset-1 outline-black/25",
 				dragging && "opacity-85 shadow-lg shadow-black/40",
 				clip.disabled && "opacity-35 grayscale",
 				cursor,
@@ -1727,6 +1864,7 @@ function ClipView({
 			style={{ left, width, height: inner, transform, zIndex: dragging ? 25 : selected ? 5 : 1 }}
 			title={clip.disabled ? `${label} (disabled)` : label}
 		>
+			{review && <ReviewButtons clipId={clip.id} />}
 			{clip.label && (
 				<div
 					className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[3px]"

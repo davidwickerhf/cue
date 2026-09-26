@@ -712,6 +712,14 @@ export class Controller extends EventEmitter {
 			}
 			case "get_guide":
 				return AGENT_GUIDE;
+			case "review_changes": {
+				const { action, clipIds } = parseInput("review_changes", params);
+				if (actor === "agent")
+					throw new Error("Only the user can keep or undo an agent's proposed changes.");
+				return action === "accept"
+					? this.store.acceptProposal(actor, clipIds)
+					: this.store.rejectProposal(actor, clipIds);
+			}
 			case "make_variants": {
 				const input = parseInput("make_variants", params);
 				if (!input.aspects?.length && !input.lengthsSec?.length)
@@ -1070,6 +1078,15 @@ export class Controller extends EventEmitter {
 					path: data.assets.find((a) => a.id === id)?.path,
 				})),
 				clips: data.clips.length,
+				// Review mode: the user decides whether your edits are kept.
+				pendingReview: snapshot.proposal
+					? {
+							steps: snapshot.proposal.steps.length,
+							added: snapshot.proposal.added.length,
+							changed: snapshot.proposal.changed.length,
+							removed: snapshot.proposal.removed.length,
+						}
+					: null,
 				markers: data.markers,
 				lines: snapshot.lines.map((l) => ({
 					id: l.id,

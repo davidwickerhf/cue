@@ -66,9 +66,11 @@ import type {
 	ActivityEntry,
 	Actor,
 	Asset,
+	Clip,
 	MediaClip,
 	ProjectData,
 	ProjectSnapshot,
+	Proposal,
 	RecentProject,
 	TextClip,
 } from "./types";
@@ -105,6 +107,8 @@ export interface StoreOptions {
 	recentFile: string;
 	/** Whether proxies are built automatically on open and import (app setting). */
 	autoProxies?: () => boolean;
+	/** Whether agent edits wait for the user to accept them (app setting). */
+	reviewAgentEdits?: () => boolean;
 }
 
 type TextRenderer = (
@@ -125,6 +129,8 @@ export class ProjectStore extends EventEmitter {
 	private activityId = 0;
 	private saveTimer: NodeJS.Timeout | null = null;
 	private dirty = false;
+	/** Agent edits waiting for the user (review mode), measured against `base`. */
+	private proposal: { base: ProjectData; steps: string[] } | null = null;
 	/** The save in progress, if any; saves never overlap. */
 	private saving: Promise<void> = Promise.resolve();
 	private revision = 0;
@@ -189,6 +195,7 @@ export class ProjectStore extends EventEmitter {
 			canRedo: this.future.length > 0,
 			dirty: this.dirty,
 			offline: this.offline(),
+			proposal: this.proposalView(),
 		};
 	}
 
@@ -890,6 +897,7 @@ export class ProjectStore extends EventEmitter {
 		this.data = data;
 		this.past = [];
 		this.future = [];
+		this.proposal = null;
 		this.dirty = false;
 		this.revision++;
 		this.proxies = new Set(
@@ -916,10 +924,12 @@ export class ProjectStore extends EventEmitter {
 		this.history = null;
 		this.refreshPoster();
 		this.log(actor, `Closed ${this.data.name}`);
+		this.proposal = null;
 		this.file = null;
 		this.data = null;
 		this.past = [];
 		this.future = [];
+		this.proposal = null;
 		this.revision++;
 		this.emit("change");
 	}
@@ -1278,6 +1288,12 @@ export class ProjectStore extends EventEmitter {
 	apply(op: Op | InternalOp, actor: Actor): { summary: string; created?: string[] } {
 		const before = this.current;
 		const { data, summary, created } = applyOp(before, op);
+		// In review mode an agent's edits are applied (so they can be seen and played)
+		// but kept apart as a proposal, measured against how things were before them.
+		if (actor === "agent" && this.options.reviewAgentEdits?.()) {
+			this.proposal ??= { base: before, steps: [] };
+			this.proposal.steps.push(summary);
+		}
 		this.past = [...this.past, before].slice(-HISTORY_LIMIT);
 		this.future = [];
 		this.data = data;
@@ -1306,6 +1322,129 @@ export class ProjectStore extends EventEmitter {
 	async flushAll(): Promise<void> {
 		await this.flush();
 		await this.history?.flush();
+	}
+
+	/** The pending proposal, compared clip by clip on the open timeline. */
+	private proposalView(): Proposal | null {
+		if (!this.proposal || !this.data) return null;
+		const { base, steps } = this.proposal;
+		const open = activeSequence(this.data).id;
+		const before = allSequences(base).find((q) => q.id === open)?.clips ?? [];
+		const now = new Map(this.data.clips.map((c) => [c.id, c]));
+		const was = new Map(before.map((c) => [c.id, c]));
+		const added = this.data.clips.filter((c) => !was.has(c.id)).map((c) => c.id);
+		const changed = this.data.clips
+			.filter((c) => was.has(c.id) && JSON.stringify(was.get(c.id)) !== JSON.stringify(c))
+			.map((c) => c.id);
+		const removed = before.filter((c) => !now.has(c.id));
+		const rest = (d: ProjectData) =>
+			JSON.stringify({ ...d, clips: [], sequences: [], sequence: undefined, name: "" });
+		const other = rest(base) !== rest(this.data);
+		if (!added.length && !changed.length && !removed.length && !other) return null;
+		return { steps, added, changed, removed, other };
+	}
+
+	/**
+	 * Keeps the agent's proposed changes: all of them, or only these clips (the
+	 * rest stay pending).
+	 */
+	acceptProposal(actor: Actor, clipIds?: string[]): { kept: number } {
+		const view = this.proposalView();
+		if (!this.proposal || !view) {
+			this.proposal = null;
+			return { kept: 0 };
+		}
+		if (!clipIds) {
+			const n = view.added.length + view.changed.length + view.removed.length;
+			this.proposal = null;
+			this.log(actor, `Kept the agent's changes (${view.steps.length} step(s))`);
+			this.touch();
+			return { kept: n };
+		}
+		// Accepting a clip makes its current state the new reference point.
+		const ids = new Set(clipIds);
+		const base = this.proposal.base;
+		const open = activeSequence(this.current).id;
+		const current = this.current.clips;
+		const withAccepted = (clips: Clip[]) => [
+			...clips.filter((c) => !ids.has(c.id)),
+			...current.filter((c) => ids.has(c.id)),
+		];
+		this.proposal.base =
+			activeSequence(base).id === open
+				? { ...base, clips: withAccepted(base.clips) }
+				: {
+						...base,
+						sequences: base.sequences?.map((q) =>
+							q.id === open ? { ...q, clips: withAccepted(q.clips) } : q,
+						),
+					};
+		if (!this.proposalView()) this.proposal = null;
+		this.log(actor, `Kept ${ids.size} of the agent's changes`);
+		this.touch();
+		return { kept: ids.size };
+	}
+
+	/**
+	 * Undoes the agent's proposed changes: all of them (back to how the project
+	 * was before), or only these clips. Undoable like any edit.
+	 */
+	rejectProposal(actor: Actor, clipIds?: string[]): { reverted: number } {
+		const view = this.proposalView();
+		if (!this.proposal || !view) {
+			this.proposal = null;
+			return { reverted: 0 };
+		}
+		const base = this.proposal.base;
+		let next: ProjectData;
+		let n: number;
+		if (!clipIds) {
+			// Back to the base, but staying on the timeline that is open now.
+			const open = activeSequence(this.current).id;
+			const q = allSequences(base).find((s) => s.id === open);
+			next =
+				q && activeSequence(base).id !== open
+					? {
+							...base,
+							sequence: { id: q.id, name: q.name },
+							sequences: [
+								...(base.sequences ?? []).filter((s) => s.id !== open),
+								{
+									...activeSequence(base),
+									tracks: base.tracks,
+									clips: base.clips,
+									markers: base.markers,
+								},
+							],
+							tracks: q.tracks,
+							clips: q.clips,
+							markers: q.markers,
+						}
+					: base;
+			n = view.added.length + view.changed.length + view.removed.length;
+			this.proposal = null;
+		} else {
+			const ids = new Set(clipIds);
+			const open = activeSequence(this.current).id;
+			const before = allSequences(base).find((s) => s.id === open)?.clips ?? [];
+			const clips = [
+				...this.current.clips.filter((c) => !ids.has(c.id)),
+				...before.filter((c) => ids.has(c.id)),
+			];
+			next = { ...this.current, clips };
+			n = ids.size;
+		}
+		this.past = [...this.past, this.current].slice(-HISTORY_LIMIT);
+		this.future = [];
+		this.data = next;
+		const summary = clipIds
+			? `Undid ${n} of the agent's changes`
+			: `Undid the agent's changes (${view.steps.length} step(s))`;
+		if (this.proposal && !this.proposalView()) this.proposal = null;
+		this.touch();
+		this.log(actor, summary);
+		this.record(actor, summary, "edit");
+		return { reverted: n };
 	}
 
 	/** Resolves once no transaction is running. */

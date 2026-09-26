@@ -23,7 +23,7 @@ import {
 	stop,
 	switchProjectChat,
 } from "../../lib/chat";
-import { useApp, useProject } from "../../lib/state";
+import { appSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { Section, Segmented } from "../ui/controls";
 
@@ -215,12 +215,36 @@ function ChatView() {
 						</button>
 					)}
 				</div>
-				<p className="mt-1.5 flex justify-between px-0.5 text-[10px] text-muted">
+				<p className="mt-1.5 flex items-center justify-between gap-2 px-0.5 text-[10px] text-muted">
 					<span>{active?.version ? `${active.name} ${active.version}` : ""}</span>
+					<ReviewToggle />
 					{current.costUsd > 0 && <span>${current.costUsd.toFixed(3)} this chat</span>}
 				</p>
 			</div>
 		</div>
+	);
+}
+
+/** Whether the agent's edits wait for the user (shown on the timeline as a proposal). */
+function ReviewToggle() {
+	const settings = appSettings.use((s) => s.settings);
+	if (!settings) return null;
+	const on = settings.agent.review;
+	return (
+		<label
+			className="ml-auto flex cursor-pointer items-center gap-1 hover:text-foreground"
+			title="Show the agent's edits as a proposal to keep or undo"
+		>
+			<input
+				type="checkbox"
+				className="size-3"
+				checked={on}
+				onChange={(e) =>
+					void window.cue.setAppSettings({ agent: { ...settings.agent, review: e.target.checked } })
+				}
+			/>
+			Review edits
+		</label>
 	);
 }
 
