@@ -46,8 +46,28 @@ export const contract = {
 
 	// --- Projects --------------------------------------------------------------
 	list_recent_projects: { description: "Recently opened projects.", input: {} },
+	list_projects: {
+		description:
+			"Every project in the projects overview (recent ones and those in the projects folder) with length, canvas, clip count and last change.",
+		input: {},
+	},
+	close_project: {
+		description: "Save and close the open project, back to the projects overview.",
+		input: {},
+	},
+	save_project_as: {
+		description:
+			"Save a copy of the project (.cueproj) at a new path and switch to it. Media stays where it is.",
+		input: { path: z.string() },
+	},
+	import_timeline: {
+		description:
+			"Import an OpenTimelineIO (.otio) timeline from DaVinci Resolve, Premiere, Kdenlive and others as new tracks. Media is linked in place.",
+		input: { file: z.string() },
+	},
 	open_project: {
-		description: "Open a .cue.json project (or a folder containing one).",
+		description:
+			"Open a .cueproj project (or a folder containing one; older .cue.json files work too).",
 		input: { path: z.string() },
 	},
 	create_project: {
@@ -472,9 +492,19 @@ export const contract = {
 	redo: { description: "Redo.", input: {} },
 	export: {
 		description:
-			"Export. stems: one WAV per script line + durations.json. voiceover: the voiceover track as one WAV. audio: full mix (with ducking). video: rendered video with every visible track and the mix (codec, hardware encoding and scale from export settings). captions: SRT + VTT from the caption clips.",
+			"Export. stems: one WAV per script line + durations.json. voiceover: the voiceover track as one WAV. audio: full mix (with ducking). video: rendered video with every visible track and the mix (codec, hardware encoding and scale from export settings). captions: SRT + VTT from the caption clips. otio / fcpxml / mlt / edl: the timeline for another editor (OpenTimelineIO for Resolve, Premiere, Kdenlive; FCPXML for Final Cut Pro and Resolve; MLT for Shotcut; CMX3600 EDL for anything), linking the original media.",
 		input: {
-			kind: z.enum(["stems", "voiceover", "audio", "video", "captions"]),
+			kind: z.enum([
+				"stems",
+				"voiceover",
+				"audio",
+				"video",
+				"captions",
+				"otio",
+				"fcpxml",
+				"mlt",
+				"edl",
+			]),
 			out: z.string().optional(),
 		},
 	},

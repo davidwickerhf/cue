@@ -5,6 +5,7 @@ import { type MethodInput, type MethodName, parseInput } from "./control/contrac
 import type { TextRender } from "./core/exporter";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
 import type { AiRuntime } from "./core/runtime";
+import { scanProjects, summarise } from "./core/library";
 import { parseSrt } from "./core/srt";
 import type { ProjectStore } from "./core/store";
 import type {
@@ -15,6 +16,7 @@ import type {
 	EditorCommand,
 	JobStatus,
 	LineView,
+	ProjectSummary,
 	RecentProject,
 	RecorderStatus,
 	TextClip,
@@ -37,6 +39,8 @@ export interface ControllerHooks {
 	captureFrame: (atMs: number) => Promise<string>;
 	/** The generative runtime built from app settings, keys and local models. */
 	runtime: () => Promise<AiRuntime>;
+	/** The folder new projects go in (app setting). */
+	projectsDir?: () => string;
 }
 
 const TEXT_PRESETS: Record<"title" | "lower-third" | "caption" | "label", Partial<TextStyle>> = {
@@ -208,6 +212,23 @@ export class Controller extends EventEmitter {
 			case "list_recent_projects":
 				await this.refreshRecent();
 				return this.recent;
+			case "list_projects":
+				return this.projects();
+			case "close_project":
+				await this.store.close(actor);
+				await this.refreshRecent();
+				return { closed: true };
+			case "save_project_as": {
+				const file = await this.store.saveAs(parseInput("save_project_as", params).path, actor);
+				await this.afterOpen();
+				return { path: file };
+			}
+			case "import_timeline": {
+				const { file } = parseInput("import_timeline", params);
+				return this.job(`Importing ${path.basename(file)}`, () =>
+					this.store.importTimeline(file, actor),
+				);
+			}
 			case "open_project":
 				await this.store.open(parseInput("open_project", params).path, actor);
 				return this.afterOpen();
@@ -624,6 +645,26 @@ export class Controller extends EventEmitter {
 				this.hooks.focusWindow();
 				return { focused: true };
 		}
+	}
+
+	async refreshRecentAndNotify(): Promise<void> {
+		await this.refreshRecent();
+		this.changed();
+	}
+
+	/** Recent projects plus those found in the projects folder, newest change first. */
+	async projects(): Promise<ProjectSummary[]> {
+		await this.refreshRecent();
+		const dir = this.hooks.projectsDir?.();
+		const scanned = dir ? await scanProjects(dir) : [];
+		const byPath = new Map(this.recent.map((r) => [r.path, r]));
+		const files = [...new Set([...this.recent.map((r) => r.path), ...scanned])];
+		const list = await Promise.all(
+			files.map((f) => summarise(f, (file) => this.store.toUrl(file), byPath.get(f))),
+		);
+		return list.sort(
+			(a, b) => Date.parse(b.openedAt ?? b.modifiedAt) - Date.parse(a.openedAt ?? a.modifiedAt),
+		);
 	}
 
 	// -------------------------------------------------------------------------

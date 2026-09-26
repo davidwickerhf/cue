@@ -29,7 +29,7 @@ export interface ExportContext {
 }
 
 export interface ExportReport {
-	kind: "stems" | "voiceover" | "audio" | "video" | "captions";
+	kind: "stems" | "voiceover" | "audio" | "video" | "captions" | "otio" | "fcpxml" | "mlt" | "edl";
 	outputs: string[];
 	missing: string[];
 	durationMs: number;

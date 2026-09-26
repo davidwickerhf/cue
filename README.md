@@ -58,4 +58,17 @@ Try tools from the terminal with `node scripts/mcp-call.mjs list`.
 
 ## Project files
 
-A project is a `.cue.json` file. Takes go in `takes/`, generated media in `generated/`, and caches (waveforms, thumbnails, rendered text) in `.cue-cache/` next to it. Media paths are stored relative to the project when possible.
+A project is a `.cueproj` file: plain JSON, so it diffs and versions well, and double-clicking one opens Cue. Older `.cue.json` projects still open. Takes go in `takes/`, generated media in `generated/`, and caches (waveforms, thumbnails, proxies, the overview poster, rendered text) in `.cue-cache/` next to it. Media paths are stored relative to the project when possible. New projects get their own folder in `~/Movies/Cue` (changeable in Settings), and the projects overview lists everything there plus recent projects.
+
+## Working with other editors
+
+File → Export Timeline (or the Export menu, or the `export` agent tool) writes the edit for another editor, linking the original media:
+
+| Format | Opens in | Carries |
+| --- | --- | --- |
+| OpenTimelineIO `.otio` | DaVinci Resolve, Premiere (plug-in), Kdenlive, Avid | Tracks, cuts, speed, titles as generators, markers, plus Cue's clip settings in metadata |
+| FCPXML 1.10 `.fcpxml` | Final Cut Pro, DaVinci Resolve | Tracks as lanes, cuts, speed, volume, Basic Title text, markers |
+| MLT XML `.mlt` | Shotcut | Tracks, cuts, speed, volume, text as dynamic text, mute and hide |
+| CMX3600 `.edl` | Almost anything | The main video track and two audio tracks |
+
+File → Import Timeline brings an OpenTimelineIO file in as new tracks (one undo step). Crossfades export as straight cuts for now.

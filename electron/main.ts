@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync, readdirSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -27,6 +27,7 @@ import {
 	WHISPER_DOWNLOADS,
 } from "./core/local-ai";
 import { resolveInProject } from "./core/paths";
+import { isProjectFile, PROJECT_EXTENSION } from "./core/project";
 import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtime";
 import { ProjectStore } from "./core/store";
 import type { EditorCommand, RecorderStatus, TextClip } from "./core/types";
@@ -177,6 +178,7 @@ async function loadAppSettings() {
 		appSettings = appSettingsSchema.parse({});
 	}
 	if (!appSettings.projectsDir) appSettings.projectsDir = path.join(app.getPath("videos"), "Cue");
+	await fs.mkdir(appSettings.projectsDir, { recursive: true }).catch(() => {});
 }
 
 async function saveAppSettings(patch: Partial<AppSettings>) {
@@ -229,6 +231,7 @@ const controller = new Controller(store, {
 	renderText,
 	captureFrame,
 	runtime,
+	projectsDir: () => appSettings.projectsDir,
 });
 
 let stateTimer: NodeJS.Timeout | null = null;
@@ -249,9 +252,17 @@ function mcpScriptPath(): string {
 
 /** Only the open project's folder and its media may be streamed to the window. */
 function mayServe(file: string): boolean {
+	const resolved = path.resolve(file);
+	// Poster frames for the projects overview, only next to a Cue project file.
+	if (
+		path.basename(resolved) === "poster.jpg" &&
+		path.basename(path.dirname(resolved)) === ".cue-cache"
+	) {
+		const projectDir = path.dirname(path.dirname(resolved));
+		return readdirSync(projectDir).some((entry) => isProjectFile(entry));
+	}
 	const snapshot = store.snapshot();
 	if (!snapshot) return false;
-	const resolved = path.resolve(file);
 	if (resolved.startsWith(`${snapshot.dir}${path.sep}`)) return true;
 	return snapshot.data.assets.some((a) => resolveInProject(snapshot.dir, a.path) === resolved);
 }
@@ -341,34 +352,87 @@ function createWindow() {
 	else void win.loadFile(path.join(__dirname, "../dist/index.html"));
 }
 
+const PROJECT_FILTER = { name: "Cue project", extensions: ["cueproj", "json"] };
+const isProject = (arg: string) => isProjectFile(arg);
+
+/** Quick path from the menu: a folder per project inside the projects folder. */
 async function newProjectDialog() {
-	if (!win) return;
-	const video = await dialog.showOpenDialog(win, {
-		title: "Start from a video (optional)",
-		buttonLabel: "Use Video",
-		properties: ["openFile"],
-		filters: [{ name: "Video", extensions: ["mp4", "mov", "m4v", "webm"] }],
-	});
-	const source = video.canceled ? undefined : video.filePaths[0];
-	const target = await dialog.showSaveDialog(win, {
-		title: "Save the Cue project",
-		defaultPath: source
-			? path.join(path.dirname(source), `${path.parse(source).name}.cue.json`)
-			: path.join(app.getPath("documents"), "Untitled.cue.json"),
-	});
-	if (target.canceled || !target.filePath) return;
-	await controller.call("create_project", { path: target.filePath, video: source }, "user");
+	win?.webContents.send("cue:newProject");
 }
 
 async function openProjectDialog() {
 	if (!win) return;
 	const result = await dialog.showOpenDialog(win, {
 		title: "Open a Cue project",
+		defaultPath: appSettings.projectsDir,
 		properties: ["openFile"],
-		filters: [{ name: "Cue project", extensions: ["json"] }],
+		filters: [PROJECT_FILTER],
 	});
 	if (!result.canceled && result.filePaths[0])
 		await controller.call("open_project", { path: result.filePaths[0] }, "user");
+}
+
+async function saveAsDialog() {
+	if (!win || !store.isOpen) return;
+	const result = await dialog.showSaveDialog(win, {
+		title: "Save a copy of the project",
+		defaultPath: path.join(
+			appSettings.projectsDir,
+			`${store.current.name} copy${PROJECT_EXTENSION}`,
+		),
+		filters: [{ name: "Cue project", extensions: ["cueproj"] }],
+	});
+	if (!result.canceled && result.filePath)
+		await controller.call("save_project_as", { path: result.filePath }, "user");
+}
+
+const TIMELINE_FORMATS = {
+	otio: {
+		label: "OpenTimelineIO (Resolve, Premiere, Kdenlive)…",
+		ext: "otio",
+		name: "OpenTimelineIO",
+	},
+	fcpxml: { label: "Final Cut Pro XML (Final Cut, Resolve)…", ext: "fcpxml", name: "FCPXML" },
+	mlt: { label: "MLT XML (Shotcut)…", ext: "mlt", name: "MLT XML" },
+	edl: { label: "CMX3600 EDL…", ext: "edl", name: "EDL" },
+} as const;
+
+async function exportTimelineDialog(format: keyof typeof TIMELINE_FORMATS) {
+	if (!win || !store.isOpen) return;
+	const info = TIMELINE_FORMATS[format];
+	const result = await dialog.showSaveDialog(win, {
+		title: `Export the timeline as ${info.name}`,
+		defaultPath: path.join(store.projectDir, "export", `${store.current.name}.${info.ext}`),
+		filters: [{ name: info.name, extensions: [info.ext] }],
+	});
+	if (result.canceled || !result.filePath) return;
+	const report = (await controller.call(
+		"export",
+		{ kind: format, out: result.filePath },
+		"user",
+	)) as {
+		outputs: string[];
+	};
+	if (report?.outputs?.[0]) shell.showItemInFolder(report.outputs[0]);
+}
+
+async function importTimelineDialog() {
+	if (!win || !store.isOpen) return;
+	const result = await dialog.showOpenDialog(win, {
+		title: "Import a timeline",
+		properties: ["openFile"],
+		filters: [{ name: "OpenTimelineIO", extensions: ["otio"] }],
+	});
+	if (!result.canceled && result.filePaths[0])
+		await controller.call("import_timeline", { file: result.filePaths[0] }, "user");
+}
+
+/** Opens a project, or imports a timeline file into the open project. */
+async function openPath(file: string) {
+	if (file.endsWith(".otio")) {
+		if (!store.isOpen) throw new Error("Open a project first, then import the timeline into it.");
+		await controller.call("import_timeline", { file }, "user");
+	} else await controller.call("open_project", { path: file }, "user");
 }
 
 async function importDialog(place?: { trackId: string; startMs: number }) {
@@ -434,12 +498,33 @@ function buildMenu() {
 					{ label: "New Project…", accelerator: "CmdOrCtrl+N", click: guard(newProjectDialog) },
 					{ label: "Open Project…", accelerator: "CmdOrCtrl+O", click: guard(openProjectDialog) },
 					{
+						label: "Show All Projects",
+						accelerator: "CmdOrCtrl+Shift+O",
+						click: guard(() => controller.call("close_project", {}, "user")),
+					},
+					{
 						label: "Import Media…",
 						accelerator: "CmdOrCtrl+I",
 						click: guard(() => importDialog()),
 					},
 					{ type: "separator" },
+					{
+						label: "Import Timeline (OTIO)…",
+						accelerator: "CmdOrCtrl+Shift+I",
+						click: guard(importTimelineDialog),
+					},
+					{ type: "separator" },
 					{ label: "Save", accelerator: "CmdOrCtrl+S", click: guard(() => store.flush()) },
+					{ label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", click: guard(saveAsDialog) },
+					{
+						label: "Export Timeline",
+						submenu: (Object.keys(TIMELINE_FORMATS) as (keyof typeof TIMELINE_FORMATS)[]).map(
+							(format) => ({
+								label: TIMELINE_FORMATS[format].label,
+								click: guard(() => exportTimelineDialog(format)),
+							}),
+						),
+					},
 					{ type: "separator" },
 					{ role: "close" },
 				],
@@ -507,6 +592,81 @@ function registerIpc() {
 	);
 	ipcMain.handle("cue:importDialog", (_event, place?: { trackId: string; startMs: number }) =>
 		importDialog(place),
+	);
+	ipcMain.handle("cue:listProjects", () => controller.projects());
+	ipcMain.handle(
+		"cue:createProject",
+		async (
+			_event,
+			options: {
+				name: string;
+				folder?: string;
+				width: number;
+				height: number;
+				fps: number;
+				video?: string;
+			},
+		) => {
+			const name = options.name.trim() || "Untitled";
+			const folder = options.folder || appSettings.projectsDir;
+			let dir = path.join(folder, name.replace(/[/\\:]/g, "-"));
+			for (let n = 2; existsSync(dir); n++) dir = path.join(folder, `${name} ${n}`);
+			await controller.call(
+				"create_project",
+				{
+					path: path.join(dir, `${path.basename(dir)}${PROJECT_EXTENSION}`),
+					name,
+					video: options.video,
+				},
+				"user",
+			);
+			if (!options.video)
+				await controller.call(
+					"set_canvas",
+					{ width: options.width, height: options.height, fps: options.fps },
+					"user",
+				);
+		},
+	);
+	ipcMain.handle(
+		"cue:projectAction",
+		async (_event, action: string, file: string, arg?: string) => {
+			if (!isProject(file)) throw new Error("Not a Cue project.");
+			if (action === "reveal") return shell.showItemInFolder(file);
+			if (action === "forget")
+				return store.forget(file).then(() => controller.refreshRecentAndNotify());
+			if (action === "rename" && arg) {
+				const data = JSON.parse(await fs.readFile(file, "utf8"));
+				data.name = arg.slice(0, 200);
+				await fs.writeFile(file, `${JSON.stringify(data, null, "\t")}\n`);
+				return controller.refreshRecentAndNotify();
+			}
+			if (action === "duplicate") {
+				const copy = file.replace(/(\.cueproj|\.cue\.json)$/, "");
+				let target = `${copy} copy${PROJECT_EXTENSION}`;
+				for (let n = 2; existsSync(target); n++) target = `${copy} copy ${n}${PROJECT_EXTENSION}`;
+				const data = JSON.parse(await fs.readFile(file, "utf8"));
+				data.name = `${data.name} copy`;
+				await fs.writeFile(target, `${JSON.stringify(data, null, "\t")}\n`);
+				return target;
+			}
+			if (action === "trash") {
+				if (!win) return;
+				const { response } = await dialog.showMessageBox(win, {
+					type: "warning",
+					message: `Move “${path.basename(file)}” to the Trash?`,
+					detail: "Only the project file goes to the Trash. Your media files stay where they are.",
+					buttons: ["Move to Trash", "Cancel"],
+					defaultId: 1,
+					cancelId: 1,
+				});
+				if (response !== 0) return;
+				if (store.filePath === file) await store.close();
+				await shell.trashItem(file);
+				await store.forget(file);
+				return controller.refreshRecentAndNotify();
+			}
+		},
 	);
 	ipcMain.handle("cue:newProject", () => newProjectDialog());
 	ipcMain.handle("cue:openProject", () => openProjectDialog());
@@ -580,12 +740,25 @@ function registerIpc() {
 	);
 }
 
+/** Files opened from Finder before the app was ready. */
+let pendingOpen: string | null = null;
+
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
+	// Double-clicking a .cueproj (or dropping one on the Dock icon).
+	app.on("open-file", (event, file) => {
+		event.preventDefault();
+		if (!app.isReady()) pendingOpen = file;
+		else {
+			if (!win || win.isDestroyed()) createWindow();
+			void openPath(file).catch((error) => store.log("system", String(error)));
+		}
+	});
+
 	app.on("second-instance", (_event, argv) => {
 		controller.call("focus_window", {}, "system").catch(() => {});
-		const project = argv.find((arg) => arg.endsWith(".cue.json"));
-		if (project) void controller.call("open_project", { path: project }, "user").catch(() => {});
+		const project = argv.find((arg) => isProject(arg) || arg.endsWith(".otio"));
+		if (project) void openPath(project).catch((error) => store.log("system", String(error)));
 	});
 
 	app.whenReady().then(async () => {
@@ -608,12 +781,11 @@ else {
 			void store.flush();
 		});
 		createWindow();
-		const initial = process.argv.find((arg) => arg.endsWith(".cue.json")) ?? process.env.CUE_OPEN;
-		if (initial)
-			await controller
-				.call("open_project", { path: initial }, "user")
-				.catch((error) => store.log("system", String(error)));
-		else {
+		const initial =
+			pendingOpen ?? process.argv.find((arg) => isProject(arg)) ?? process.env.CUE_OPEN;
+		pendingOpen = null;
+		if (initial) await openPath(initial).catch((error) => store.log("system", String(error)));
+		else if (appSettings.reopenLast) {
 			const [last] = await store.recent();
 			if (last)
 				await controller.call("open_project", { path: last.path }, "system").catch(() => {});

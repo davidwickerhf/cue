@@ -24,6 +24,16 @@ import {
 	probe,
 	toWav,
 } from "./media";
+import {
+	fromOtio,
+	INTERCHANGE_EXTENSIONS,
+	type InterchangeFormat,
+	toEdl,
+	toFcpxml,
+	toMlt,
+	toOtio,
+} from "./interchange";
+import { makePoster } from "./library";
 import { applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
@@ -33,6 +43,7 @@ import {
 	type LineInput,
 	newId,
 	PROJECT_EXTENSION,
+	isProjectFile,
 	parseProject,
 	projectDuration,
 } from "./project";
@@ -53,7 +64,7 @@ const ACTIVITY_LIMIT = 200;
 const CACHE_DIR = ".cue-cache";
 
 export interface CreateProjectOptions {
-	/** Project file or directory. A directory gets `<name>.cue.json`. */
+	/** Project file or directory. A directory gets `<name>.cueproj`. */
 	path: string;
 	name?: string;
 	/** A video to start from: imported and placed on the first video track. */
@@ -63,6 +74,8 @@ export interface CreateProjectOptions {
 	/** Or pass the script lines directly. */
 	lines?: LineInput[];
 }
+
+export type ExportKind = "stems" | "voiceover" | "audio" | "video" | "captions" | InterchangeFormat;
 
 export interface StoreOptions {
 	/** Turns an absolute path into a URL the editor window can load. */
@@ -95,6 +108,15 @@ export class ProjectStore extends EventEmitter {
 
 	constructor(private readonly options: StoreOptions) {
 		super();
+	}
+
+	/** A URL the editor window can load for a local file. */
+	toUrl(file: string): string {
+		return this.options.mediaUrl(file);
+	}
+
+	get filePath(): string | null {
+		return this.file;
 	}
 
 	get isOpen(): boolean {
@@ -158,6 +180,7 @@ export class ProjectStore extends EventEmitter {
 		const target = stat.isDirectory() ? await this.findProjectIn(resolved) : resolved;
 		const data = parseProject(JSON.parse(await fs.readFile(target, "utf8")));
 		await this.flush();
+		this.refreshPoster();
 		this.file = target;
 		this.data = data;
 		this.past = [];
@@ -172,6 +195,34 @@ export class ProjectStore extends EventEmitter {
 		this.log(actor, `Opened ${path.basename(target)}`);
 		this.emit("change");
 		this.autoBuildProxies();
+		this.refreshPoster();
+	}
+
+	/** Saves and closes the project, back to the projects overview. */
+	async close(actor: Actor = "user"): Promise<void> {
+		if (!this.data) return;
+		await this.flush();
+		this.refreshPoster();
+		this.log(actor, `Closed ${this.data.name}`);
+		this.file = null;
+		this.data = null;
+		this.past = [];
+		this.future = [];
+		this.revision++;
+		this.emit("change");
+	}
+
+	/** Updates the poster frame shown in the projects overview (in the background). */
+	private refreshPoster(): void {
+		if (!this.file || !this.data) return;
+		void makePoster(this.file, this.data).catch(() => {});
+	}
+
+	/** Removes a project from the recent list (the file stays where it is). */
+	async forget(file: string): Promise<void> {
+		const list = (await this.recent()).filter((item) => item.path !== file);
+		await fs.mkdir(path.dirname(this.options.recentFile), { recursive: true });
+		await fs.writeFile(this.options.recentFile, JSON.stringify(list, null, 2));
 	}
 
 	private proxyPath(assetId: string): string {
@@ -234,13 +285,10 @@ export class ProjectStore extends EventEmitter {
 	async create(options: CreateProjectOptions, actor: Actor = "user"): Promise<void> {
 		let target = path.resolve(options.path);
 		const name =
-			options.name ??
-			path
-				.basename(target)
-				.replace(PROJECT_EXTENSION, "")
-				.replace(/\.json$/, "");
+			options.name ?? path.basename(target).replace(/\.cueproj$|\.cue\.json$|\.json$/, "");
 		const isDir =
-			(await fs.stat(target).catch(() => null))?.isDirectory() || !target.endsWith(".json");
+			(await fs.stat(target).catch(() => null))?.isDirectory() ||
+			!(isProjectFile(target) || target.endsWith(".json"));
 		if (isDir) target = path.join(target, `${slug(name)}${PROJECT_EXTENSION}`);
 		if (await fs.stat(target).catch(() => null))
 			throw new Error(`${target} already exists. Open it instead.`);
@@ -265,6 +313,129 @@ export class ProjectStore extends EventEmitter {
 		this.past = [];
 		this.log(actor, `Created "${name}"`);
 		this.emit("change");
+	}
+
+	/**
+	 * Saves a copy of the project somewhere else and switches to it. Media
+	 * paths are rewritten so they still point at the same files.
+	 */
+	async saveAs(target: string, actor: Actor = "user"): Promise<string> {
+		const from = this.projectDir;
+		let file = path.resolve(target);
+		if (!isProjectFile(file)) file += PROJECT_EXTENSION;
+		const to = path.dirname(file);
+		const data: ProjectData = {
+			...this.current,
+			assets: this.current.assets.map((a) => ({
+				...a,
+				path: relativeToProject(to, resolveInProject(from, a.path)),
+			})),
+		};
+		await fs.mkdir(to, { recursive: true });
+		await fs.writeFile(file, `${JSON.stringify(data, null, "\t")}\n`);
+		await this.open(file, actor);
+		return file;
+	}
+
+	/** Brings in a timeline from another editor (OpenTimelineIO) as new tracks. */
+	async importTimeline(
+		file: string,
+		actor: Actor,
+	): Promise<{ tracks: number; clips: number; missing: string[] }> {
+		const source = path.resolve(file);
+		const timeline = fromOtio(JSON.parse(await fs.readFile(source, "utf8")), path.dirname(source));
+		const missing = [
+			...new Set(
+				timeline.tracks.flatMap((t) =>
+					t.clips.flatMap((c) => (c.type === "media" && !existsSync(c.file) ? [c.file] : [])),
+				),
+			),
+		];
+		let clips = 0;
+		await this.transaction(actor, `Imported ${path.basename(source)}`, async () => {
+			const byPath = new Map(
+				this.current.assets.map((a) => [resolveInProject(this.projectDir, a.path), a.id]),
+			);
+			const files = [
+				...new Set(
+					timeline.tracks.flatMap((t) =>
+						t.clips.flatMap((c) =>
+							c.type === "media" && existsSync(c.file) && !byPath.has(c.file) ? [c.file] : [],
+						),
+					),
+				),
+			].filter((f) => kindOf(f));
+			for (const asset of await this.importMedia(files, actor))
+				byPath.set(resolveInProject(this.projectDir, asset.path), asset.id);
+			if (this.current.clips.length === 0 && timeline.width && timeline.height)
+				this.apply(
+					{ type: "setCanvas", canvas: { width: timeline.width, height: timeline.height } },
+					actor,
+				);
+			let visualIndex = this.current.tracks.filter((t) => t.kind !== "audio").length;
+			for (const track of timeline.tracks) {
+				const trackId = this.apply(
+					{
+						type: "addTrack",
+						kind: track.kind,
+						name: track.name.slice(0, 80),
+						index: track.kind === "audio" ? undefined : visualIndex++,
+					},
+					actor,
+				).created?.[0];
+				if (!trackId) continue;
+				if (track.muted || track.hidden)
+					this.apply(
+						{
+							type: "updateTrack",
+							id: trackId,
+							patch: { muted: track.muted, hidden: track.hidden },
+						},
+						actor,
+					);
+				const inputs = track.clips.flatMap((c): Extract<Op, { type: "addClips" }>["clips"] => {
+					if (c.type === "text")
+						return [
+							{
+								type: "text",
+								trackId,
+								startMs: c.startMs,
+								durationMs: c.durationMs,
+								text: c.text.slice(0, 4000),
+								style: c.extra?.style,
+								animationIn: c.extra?.animationIn,
+								animationOut: c.extra?.animationOut,
+							},
+						];
+					const assetId = byPath.get(c.file);
+					if (!assetId) return [];
+					return [
+						{
+							type: "media",
+							trackId,
+							assetId,
+							startMs: c.startMs,
+							durationMs: c.durationMs,
+							inMs: c.inMs,
+							speed: c.speed,
+							volume: c.volume,
+							fadeInMs: c.extra?.fadeInMs,
+							fadeOutMs: c.extra?.fadeOutMs,
+							transform: c.extra?.transform,
+							denoise: c.extra?.denoise,
+							name: c.name?.slice(0, 120),
+						},
+					];
+				});
+				if (inputs.length) {
+					this.apply({ type: "addClips", clips: inputs }, actor);
+					clips += inputs.length;
+				}
+			}
+			for (const m of timeline.markers)
+				this.apply({ type: "addMarker", atMs: m.atMs, label: m.label.slice(0, 120) }, actor);
+		});
+		return { tracks: timeline.tracks.length, clips, missing };
 	}
 
 	async flush(): Promise<void> {
@@ -304,6 +475,24 @@ export class ProjectStore extends EventEmitter {
 		this.touch();
 		this.log(actor, summary);
 		return { summary, created };
+	}
+
+	/** Runs several edits as one undo step. */
+	async transaction<T>(actor: Actor, summary: string, fn: () => Promise<T> | T): Promise<T> {
+		const before = this.current;
+		const past = this.past;
+		try {
+			const result = await fn();
+			this.past = [...past, before].slice(-HISTORY_LIMIT);
+			this.future = [];
+			this.log(actor, summary);
+			return result;
+		} catch (error) {
+			this.data = before;
+			this.past = past;
+			this.touch();
+			throw error;
+		}
 	}
 
 	undo(actor: Actor): boolean {
@@ -852,11 +1041,13 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	async export(
-		kind: "stems" | "voiceover" | "audio" | "video" | "captions",
+		kind: ExportKind,
 		out: string | undefined,
 		actor: Actor,
 		renderText?: TextRenderer,
 	): Promise<ExportReport> {
+		if (kind === "otio" || kind === "fcpxml" || kind === "mlt" || kind === "edl")
+			return this.exportTimeline(kind, out, actor);
 		const ctx = this.exportContext(renderText);
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
@@ -874,6 +1065,30 @@ export class ProjectStore extends EventEmitter {
 			`Exported ${kind} → ${report.outputs.map((f) => path.basename(f)).join(", ")}${report.missing.length ? ` (no take yet: ${report.missing.join(", ")})` : ""}`,
 		);
 		return report;
+	}
+
+	private async exportTimeline(
+		format: InterchangeFormat,
+		out: string | undefined,
+		actor: Actor,
+	): Promise<ExportReport> {
+		const data = this.current;
+		const target = out
+			? path.resolve(this.projectDir, out)
+			: path.join(this.projectDir, "export", `${slug(data.name)}${INTERCHANGE_EXTENSIONS[format]}`);
+		let text: string;
+		let skipped: string[] = [];
+		if (format === "otio") text = toOtio(data, this.projectDir);
+		else if (format === "fcpxml") text = toFcpxml(data, this.projectDir);
+		else if (format === "mlt") text = toMlt(data, this.projectDir);
+		else ({ text, skipped } = toEdl(data, this.projectDir));
+		await fs.mkdir(path.dirname(target), { recursive: true });
+		await fs.writeFile(target, text);
+		this.log(
+			actor,
+			`Exported the timeline → ${path.basename(target)}${skipped.length ? ` (EDL leaves out: ${skipped.join(", ")})` : ""}`,
+		);
+		return { kind: format, outputs: [target], missing: skipped, durationMs: projectDuration(data) };
 	}
 
 	cacheDir(): string {
@@ -901,7 +1116,7 @@ export class ProjectStore extends EventEmitter {
 
 	private async findProjectIn(dir: string): Promise<string> {
 		const entries = await fs.readdir(dir);
-		const match = entries.find((entry) => entry.endsWith(PROJECT_EXTENSION));
+		const match = entries.find((entry) => isProjectFile(entry));
 		if (!match) throw new Error(`No ${PROJECT_EXTENSION} file in ${dir}.`);
 		return path.join(dir, match);
 	}

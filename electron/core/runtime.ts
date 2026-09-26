@@ -12,6 +12,8 @@ import { chat, type LocalInventory, speakMac, transcribeLocal } from "./local-ai
 export const appSettingsSchema = z.object({
 	theme: z.enum(["dark", "light", "system"]).default("dark"),
 	projectsDir: z.string().default(""),
+	/** Open the last project on launch instead of the projects overview. */
+	reopenLast: z.boolean().default(false),
 	ai: z
 		.object({
 			tts: z.enum(["openai", "macos"]).default("openai"),

@@ -132,3 +132,6 @@ export const editor = createStore({
 	inPoint: null as number | null,
 	outPoint: null as number | null,
 });
+
+/** App-level dialogs that can open from the menu or the overview. */
+export const dialogs = createStore({ newProject: false });

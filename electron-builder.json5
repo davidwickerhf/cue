@@ -11,6 +11,10 @@
     "!**/*.md",
   ],
   extraResources: [{ from: "dist-mcp", to: "mcp" }],
+  fileAssociations: [
+    { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/icon.icns" },
+    { ext: "otio", name: "OpenTimelineIO Timeline", role: "Viewer", rank: "Alternate" },
+  ],
   mac: {
     category: "public.app-category.video",
     target: [{ target: "dir" }],

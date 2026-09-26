@@ -21,7 +21,7 @@ export function EditorHeader() {
 	const agentActive =
 		!!agent?.lastSeenAt && Date.now() - Date.parse(agent.lastSeenAt) < 5 * 60 * 1000;
 
-	const exportAs = async (kind: "video" | "voiceover" | "stems" | "audio" | "captions") => {
+	const exportAs = async (kind: ExportKind) => {
 		notify(`Exporting ${kind}…`);
 		const report = await run<{ outputs: string[]; missing: string[] }>("export", { kind });
 		if (!report) return;
@@ -37,9 +37,9 @@ export function EditorHeader() {
 			<div className="flex min-w-0 flex-1 items-center gap-1">
 				<button
 					type="button"
-					onClick={() => void run("list_recent_projects").then(() => window.cue.openProject())}
+					onClick={() => void run("close_project")}
 					className="flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] text-muted hover:bg-default hover:text-foreground"
-					title="Open another project"
+					title="All projects (⇧⌘O)"
 				>
 					<CaretLeft className="size-3.5" /> Projects
 				</button>
@@ -118,7 +118,7 @@ export function EditorHeader() {
 						Export
 					</Button>
 					<Dropdown.Popover placement="bottom end" className="min-w-[240px]">
-						<Dropdown.Menu aria-label="Export" onAction={(key) => void exportAs(key as "video")}>
+						<Dropdown.Menu aria-label="Export" onAction={(key) => void exportAs(key as ExportKind)}>
 							<Dropdown.Item id="video" textValue="Video">
 								<ExportItem
 									title="Video"
@@ -140,6 +140,28 @@ export function EditorHeader() {
 							<Dropdown.Item id="captions" textValue="Captions">
 								<ExportItem title="Captions" body="SRT and VTT from the caption clips" />
 							</Dropdown.Item>
+							<Dropdown.Item
+								id="otio"
+								textValue="OpenTimelineIO"
+								className="border-t border-separator"
+							>
+								<ExportItem
+									title="Timeline · OpenTimelineIO"
+									body="DaVinci Resolve, Premiere, Kdenlive"
+								/>
+							</Dropdown.Item>
+							<Dropdown.Item id="fcpxml" textValue="FCPXML">
+								<ExportItem title="Timeline · FCPXML" body="Final Cut Pro, DaVinci Resolve" />
+							</Dropdown.Item>
+							<Dropdown.Item id="mlt" textValue="MLT">
+								<ExportItem title="Timeline · MLT XML" body="Shotcut" />
+							</Dropdown.Item>
+							<Dropdown.Item id="edl" textValue="EDL">
+								<ExportItem
+									title="Timeline · EDL"
+									body="CMX3600, main video track and two audio tracks"
+								/>
+							</Dropdown.Item>
 						</Dropdown.Menu>
 					</Dropdown.Popover>
 				</Dropdown>
@@ -147,6 +169,17 @@ export function EditorHeader() {
 		</header>
 	);
 }
+
+type ExportKind =
+	| "video"
+	| "voiceover"
+	| "stems"
+	| "audio"
+	| "captions"
+	| "otio"
+	| "fcpxml"
+	| "mlt"
+	| "edl";
 
 function ExportItem({ title, body }: { title: string; body: string }) {
 	return (

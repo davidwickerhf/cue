@@ -246,7 +246,7 @@ function SettingsLink() {
 function Problem({ text }: { text?: string }) {
 	return (
 		<p className="rounded-md bg-warning/10 px-2.5 py-2 text-[12px] text-warning">
-			{text ?? "Not set up."}{" "}
+			{(text ?? "Not set up").replace(/\.?$/, ".")}{" "}
 			<button
 				type="button"
 				className="underline underline-offset-2"

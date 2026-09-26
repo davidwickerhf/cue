@@ -15,7 +15,14 @@ import type {
 	Transform,
 } from "./types";
 
-export const PROJECT_EXTENSION = ".cue.json";
+/** Cue project files: JSON inside, so they diff and version well. */
+export const PROJECT_EXTENSION = ".cueproj";
+/** Projects saved by earlier versions. */
+export const LEGACY_EXTENSION = ".cue.json";
+
+export function isProjectFile(file: string): boolean {
+	return file.endsWith(PROJECT_EXTENSION) || file.endsWith(LEGACY_EXTENSION);
+}
 
 export const DEFAULT_SETTINGS: RecordingSettings = {
 	prerollMs: 1500,

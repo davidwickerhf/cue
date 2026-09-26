@@ -1,6 +1,6 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 import type { MethodName } from "./control/contract";
-import type { AppState, EditorCommand, RecorderStatus } from "./core/types";
+import type { AppState, EditorCommand, ProjectSummary, RecorderStatus } from "./core/types";
 
 const api = {
 	/** The same methods agents use, performed as the user. */
@@ -47,6 +47,27 @@ const api = {
 	importDialog: (place?: { trackId: string; startMs: number }) =>
 		ipcRenderer.invoke("cue:importDialog", place),
 	newProject: () => ipcRenderer.invoke("cue:newProject"),
+	listProjects: () => ipcRenderer.invoke("cue:listProjects") as Promise<ProjectSummary[]>,
+	createProject: (options: {
+		name: string;
+		folder?: string;
+		width: number;
+		height: number;
+		fps: number;
+		video?: string;
+	}) => ipcRenderer.invoke("cue:createProject", options) as Promise<void>,
+	projectAction: (
+		action: "reveal" | "forget" | "rename" | "duplicate" | "trash",
+		file: string,
+		arg?: string,
+	) => ipcRenderer.invoke("cue:projectAction", action, file, arg) as Promise<unknown>,
+	onNewProject: (listener: () => void) => {
+		const handler = () => listener();
+		ipcRenderer.on("cue:newProject", handler);
+		return () => {
+			ipcRenderer.removeListener("cue:newProject", handler);
+		};
+	},
 	openProject: () => ipcRenderer.invoke("cue:openProject"),
 	chooseFile: (options: { title: string; extensions?: string[] }) =>
 		ipcRenderer.invoke("cue:chooseFile", options) as Promise<string | null>,

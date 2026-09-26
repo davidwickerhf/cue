@@ -383,6 +383,23 @@ export interface RecentProject {
 	openedAt: string;
 }
 
+/** A project as shown in the projects overview. */
+export interface ProjectSummary {
+	path: string;
+	name: string;
+	openedAt?: string;
+	modifiedAt: string;
+	durationMs: number;
+	width: number;
+	height: number;
+	fps: number;
+	clipCount: number;
+	posterUrl?: string;
+	/** False when the file has been moved or deleted. */
+	exists: boolean;
+	problem?: string;
+}
+
 export type PreviewMode = "all" | "voiceover" | "muted";
 
 /** Commands the main process sends to the editor window. */

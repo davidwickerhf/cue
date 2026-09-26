@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { EditorShell } from "./components/layout/EditorShell";
+import { NewProjectDialog } from "./components/NewProjectDialog";
 import { SettingsView } from "./components/settings/SettingsView";
 import { Toaster } from "./components/ui/Toaster";
 import { Welcome } from "./components/Welcome";
@@ -44,6 +45,7 @@ export function App() {
 		<>
 			{project ? <EditorShell /> : <Welcome />}
 			<SettingsView />
+			<NewProjectDialog />
 			<Toaster />
 		</>
 	);

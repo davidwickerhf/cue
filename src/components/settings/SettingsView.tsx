@@ -164,6 +164,16 @@ function General({ settings, save }: { settings: Settings; save: (p: Partial<Set
 						Change…
 					</Button>
 				</Row>
+				<Row
+					label="Reopen the last project on launch"
+					hint="Otherwise Cue starts in the projects overview"
+				>
+					<Toggle
+						label=""
+						checked={settings.reopenLast}
+						onChange={(reopenLast) => save({ reopenLast })}
+					/>
+				</Row>
 			</Group>
 			<Group
 				title="Editing"
