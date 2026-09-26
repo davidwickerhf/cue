@@ -12,8 +12,10 @@ import {
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ProjectSummary } from "../../electron/core/types";
 import { notify, run } from "../lib/api";
+import { keyLabel } from "../lib/platform";
 import { appSettings, dialogs, openSettings, useApp } from "../lib/state";
 import { cn } from "../lib/utils";
+import { UpdateBadge } from "./UpdateBadge";
 import { Segmented } from "./ui/controls";
 import { WindowDots } from "./WindowDots";
 
@@ -94,15 +96,16 @@ export function Welcome() {
 
 	return (
 		<div className="flex h-full flex-col bg-background">
-			<header className="app-drag relative flex h-11 shrink-0 items-center gap-2 border-b border-separator bg-surface pr-3 pl-[84px]">
+			<header className="app-drag titlebar relative flex h-11 shrink-0 items-center gap-2 border-b border-separator bg-surface">
 				<WindowDots />
 				<Logo />
 				<div className="flex-1" />
+				<UpdateBadge />
 				<button
 					type="button"
 					onClick={() => openSettings()}
 					className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
-					title="Settings (⌘,)"
+					title={keyLabel("Settings (⌘,)")}
 					aria-label="Settings"
 				>
 					<GearSix className="size-4" />

@@ -1,4 +1,5 @@
 // @see https://www.electron.build/configuration/configuration
+// Releasing (signing, notarisation, publishing): docs/RELEASING.md
 {
   appId: "life.wicker.cue",
   productName: "Cue",
@@ -13,23 +14,83 @@
   ],
   extraResources: [
     { from: "dist-mcp", to: "mcp" },
-    { from: "build/native", to: "native", filter: ["cue-vision", "cue-cursor"] },
     // The RNNoise model for voice denoise, with its BSD licence.
     { from: "resources/rnnoise", to: "rnnoise" },
     // Wallpapers and the cursor for the studio look of screen recordings.
     { from: "resources/studio", to: "studio" },
   ],
-  fileAssociations: [
-    { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/icon.icns" },
-    { ext: "otio", name: "OpenTimelineIO Timeline", role: "Viewer", rank: "Alternate" },
-  ],
+  // ffmpeg-static only installs the host's ffmpeg: these put the target's in place
+  // for each pack (e.g. the Intel Mac build on Apple Silicon) and restore it after.
+  beforePack: "scripts/builder/before-pack.cjs",
+  afterPack: "scripts/builder/after-pack.cjs",
+  // Update metadata (latest*.yml) and `--publish` go to GitHub Releases. Builds
+  // are uploaded to a draft release; the release workflow publishes it once
+  // every platform has uploaded.
+  publish: [{ provider: "github", owner: "davidwickerhf", repo: "cue", releaseType: "draft" }],
+
   mac: {
     category: "public.app-category.video",
-    target: [{ target: "dir" }],
     icon: "build/icon.icns",
-    identity: null,
+    // zip is what the updater downloads; dmg is for first installs.
+    target: [
+      { target: "zip", arch: ["arm64", "x64"] },
+      { target: "dmg", arch: ["arm64", "x64"] },
+    ],
+    artifactName: "${productName}-mac-${arch}.${ext}",
+    minimumSystemVersion: "12.0",
+    // Only a "Developer ID Application" certificate signs a release (no fallback
+    // to development certificates). Found in the keychain, or given by CSC_LINK /
+    // CSC_NAME. `npm run package` passes -c.mac.identity=null to skip signing.
+    type: "distribution",
+    hardenedRuntime: true,
+    gatekeeperAssess: false,
+    entitlements: "build/entitlements.mac.plist",
+    entitlementsInherit: "build/entitlements.mac.plist",
+    // Runs after signing when APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER or
+    // APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID are set, and staples the
+    // ticket to the app; without them electron-builder logs that it skipped it.
+    notarize: true,
     extendInfo: {
       NSMicrophoneUsageDescription: "Cue records voiceover takes from your microphone.",
+      NSCameraUsageDescription: "Cue records video from your camera when you ask it to.",
     },
+    extraResources: [
+      { from: "build/native", to: "native", filter: ["cue-vision", "cue-cursor"] },
+    ],
+    fileAssociations: [
+      { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/icon.icns" },
+      { ext: "otio", name: "OpenTimelineIO Timeline", role: "Viewer", rank: "Alternate" },
+    ],
+  },
+
+  win: {
+    target: [{ target: "nsis", arch: ["x64"] }],
+    icon: "build/icon.png",
+    artifactName: "${productName}-win-${arch}-setup.${ext}",
+    fileAssociations: [
+      { ext: "cueproj", name: "Cue Project", description: "Cue video project" },
+    ],
+  },
+  nsis: {
+    oneClick: true,
+    perMachine: false,
+    deleteAppDataOnUninstall: false,
+  },
+
+  linux: {
+    target: [
+      { target: "AppImage", arch: ["x64"] },
+      { target: "deb", arch: ["x64"] },
+    ],
+    icon: "build/icon.png",
+    category: "AudioVideo",
+    // The .desktop file is named after package.json's desktopName, so docks match windows to it.
+    syncDesktopName: true,
+    synopsis: "The video editor your AI agent can drive",
+    maintainer: "David Henry Francis Wicker",
+    artifactName: "${productName}-linux-${arch}.${ext}",
+    fileAssociations: [
+      { ext: "cueproj", name: "Cue Project", description: "Cue video project", mimeType: "application/x-cue-project" },
+    ],
   },
 }

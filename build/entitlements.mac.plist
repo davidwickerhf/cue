@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the hardened runtime (Developer ID builds). Used for the app
+  and, through entitlementsInherit, for Electron's helpers, ffmpeg and cue-vision.
+
+  - allow-jit / allow-unsigned-executable-memory: V8 generates code at run time.
+  - device.audio-input / device.camera: voiceover takes, voice commands and
+    camera recording. Without them the hardened runtime denies access silently.
+  - network.client / network.server: the in-app model calls and the loopback
+    control server the MCP bridge talks to. They only take effect under the App
+    Sandbox (not used today) and are listed so a sandboxed build keeps working.
+
+  Not needed: disable-library-validation. ffmpeg (ffmpeg-static) and cue-vision
+  load only system libraries and frameworks, and electron-builder signs both
+  with the same Developer ID as the app.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>

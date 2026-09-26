@@ -6,11 +6,11 @@
 
 **The video editor your AI agent can drive.**
 
-A fast, open-source video editor for macOS. Edit by hand with the shortcuts you already know from Premiere, Resolve and Final Cut, or let Claude Code, Codex or any MCP client edit the same project with you.
+A fast, open-source video editor for macOS (Windows and Linux in preview). Edit by hand with the shortcuts you already know from Premiere, Resolve and Final Cut, or let Claude Code, Codex or any MCP client edit the same project with you.
 
 [![Release](https://img.shields.io/github/v/release/davidwickerhf/cue?label=release&color=0a6cff)](https://github.com/davidwickerhf/cue/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20·%20Apple%20Silicon-lightgrey)](https://github.com/davidwickerhf/cue/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-macOS%20·%20Windows%20%26%20Linux%20preview-lightgrey)](https://github.com/davidwickerhf/cue/releases/latest)
 [![MCP](https://img.shields.io/badge/MCP-110%2B%20tools-8a2be2)](#ai-agents)
 
 [**Website**](https://cue.wicker.life) · [**Download**](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) · [**Releases**](https://github.com/davidwickerhf/cue/releases) · [**Report a bug**](https://github.com/davidwickerhf/cue/issues/new) · [**Support Cue ☕**](https://ko-fi.com/davidwickerhf)
@@ -68,11 +68,29 @@ A fast, open-source video editor for macOS. Edit by hand with the shortcuts you 
 
 ## Installation
 
-1. Download [`Cue-mac-arm64.zip`](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) from the latest release.
-2. Unzip it and move **Cue** to **Applications**.
-3. The first time, right-click Cue and choose **Open**. The app is signed but not notarised yet, so macOS asks once.
+### macOS
 
-**Requirements:** macOS on Apple Silicon. Nothing else is needed to edit; ffmpeg is bundled.
+1. Download the latest release: [`Cue-mac-arm64.zip`](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) for Apple Silicon, or `Cue-mac-x64.zip` for Intel Macs (from the next release on, along with `.dmg` disk images).
+2. Unzip it and move **Cue** to **Applications**.
+3. Releases signed with a Developer ID and notarised open normally and keep themselves up to date (**Cue → Check for Updates…**, or automatically; see **Settings → General → Updates**). Builds that aren't notarised yet (0.1.x) need a right-click on Cue and **Open** the first time, and can't update themselves: download new versions from [Releases](https://github.com/davidwickerhf/cue/releases).
+
+**Requirements:** macOS 12 or later. Nothing else is needed to edit; ffmpeg is bundled.
+
+### Windows (preview)
+
+Windows builds are produced by the release workflow but haven't been tested on Windows yet.
+
+1. Download `Cue-win-x64-setup.exe` from the [latest release](https://github.com/davidwickerhf/cue/releases/latest) and run it. Until the installer is code-signed, SmartScreen may ask you to confirm (**More info → Run anyway**).
+2. Cue installs for your user and updates itself (**Help → Check for Updates…**).
+
+### Linux (preview)
+
+Linux builds are produced by the release workflow but haven't been tested on Linux yet (x64 only).
+
+- **AppImage** (updates itself): download `Cue-linux-x86_64.AppImage`, `chmod +x` it and run it. Ubuntu 22.04 and later need `sudo apt install libfuse2`.
+- **Debian and Ubuntu package:** `sudo apt install ./Cue-linux-amd64.deb`. Update it by installing the new `.deb`.
+
+**Not available on Windows and Linux:** macOS voices (use OpenAI voices), and on-device vision (shot search by what's in the picture, following faces), which uses Apple's Vision framework; search by what is said still works. For local transcription, install [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and put `whisper-cli` on your `PATH`. On Wayland, screen recording goes through the desktop's screen-sharing portal. Shortcuts use Ctrl where macOS uses ⌘.
 
 ## Quick start
 
@@ -124,7 +142,7 @@ Pick providers per capability in **Settings → AI & models**:
 | Writing (rewrite, chapters, search, B-roll ideas) | Ollama, LM Studio | OpenAI |
 | Images and B-roll | | OpenAI |
 
-API keys are stored encrypted in your macOS keychain. Your footage never leaves your Mac unless you choose a cloud model.
+API keys are stored encrypted in your macOS keychain (the system credential store on Windows and Linux). Your footage never leaves your computer unless you choose a cloud model.
 
 ## Working with other editors
 
@@ -158,6 +176,8 @@ npm run install:app    # build, sign and install /Applications/Cue.app
 ```
 
 `npm run install:app` signs with your first Apple Development identity (or `CUE_SIGN_IDENTITY`) so macOS keeps its keychain permission across rebuilds. Call tools from a terminal with `node scripts/mcp-call.mjs list`.
+
+Releases (signing, notarisation, the Windows and Linux builds, auto-update) are described in [docs/RELEASING.md](docs/RELEASING.md): `npm run release:mac` builds a signed and notarised Mac release, and pushing a `v*` tag runs [the release workflow](.github/workflows/release.yml) for all three platforms.
 
 The website lives in [`site/`](site) (Next.js) and deploys to [cue.wicker.life](https://cue.wicker.life) on push.
 

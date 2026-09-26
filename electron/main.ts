@@ -52,6 +52,8 @@ import type {
 	RecorderStatus,
 	TextClip,
 } from "./core/types";
+import type { UpdateStatus } from "./core/updates";
+import { Updater } from "./updater";
 
 app.setName("Cue");
 const MEDIA_SCHEME = "cue-media";
@@ -310,6 +312,7 @@ async function loadAppSettings() {
 }
 
 async function saveAppSettings(patch: Partial<AppSettings>) {
+	const wasAutoUpdate = appSettings.autoUpdate;
 	appSettings = appSettingsSchema.parse({
 		...appSettings,
 		...patch,
@@ -321,6 +324,7 @@ async function saveAppSettings(patch: Partial<AppSettings>) {
 	await fs.writeFile(settingsFile, JSON.stringify(appSettings, null, 2));
 	await controller.refreshAi();
 	win?.webContents.send("cue:appSettings", appSettings);
+	if (appSettings.autoUpdate !== wasAutoUpdate) updater?.schedule();
 }
 
 let inventoryScan: Promise<LocalInventory> | null = null;
@@ -475,7 +479,28 @@ async function sendChat(
 	if (stopped) handle.stop();
 }
 
+/**
+ * Tells the MCP bridge how to start Cue when it isn't running. An AppImage's
+ * files only exist while it runs, so its bridge is copied to the data folder.
+ */
+async function recordLaunch() {
+	try {
+		await fs.writeFile(
+			path.join(dataDir, "app.json"),
+			JSON.stringify({ executable: process.env.APPIMAGE ?? process.execPath }),
+		);
+		if (process.env.APPIMAGE)
+			await fs.cp(path.join(process.resourcesPath, "mcp"), path.join(dataDir, "mcp"), {
+				recursive: true,
+				force: true,
+			});
+	} catch (error) {
+		store.log("system", `Could not record how to start Cue: ${(error as Error).message}`);
+	}
+}
+
 function mcpScriptPath(): string {
+	if (process.env.APPIMAGE) return path.join(dataDir, "mcp", "cue-mcp.mjs");
 	// Demo recordings show the installed app's bridge (same code) rather than a development path.
 	const installed = "/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs";
 	if (recordFrames && existsSync(installed)) return installed;
@@ -563,6 +588,23 @@ async function typing(): Promise<boolean> {
 		.catch(() => false);
 }
 
+/**
+ * macOS: the header doubles as the title bar, with the traffic lights inset.
+ * Windows: the same, with the system's window buttons drawn over the header's
+ * right end (its colours follow the theme, see cue:titleBarColors). Linux: the
+ * desktop's own frame, since window button overlays vary by desktop.
+ */
+function windowChrome(): Electron.BrowserWindowConstructorOptions {
+	if (process.platform === "darwin")
+		return { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 15 } };
+	if (process.platform === "win32")
+		return {
+			titleBarStyle: "hidden",
+			titleBarOverlay: { color: "#18181b", symbolColor: "#e4e4e7", height: 43 },
+		};
+	return { autoHideMenuBar: true };
+}
+
 function createWindow() {
 	win = new BrowserWindow({
 		width: 1560,
@@ -570,8 +612,7 @@ function createWindow() {
 		minWidth: 1180,
 		minHeight: 760,
 		title: "Cue",
-		titleBarStyle: "hiddenInset",
-		trafficLightPosition: { x: 18, y: 15 },
+		...windowChrome(),
 		...(recordFrames
 			? {
 					width: Math.round(1440 * recordScale),
@@ -768,32 +809,44 @@ async function importDialog(place?: { trackId: string; startMs: number }) {
 function buildMenu() {
 	const guard = (fn: () => Promise<unknown>) => () =>
 		void fn().catch((error: Error) => win && dialog.showErrorBox("Cue", error.message));
+	const mac = process.platform === "darwin";
+	const settingsItem: Electron.MenuItemConstructorOptions = {
+		label: mac ? "Settings…" : "Settings",
+		accelerator: "CmdOrCtrl+,",
+		click: () => win?.webContents.send("cue:openSettings"),
+	};
+	const updatesItem: Electron.MenuItemConstructorOptions = {
+		label: "Check for Updates…",
+		click: guard(checkForUpdatesDialog),
+	};
+	const supportItem: Electron.MenuItemConstructorOptions = {
+		label: "Support Cue…",
+		click: () => void shell.openExternal("https://ko-fi.com/davidwickerhf"),
+	};
 	Menu.setApplicationMenu(
 		Menu.buildFromTemplate([
-			{
-				label: app.name,
-				submenu: [
-					{ role: "about" },
-					{
-						label: "Support Cue…",
-						click: () => void shell.openExternal("https://ko-fi.com/davidwickerhf"),
-					},
-					{ type: "separator" },
-					{
-						label: "Settings…",
-						accelerator: "CmdOrCtrl+,",
-						click: () => win?.webContents.send("cue:openSettings"),
-					},
-					{ type: "separator" },
-					{ role: "services" },
-					{ type: "separator" },
-					{ role: "hide" },
-					{ role: "hideOthers" },
-					{ role: "unhide" },
-					{ type: "separator" },
-					{ role: "quit" },
-				],
-			},
+			...(mac
+				? [
+						{
+							label: app.name,
+							submenu: [
+								{ role: "about" },
+								updatesItem,
+								supportItem,
+								{ type: "separator" },
+								settingsItem,
+								{ type: "separator" },
+								{ role: "services" },
+								{ type: "separator" },
+								{ role: "hide" },
+								{ role: "hideOthers" },
+								{ role: "unhide" },
+								{ type: "separator" },
+								{ role: "quit" },
+							],
+						} satisfies Electron.MenuItemConstructorOptions,
+					]
+				: []),
 			{
 				label: "File",
 				submenu: [
@@ -808,6 +861,11 @@ function buildMenu() {
 						label: "Import Media…",
 						accelerator: "CmdOrCtrl+I",
 						click: guard(() => importDialog()),
+					},
+					{
+						label: "Record Screen or Camera…",
+						accelerator: "CmdOrCtrl+Shift+R",
+						click: () => win?.webContents.send("cue:openRecord"),
 					},
 					{ type: "separator" },
 					{
@@ -828,7 +886,13 @@ function buildMenu() {
 						),
 					},
 					{ type: "separator" },
-					{ role: "close" },
+					...(mac
+						? [{ role: "close" } satisfies Electron.MenuItemConstructorOptions]
+						: [
+								settingsItem,
+								{ type: "separator" } satisfies Electron.MenuItemConstructorOptions,
+								{ role: "quit" } satisfies Electron.MenuItemConstructorOptions,
+							]),
 				],
 			},
 			{
@@ -859,8 +923,70 @@ function buildMenu() {
 			},
 			{ role: "viewMenu" },
 			{ role: "windowMenu" },
+			...(mac
+				? []
+				: [
+						{
+							label: "Help",
+							submenu: [updatesItem, supportItem, { type: "separator" }, { role: "about" }],
+						} satisfies Electron.MenuItemConstructorOptions,
+					]),
 		]),
 	);
+}
+
+// ---------------------------------------------------------------------------
+// Updates (electron-updater, GitHub Releases)
+// ---------------------------------------------------------------------------
+
+let updater: Updater | null = null;
+
+function sendUpdateStatus(status: UpdateStatus) {
+	if (win && !win.isDestroyed()) win.webContents.send("cue:updateStatus", status);
+}
+
+/** Help → Check for Updates… (the Cue menu on macOS). */
+async function checkForUpdatesDialog() {
+	if (!updater) return;
+	const status = await updater.check(true);
+	const show = (options: Electron.MessageBoxOptions) =>
+		win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options);
+	if (status.state === "ready") {
+		const { response } = await show({
+			type: "info",
+			message: `Cue ${status.version} is ready to install.`,
+			detail: "Cue restarts to install it. Your project is saved first.",
+			buttons: ["Restart Now", "Later"],
+			defaultId: 0,
+			cancelId: 1,
+		});
+		if (response === 0) await updater.install();
+	} else if (status.state === "downloading")
+		await show({
+			type: "info",
+			message: `Downloading Cue ${status.version}…`,
+			detail: "You'll see “Update ready” at the top of the window when it can be installed.",
+		});
+	else if (status.state === "unsupported" || status.state === "error") {
+		const { response } = await show({
+			type: status.state === "error" ? "warning" : "info",
+			message:
+				status.state === "error"
+					? "Couldn't check for updates."
+					: "This copy of Cue can't update itself.",
+			detail: status.message,
+			buttons: ["Open Releases", "OK"],
+			defaultId: 1,
+			cancelId: 1,
+		});
+		if (response === 0)
+			void shell.openExternal("https://github.com/davidwickerhf/cue/releases/latest");
+	} else
+		await show({
+			type: "info",
+			message: "Cue is up to date.",
+			detail: `You have version ${app.getVersion()}.`,
+		});
 }
 
 function registerIpc() {
@@ -1009,7 +1135,11 @@ function registerIpc() {
 		) => {
 			const name = options.name.trim() || "Untitled";
 			const folder = options.folder || appSettings.projectsDir;
-			let dir = path.join(folder, name.replace(/[/\\:]/g, "-"));
+			// Characters no platform allows in a folder name (Windows is the strictest).
+			let dir = path.join(
+				folder,
+				name.replace(/[/\\:*?"<>|]/g, "-").replace(/[. ]+$/, "") || "Untitled",
+			);
 			for (let n = 2; existsSync(dir); n++) dir = path.join(folder, `${name} ${n}`);
 			await controller.call(
 				"create_project",
@@ -1085,8 +1215,17 @@ function registerIpc() {
 		downloads: WHISPER_DOWNLOADS,
 	}));
 	ipcMain.handle("cue:previewVoice", async (_event, voice: string) => {
+		if (process.platform !== "darwin") return;
 		const { execFile } = await import("node:child_process");
 		execFile("say", ["-v", voice, "This is how the voiceover will sound."]);
+	});
+	ipcMain.handle("cue:updateStatus", () => updater?.status ?? { state: "idle" });
+	ipcMain.handle("cue:checkForUpdates", () => updater?.check(true));
+	ipcMain.handle("cue:installUpdate", () => updater?.install());
+	// Windows: the window buttons drawn over the header take the header's colours.
+	ipcMain.on("cue:titleBarColors", (_event, color: string, symbolColor: string) => {
+		if (process.platform === "win32" && win && !win.isDestroyed())
+			win.setTitleBarOverlay({ color, symbolColor });
 	});
 	ipcMain.handle("cue:startOllama", async () => {
 		startOllama();
@@ -1212,20 +1351,34 @@ else {
 			app.getVersion(),
 			() => appSettings.agent.enabled,
 		);
-		// Quitting waits (briefly) for the last save, so no edit is lost.
+		/** Stops agents and the control server and waits (briefly) for the last save. */
+		const shutdown = async () => {
+			for (const chat of chats.values()) chat.stop();
+			void control.close();
+			await Promise.race([store.flushAll(), new Promise((r) => setTimeout(r, 5000))]).catch(
+				(error) => store.log("system", `Could not save before quitting: ${error}`),
+			);
+		};
+		// Quitting waits for the last save, so no edit is lost.
 		let flushed = false;
 		app.on("before-quit", (event) => {
 			if (flushed) return;
 			event.preventDefault();
 			flushed = true;
-			for (const chat of chats.values()) chat.stop();
-			void control.close();
 			// Everything is stopped and saved, so exit directly (a second app.quit() is
 			// ignored when the quit came from a signal, which left the app running).
-			void Promise.race([store.flushAll(), new Promise((r) => setTimeout(r, 5000))])
-				.catch((error) => store.log("system", `Could not save before quitting: ${error}`))
-				.finally(() => app.exit(0));
+			void shutdown().finally(() => app.exit(0));
 		});
+		updater = new Updater({
+			automatic: () => appSettings.autoUpdate,
+			onStatus: sendUpdateStatus,
+			// Installing quits through the updater, which must not be held up by before-quit.
+			beforeInstall: async () => {
+				flushed = true;
+				await shutdown();
+			},
+		});
+		if (app.isPackaged) void recordLaunch();
 		createWindow();
 		started = true;
 		// Warm up the model scan so Settings and the Generate panel open instantly.
@@ -1239,6 +1392,7 @@ else {
 			if (last)
 				await controller.call("open_project", { path: last.path }, "system").catch(() => {});
 		}
+		void updater.start();
 	});
 
 	app.on("window-all-closed", () => {

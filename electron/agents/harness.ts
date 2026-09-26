@@ -84,6 +84,13 @@ ${AGENT_GUIDE}`;
 let shellPath: Promise<string> | null = null;
 function loginPath(): Promise<string> {
 	shellPath ??= (async () => {
+		if (process.platform === "win32")
+			return [
+				process.env.PATH ?? "",
+				path.join(process.env.APPDATA ?? os.homedir(), "npm"),
+				path.join(os.homedir(), ".local", "bin"),
+				path.join(os.homedir(), ".bun", "bin"),
+			].join(path.delimiter);
 		const extra = [
 			path.join(os.homedir(), ".local/bin"),
 			"/opt/homebrew/bin",
@@ -109,16 +116,51 @@ async function childEnv(): Promise<NodeJS.ProcessEnv> {
 	return { ...env, PATH: await loginPath() };
 }
 
-async function which(bin: string): Promise<string | null> {
-	for (const dir of (await loginPath()).split(":")) {
+/** How to start a CLI: the file found on PATH, and the command that runs it. */
+interface Launcher {
+	path: string;
+	command: string;
+	args: string[];
+	env?: NodeJS.ProcessEnv;
+}
+
+async function which(bin: string): Promise<Launcher | null> {
+	const names = process.platform === "win32" ? [`${bin}.exe`, `${bin}.cmd`] : [bin];
+	for (const dir of (await loginPath()).split(path.delimiter)) {
 		if (!dir) continue;
-		const candidate = path.join(dir, bin);
-		try {
-			await fs.access(candidate, fs.constants.X_OK);
-			return candidate;
-		} catch {}
+		for (const name of names) {
+			const candidate = path.join(dir, name);
+			try {
+				await fs.access(
+					candidate,
+					process.platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK,
+				);
+			} catch {
+				continue;
+			}
+			if (!candidate.endsWith(".cmd")) return { path: candidate, command: candidate, args: [] };
+			const launcher = await npmShim(candidate);
+			if (launcher) return launcher;
+		}
 	}
 	return null;
+}
+
+/**
+ * Windows: npm installs CLIs as .cmd shims, which can't be started without a
+ * shell (and a shell would reinterpret the prompt). Run the script the shim
+ * points at with Cue's own Node runtime instead.
+ */
+async function npmShim(file: string): Promise<Launcher | null> {
+	const text = await fs.readFile(file, "utf8").catch(() => "");
+	const script = /"%dp0%\\([^"]+?\.[cm]?js)"/i.exec(text)?.[1];
+	if (!script) return null;
+	return {
+		path: file,
+		command: process.execPath,
+		args: [path.join(path.dirname(file), script)],
+		env: { ELECTRON_RUN_AS_NODE: "1" },
+	};
 }
 
 export async function detectHarnesses(): Promise<HarnessInfo[]> {
@@ -129,13 +171,16 @@ export async function detectHarnesses(): Promise<HarnessInfo[]> {
 			if (!found) return { ...h, installed: false };
 			let version: string | undefined;
 			try {
-				const { stdout } = await run(found, ["--version"], { timeout: 8000, env });
+				const { stdout } = await run(found.command, [...found.args, "--version"], {
+					timeout: 8000,
+					env: { ...env, ...found.env },
+				});
 				version = stdout
 					.trim()
 					.split("\n")[0]
 					?.replace(/\s*\(.*\)$/, "");
 			} catch {}
-			return { ...h, installed: true, path: found, version };
+			return { ...h, installed: true, path: found.path, version };
 		}),
 	);
 }
@@ -159,7 +204,12 @@ export async function runHarness(options: RunOptions, onEvent: (event: ChatEvent
 	const work = options.workDir;
 	await fs.mkdir(work, { recursive: true });
 	const { args, parse, cwd } = await prepare(options, work);
-	const child: ChildProcess = spawn(bin, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+	const child: ChildProcess = spawn(bin.command, [...bin.args, ...args], {
+		cwd,
+		env: { ...env, ...bin.env },
+		stdio: ["ignore", "pipe", "pipe"],
+		windowsHide: true,
+	});
 	let buffer = "";
 	let stderr = "";
 	let finished = false;

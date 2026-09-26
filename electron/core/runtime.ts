@@ -15,6 +15,8 @@ export const appSettingsSchema = z.object({
 	projectsDir: z.string().default(""),
 	/** Open the last project on launch instead of the projects overview. */
 	reopenLast: z.boolean().default(false),
+	/** Look for new versions at launch and every few hours, and download them in the background. */
+	autoUpdate: z.boolean().default(true),
 	ai: z
 		.object({
 			tts: z.enum(["openai", "macos"]).default("openai"),
@@ -113,7 +115,11 @@ export function buildRuntime(
 					provider: "macOS voices",
 					ready: local.macVoices.length > 0,
 					model: ai.macVoice,
-					problem: local.macVoices.length ? undefined : "No system voices found",
+					problem: local.macVoices.length
+						? undefined
+						: process.platform === "darwin"
+							? "No system voices found"
+							: "macOS voices are only available on a Mac; choose OpenAI",
 				},
 		ai.transcription === "openai"
 			? {
@@ -124,11 +130,16 @@ export function buildRuntime(
 				}
 			: {
 					capability: "transcription",
-					provider: "whisper.cpp (on this Mac)",
+					provider:
+						process.platform === "darwin"
+							? "whisper.cpp (on this Mac)"
+							: "whisper.cpp (on this computer)",
 					ready: !!local.whisper.binary && !!whisperModel,
 					model: whisperModel?.split("/").pop(),
 					problem: !local.whisper.binary
-						? "Install whisper.cpp (brew install whisper-cpp)"
+						? process.platform === "darwin"
+							? "Install whisper.cpp (brew install whisper-cpp)"
+							: "Install whisper.cpp and put whisper-cli on your PATH"
 						: !whisperModel
 							? "Download a whisper model"
 							: undefined,

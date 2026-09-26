@@ -601,6 +601,10 @@ export class ProjectStore extends EventEmitter {
 		clip: MediaClip,
 		canvas: { width: number; height: number },
 	): Promise<{ atMs: number; value: number }[]> {
+		if (!visionAvailable())
+			throw new Error(
+				"Following faces uses Apple's Vision framework, which is only available in Cue for macOS.",
+			);
 		const asset = this.current.assets.find((a) => a.id === clip.assetId);
 		if (!asset || asset.kind !== "video" || !asset.width || !asset.height)
 			throw new Error("Following faces works on video clips.");
@@ -690,6 +694,17 @@ export class ProjectStore extends EventEmitter {
 		await fs.rm(dir, { recursive: true, force: true });
 		await fs.mkdir(dir, { recursive: true });
 		const stepMs = asset.kind === "image" ? 0 : Math.max(2000, Math.ceil(asset.durationMs / 240));
+		// Without on-device vision (Windows, Linux) only what is said can be searched:
+		// empty samples along the file, not cached so a later run with vision fills them.
+		if (!visionAvailable()) {
+			const count = asset.kind === "image" ? 1 : Math.max(1, Math.ceil(asset.durationMs / stepMs));
+			return Array.from({ length: count }, (_, i) => ({
+				atMs: i * stepMs,
+				labels: [],
+				text: [],
+				faces: 0,
+			}));
+		}
 		await ffmpeg([
 			"-i",
 			this.assetPath(assetId),

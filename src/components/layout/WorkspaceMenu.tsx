@@ -1,5 +1,6 @@
 import { Check, Layout as LayoutIcon, Trash } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
+import { keyLabel } from "../../lib/platform";
 import { cn } from "../../lib/utils";
 import {
 	applyWorkspace,
@@ -59,7 +60,7 @@ export function WorkspaceMenu() {
 						>
 							<span className="w-3.5">{current === id && <Check className="size-3.5" />}</span>
 							<span className="flex-1">{w.label}</span>
-							<span className="text-[11px] text-muted">{w.keys}</span>
+							<span className="text-[11px] text-muted">{keyLabel(w.keys)}</span>
 						</button>
 					))}
 					{Object.keys(saved).length > 0 && <div className="my-1 h-px bg-separator" />}

@@ -59,6 +59,7 @@ import { notify, run } from "../../lib/api";
 import { agentDraft } from "../../lib/chat";
 import { clearKeySelection, keyframeLanes, toggleLanes } from "../../lib/keyframes";
 import { notes } from "../../lib/notes";
+import { keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { SOURCE_MIME } from "../../lib/source";
@@ -2552,7 +2553,7 @@ function ClipMenu({
 					>
 						<span className="flex w-4 justify-center text-muted">{item.icon}</span>
 						<span className="flex-1">{item.label}</span>
-						{item.keys && <span className="text-[11px] text-muted">{item.keys}</span>}
+						{item.keys && <span className="text-[11px] text-muted">{keyLabel(item.keys)}</span>}
 					</button>
 				),
 			)}

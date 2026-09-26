@@ -6,10 +6,12 @@ import {
 	SidebarSimple,
 } from "@phosphor-icons/react";
 import { notify, run } from "../../lib/api";
+import { keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn, nameFieldKeys } from "../../lib/utils";
 import { exportDialog } from "../ExportDialog";
+import { UpdateBadge } from "../UpdateBadge";
 import { IconButton } from "../ui/controls";
 import { WindowDots } from "../WindowDots";
 import { WorkspaceMenu } from "./WorkspaceMenu";
@@ -45,14 +47,14 @@ export function EditorHeader() {
 	};
 
 	return (
-		<header className="app-drag relative z-50 flex h-11 shrink-0 items-center border-b border-separator bg-surface pr-3 pl-[84px]">
+		<header className="app-drag titlebar relative z-50 flex h-11 shrink-0 items-center border-b border-separator bg-surface">
 			<WindowDots />
 			<div className="flex min-w-0 flex-1 items-center gap-1">
 				<button
 					type="button"
 					onClick={() => void run("close_project")}
 					className="flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] text-muted hover:bg-default hover:text-foreground"
-					title="All projects (⇧⌘O)"
+					title={keyLabel("All projects (⇧⌘O)")}
 				>
 					<CaretLeft className="size-3.5" /> Projects
 				</button>
@@ -89,6 +91,7 @@ export function EditorHeader() {
 						{failed.label} failed
 					</span>
 				) : null}
+				<UpdateBadge />
 				<WorkspaceMenu />
 				<button
 					type="button"

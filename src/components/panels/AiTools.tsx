@@ -3,6 +3,7 @@ import { Copy, MusicNotes, Sparkle } from "@phosphor-icons/react";
 import { useState } from "react";
 import type { ProjectSnapshot } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
+import { isMac } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { openSource, seekSource, source } from "../../lib/source";
 import { useApp } from "../../lib/state";
@@ -332,8 +333,9 @@ export function ShotSearch({ project }: { project: ProjectSnapshot }) {
 				Describe frames with the AI model (finds much more; with OpenAI, small frames are sent)
 			</label>
 			<p className="text-[11px] text-muted">
-				Looks at what is in the picture, text on screen and what is said, on this Mac. The first
-				search reads each video once.
+				{isMac
+					? "Looks at what is in the picture, text on screen and what is said, on this Mac. The first search reads each video once."
+					: "Searches what is said in transcribed footage. Looking at the picture itself needs Cue for macOS."}
 			</p>
 			{shots && shots.length === 0 && <p className="text-[12px] text-muted">Nothing found.</p>}
 			{shots && shots.length > 0 && (
