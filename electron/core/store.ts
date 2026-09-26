@@ -330,6 +330,72 @@ export class ProjectStore extends EventEmitter {
 	// Analysis and AI helpers
 	// -------------------------------------------------------------------------
 
+	/** Shot changes found in a video (seconds into the source), by threshold. */
+	private scenes = new Map<string, Promise<number[]>>();
+
+	/** Where the picture of a video changes shot, in ms into the source. */
+	sceneCuts(assetId: string, threshold = 0.3): Promise<number[]> {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset || asset.kind !== "video") return Promise.reject(new Error("Pick a video."));
+		const key = `${this.cacheKey(assetId)}@${threshold}`;
+		let pending = this.scenes.get(key);
+		if (!pending) {
+			pending = ffmpeg([
+				"-i",
+				this.assetPath(assetId),
+				"-an",
+				"-vf",
+				`scale=320:-2,select='gt(scene,${threshold})',showinfo`,
+				"-f",
+				"null",
+				"-",
+			]).then((log) => {
+				const times = [...log.matchAll(/pts_time:([0-9.]+)/g)].map((m) =>
+					Math.round(Number(m[1]) * 1000),
+				);
+				// Flashes and dissolves give several hits in a row: keep one per half second.
+				return times.filter((t, i) => i === 0 || t - times[i - 1] > 500);
+			});
+			pending.catch(() => this.scenes.delete(key));
+			this.scenes.set(key, pending);
+		}
+		return pending;
+	}
+
+	/**
+	 * Cuts a clip (and the sound linked to it) at every shot change in the part
+	 * of the source it plays, or marks them instead when `split` is false.
+	 */
+	async splitAtScenes(
+		clipId: string,
+		actor: Actor,
+		options: { threshold?: number; split?: boolean } = {},
+	): Promise<{ cuts: number[]; summary: string }> {
+		const clip = this.current.clips.find((c) => c.id === clipId);
+		if (!clip || clip.type !== "media") throw new Error(`No media clip "${clipId}".`);
+		const cuts = await this.sceneCuts(clip.assetId, options.threshold);
+		const end = clip.startMs + clip.durationMs;
+		const times = cuts
+			.map((ms) => Math.round(clip.startMs + (ms - clip.inMs) / clip.speed))
+			.filter((t) => t > clip.startMs + 200 && t < end - 200);
+		if (times.length === 0) return { cuts: [], summary: "No shot changes found in that clip" };
+		const partners = clip.groupId
+			? this.current.clips.filter((c) => c.groupId === clip.groupId).map((c) => c.trackId)
+			: [clip.trackId];
+		const summary =
+			options.split === false
+				? `Marked ${times.length} shot changes`
+				: `Split at ${times.length} shot changes`;
+		await this.transaction(actor, summary, () => {
+			for (const atMs of times.reverse()) {
+				if (options.split === false)
+					this.apply({ type: "addMarker", atMs, label: "Shot", color: "warning" }, actor);
+				else this.apply({ type: "splitAt", atMs, trackIds: [...new Set(partners)] }, actor);
+			}
+		});
+		return { cuts: times.reverse(), summary };
+	}
+
 	/** Tempo and beats of a media item; optionally drops a marker on every beat where it is used. */
 	async detectBeats(
 		assetId: string,

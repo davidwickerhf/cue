@@ -1923,6 +1923,20 @@ function ClipMenu({
 			keys: "⌥ drag",
 			action: () => void run("duplicate_clips", { ids }),
 		},
+		...(media && project.data.assets.find((a) => a.id === media.assetId)?.kind === "video"
+			? [
+					{
+						label: "Split at shot changes",
+						icon: <Scissors className="size-3.5" />,
+						action: () => {
+							notify("Finding shot changes…");
+							void run<{ summary: string }>("split_at_scenes", { clipId: media.id }).then(
+								(r) => r && notify(r.summary, "success"),
+							);
+						},
+					},
+				]
+			: []),
 		...(media
 			? [
 					media.transitionIn

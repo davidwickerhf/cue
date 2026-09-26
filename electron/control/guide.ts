@@ -35,6 +35,7 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 - Speech: transcribe_media, get_transcript (search a phrase to get word indices), cut_words (text-based editing on every track), remove_filler_words, find_moments (search by meaning).
 - Voiceover script: set_lines/import_script/add_line/update_line, record_line (uses the user's microphone: tell them which line is about to roll first), generate_take (AI voice), rewrite_line (fit the line to its time), choose_take.
 - Music: detect_beats (optionally add beat markers), snap_cuts_to_beats.
+- Long takes and finished films: split_at_scenes cuts a video clip at its shot changes (or marks them), a quick way to break footage into shots before choosing.
 - Generate: generate_voiceover, auto_captions, generate_image, suggest_broll then add_broll, generate_chapters, script_from_media. Check get_ai_status first; if a provider is not ready, say so (the user sets keys in Settings).
 - Shape: set_canvas, reframe (e.g. 1080×1920 for vertical; then adjust transform.x per clip to follow the subject).
 - Markers: add_marker, update_marker, remove_marker, clear_markers.

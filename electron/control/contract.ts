@@ -523,6 +523,15 @@ export const contract = {
 			instructions: z.string().max(1000).optional(),
 		},
 	},
+	split_at_scenes: {
+		description:
+			"Find the shot changes in the part of a video clip's source it plays and cut the clip (and its linked sound) there, or add 'Shot' markers instead with split false. threshold 0.05–0.9: lower finds more (dissolves), higher only hard cuts. Returns the cut times on the timeline.",
+		input: {
+			clipId: z.string(),
+			threshold: z.number().min(0.05).max(0.9).default(0.3),
+			split: z.boolean().default(true),
+		},
+	},
 	detect_beats: {
 		description:
 			"Tempo (BPM) and beats of a media item with sound. addMarkers puts a green 'Beat' marker on every beat (or every Nth with every) where the item is used on the timeline.",

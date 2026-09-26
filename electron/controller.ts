@@ -709,6 +709,10 @@ export class Controller extends EventEmitter {
 			}
 			case "get_guide":
 				return AGENT_GUIDE;
+			case "split_at_scenes": {
+				const { clipId, threshold, split } = parseInput("split_at_scenes", params);
+				return this.store.splitAtScenes(clipId, actor, { threshold, split });
+			}
 			case "detect_beats": {
 				const { assetId, addMarkers, every } = parseInput("detect_beats", params);
 				return this.store.detectBeats(assetId, actor, { addMarkers, every });

@@ -292,4 +292,54 @@ describe("compositing", () => {
 		const m4a = (await store.export("audio", "mix.m4a", "user")).outputs[0];
 		expect(await probe(m4a)).toContain("Audio: aac");
 	}, 90000);
+
+	it("splits a clip at its shot changes", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-scenes-"));
+		const src = path.join(dir, "shots.mp4");
+		// Three one-second shots with hard cuts at 1 s and 2 s.
+		await ffmpeg([
+			"-f",
+			"lavfi",
+			"-i",
+			"testsrc=s=320x180:r=30:d=1",
+			"-f",
+			"lavfi",
+			"-i",
+			"mandelbrot=s=320x180:r=30",
+			"-f",
+			"lavfi",
+			"-i",
+			"smptebars=s=320x180:r=30:d=1",
+			"-filter_complex",
+			"[1:v]trim=duration=1,setpts=PTS-STARTPTS[m];[0:v][m][2:v]concat=n=3:v=1[v]",
+			"-map",
+			"[v]",
+			"-pix_fmt",
+			"yuv420p",
+			src,
+		]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Scenes" });
+		const [asset] = await store.importMedia([src], "user");
+		store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{ type: "media", trackId: "V1", assetId: asset.id, startMs: 500, durationMs: 3000 },
+				],
+			},
+			"user",
+		);
+		const clip = store.current.clips.find((c) => c.type === "media") as MediaClip;
+		const { cuts } = await store.splitAtScenes(clip.id, "user");
+		expect(cuts.map((t) => Math.round(t / 100) * 100)).toEqual([1500, 2500]);
+		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(3);
+		// One undo step puts it back.
+		store.undo("user");
+		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(1);
+	}, 90000);
 });
