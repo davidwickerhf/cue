@@ -25,8 +25,18 @@ export interface Layout {
 	dockWidth: number;
 	/** Track heights by kind (a track the user resized keeps its own height). */
 	tracks: { video: number; audio: number; text: number };
-	/** Viewer overlays. */
-	overlays: { safeAreas: boolean; teleprompter: boolean; compare: boolean };
+	/**
+	 * Viewer overlays. sourceTwoUp puts the source monitor beside the viewer
+	 * instead of over it; compare shows the before/after controls; clipStrip
+	 * shows the timeline's shots under the viewer, for grading one by one.
+	 */
+	overlays: {
+		safeAreas: boolean;
+		teleprompter: boolean;
+		compare: boolean;
+		sourceTwoUp: boolean;
+		clipStrip: boolean;
+	};
 	/** Inspector sections open by default; every other section starts collapsed. Empty: all open. */
 	sections: string[];
 }
@@ -42,7 +52,13 @@ const BASE: Layout = {
 	dock: "none",
 	dockWidth: 320,
 	tracks: { video: 64, audio: 60, text: 40 },
-	overlays: { safeAreas: false, teleprompter: false, compare: false },
+	overlays: {
+		safeAreas: false,
+		teleprompter: false,
+		compare: false,
+		sourceTwoUp: false,
+		clipStrip: false,
+	},
 	sections: [],
 };
 
@@ -54,7 +70,9 @@ const workspace = (label: string, keys: string, layout: Partial<Layout>) => ({
 });
 
 export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
-	editing: workspace("Editing", "⌥1", {}),
+	editing: workspace("Editing", "⌥1", {
+		overlays: { ...BASE.overlays, sourceTwoUp: true },
+	}),
 	audio: workspace("Audio", "⌥2", {
 		sidebarWidth: 260,
 		timelineHeight: 440,
@@ -70,7 +88,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		dock: "scopes",
 		dockWidth: 300,
 		tracks: { video: 76, audio: 40, text: 34 },
-		overlays: { safeAreas: false, teleprompter: false, compare: true },
+		overlays: { ...BASE.overlays, compare: true, clipStrip: true },
 		sections: ["Colour", "Effects", "Mask", "Chroma key"],
 	}),
 	voiceover: workspace("Voiceover", "⌥4", {
@@ -79,7 +97,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		panel: "script",
 		inspectorOpen: false,
 		tracks: { video: 44, audio: 80, text: 34 },
-		overlays: { safeAreas: false, teleprompter: true, compare: false },
+		overlays: { ...BASE.overlays, teleprompter: true },
 	}),
 	titles: workspace("Titles", "⌥5", {
 		sidebarWidth: 320,
@@ -87,7 +105,7 @@ export const BUILT_IN: Record<string, ReturnType<typeof workspace>> = {
 		timelineHeight: 280,
 		panel: "text",
 		tracks: { video: 48, audio: 40, text: 60 },
-		overlays: { safeAreas: true, teleprompter: false, compare: false },
+		overlays: { ...BASE.overlays, safeAreas: true },
 		sections: ["Text", "Style", "Layout", "Animation", "Timing"],
 	}),
 	agent: workspace("Agent", "⌥6", {
@@ -128,7 +146,10 @@ function load<T>(key: string, fallback: T): T {
 	}
 }
 
-export const layout = createStore<Layout>(complete(load(LAYOUT_KEY, { id: "editing" })));
+// A first launch starts in the Editing workspace, with all of its settings.
+export const layout = createStore<Layout>(
+	complete(load(LAYOUT_KEY, { ...BUILT_IN.editing.layout, id: "editing" })),
+);
 export const savedWorkspaces = createStore<{ list: Record<string, Layout> }>({
 	list: Object.fromEntries(
 		Object.entries(load<Record<string, Partial<Layout>>>(SAVED_KEY, {})).map(([k, v]) => [
@@ -214,3 +235,10 @@ export function deleteWorkspace(name: string) {
 	savedWorkspaces.set({ list });
 	localStorage.setItem(SAVED_KEY, JSON.stringify(list));
 }
+
+/**
+ * Before/after in the viewer: hold shows the original while pressed; split
+ * shows the original left of a divider and the graded picture right of it.
+ * UI state only, never saved with the project.
+ */
+export const compareView = createStore<{ split: boolean; at: number }>({ split: false, at: 0.5 });

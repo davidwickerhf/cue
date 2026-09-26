@@ -5,15 +5,21 @@ import type { Clip, ProjectSnapshot, TextClip } from "../../../electron/core/typ
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
+import { showTimeline, source } from "../../lib/source";
 import { useApp, useProject } from "../../lib/state";
 import { cn, formatSeconds } from "../../lib/utils";
-import { layout } from "../../lib/workspace";
-import { SourceMonitor, ViewerTabs } from "./SourceMonitor";
+import { compareView, layout } from "../../lib/workspace";
+import { ClipStrip } from "./ClipStrip";
+import { MonitorHeader, SourceMonitor, SourcePane, ViewerTabs } from "./SourceMonitor";
 
 export function PreviewPanel() {
 	const safeAreas = layout.use((s) => s.overlays.safeAreas);
 	const prompter = layout.use((s) => s.overlays.teleprompter);
 	const compare = layout.use((s) => s.overlays.compare);
+	const twoUp = layout.use((s) => s.overlays.sourceTwoUp);
+	const strip = layout.use((s) => s.overlays.clipStrip);
+	const sourceActive = source.use((s) => s.active);
+	const sourceOpen = source.use((s) => !!s.assetId);
 	const project = useProject();
 	const area = useRef<HTMLDivElement>(null);
 	const stage = useRef<HTMLDivElement>(null);
@@ -45,10 +51,8 @@ export function PreviewPanel() {
 		playback.refresh();
 	}, [size.w, size.h]);
 
-	return (
-		<section className="relative flex min-w-0 flex-1 flex-col bg-viewer">
-			{project && <ViewerTabs project={project} />}
-			{project && <SourceMonitor project={project} />}
+	const program = (
+		<>
 			<div ref={area} className="relative flex min-h-0 flex-1 items-center justify-center">
 				<div
 					data-stage-frame
@@ -67,13 +71,40 @@ export function PreviewPanel() {
 					/>
 					{project && <SelectionOverlay project={project} width={size.w} height={size.h} />}
 					{safeAreas && <SafeAreas />}
+					{compare && project && <SplitDivider />}
 				</div>
 				{project && project.data.clips.length === 0 && <EmptyProject project={project} />}
 				<Teleprompter />
 				{prompter && project && <ScriptPrompter />}
-				{compare && project && <CompareButton />}
+				{compare && project && <CompareControls />}
 			</div>
+			{strip && project && <ClipStrip project={project} />}
 			{project && <Transport project={project} />}
+		</>
+	);
+
+	// Two-up: the source monitor on the left, the timeline's viewer on the right, each with
+	// its own transport. The viewer's elements keep their place either way, so playback stays attached.
+	const two = twoUp && !!project;
+	return (
+		<section className="relative flex min-w-0 flex-1 bg-viewer">
+			{two && project && <SourcePane project={project} />}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: focus follows the click, as between Premiere's monitors */}
+			<div
+				className="relative flex min-w-0 flex-1 flex-col"
+				onPointerDownCapture={() => two && sourceActive && showTimeline()}
+			>
+				{two && project && (
+					<MonitorHeader label="Timeline" active={!sourceActive || !sourceOpen}>
+						<span className="min-w-0 truncate text-foreground/80">
+							{project.data.sequence?.name ?? ""}
+						</span>
+					</MonitorHeader>
+				)}
+				{!two && project && <ViewerTabs project={project} />}
+				{!two && project && <SourceMonitor project={project} />}
+				{program}
+			</div>
 		</section>
 	);
 }
@@ -568,27 +599,109 @@ function SafeAreas() {
 	);
 }
 
-/** Hold to see the pictures without their grade and effects. */
-function CompareButton() {
+/**
+ * Before/after: hold to see the pictures without their grade and effects, or
+ * split the viewer with the original on the left and the grade on the right.
+ */
+function CompareControls() {
 	const [on, setOn] = useState(false);
+	const split = compareView.use((s) => s.split);
 	const set = (value: boolean) => {
 		setOn(value);
 		playback.setOriginal(value);
 	};
 	useEffect(() => () => playback.setOriginal(false), []);
+	const btn =
+		"h-7 px-2.5 text-[11px] font-medium first:rounded-l-md last:rounded-r-md focus-visible:outline-none";
 	return (
-		<button
-			type="button"
-			onPointerDown={() => set(true)}
-			onPointerUp={() => set(false)}
-			onPointerLeave={() => on && set(false)}
-			className={cn(
-				"absolute top-3 right-3 z-30 h-7 rounded-md px-2.5 text-[11px] font-medium shadow ring-1 ring-white/10 backdrop-blur",
-				on ? "bg-accent text-accent-foreground" : "bg-black/55 text-white/85 hover:bg-black/70",
-			)}
-		>
-			{on ? "Original" : "Hold to compare"}
-		</button>
+		<div className="absolute top-3 right-3 z-30 flex overflow-hidden rounded-md shadow ring-1 ring-white/10 backdrop-blur">
+			<button
+				type="button"
+				title="Hold to see the original picture"
+				onPointerDown={() => set(true)}
+				onPointerUp={() => set(false)}
+				onPointerLeave={() => on && set(false)}
+				className={cn(
+					btn,
+					on ? "bg-accent text-accent-foreground" : "bg-black/55 text-white/85 hover:bg-black/70",
+				)}
+			>
+				{on ? "Original" : "Hold to compare"}
+			</button>
+			<button
+				type="button"
+				aria-pressed={split}
+				title="Original on the left, graded on the right; drag the line to move it"
+				onClick={() => compareView.set({ split: !split })}
+				className={cn(
+					btn,
+					"border-l border-white/10",
+					split
+						? "bg-accent text-accent-foreground"
+						: "bg-black/55 text-white/85 hover:bg-black/70",
+				)}
+			>
+				Split
+			</button>
+		</div>
+	);
+}
+
+/** The split before/after divider over the picture; drag it to move the split. */
+function SplitDivider() {
+	const { split, at } = compareView.use((s) => s);
+	const dragging = useRef(false);
+	useEffect(() => {
+		playback.setSplit(split ? at : null);
+	}, [split, at]);
+	useEffect(() => () => playback.setSplit(null), []);
+	if (!split) return null;
+	const move = (e: React.PointerEvent<HTMLElement>) => {
+		const stage = e.currentTarget.closest("[data-stage-frame]");
+		if (!stage) return;
+		const r = stage.getBoundingClientRect();
+		compareView.set({ at: Math.max(0.02, Math.min(0.98, (e.clientX - r.left) / r.width)) });
+	};
+	const label =
+		"pointer-events-none absolute top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/85";
+	return (
+		<div className="pointer-events-none absolute inset-0 z-[25]">
+			<span className={label} style={{ right: `calc(${(1 - at) * 100}% + 8px)` }}>
+				Original
+			</span>
+			<span className={label} style={{ left: `calc(${at * 100}% + 8px)` }}>
+				Graded
+			</span>
+			<div
+				role="slider"
+				tabIndex={0}
+				aria-label="Split position"
+				aria-valuemin={0}
+				aria-valuemax={100}
+				aria-valuenow={Math.round(at * 100)}
+				className="pointer-events-auto absolute top-0 bottom-0 flex w-4 -translate-x-1/2 cursor-col-resize justify-center focus-visible:outline-none"
+				style={{ left: `${at * 100}%` }}
+				onPointerDown={(e) => {
+					e.stopPropagation();
+					dragging.current = true;
+					e.currentTarget.setPointerCapture(e.pointerId);
+				}}
+				onPointerMove={(e) => dragging.current && move(e)}
+				onPointerUp={() => {
+					dragging.current = false;
+				}}
+				onKeyDown={(e) => {
+					if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+					e.preventDefault();
+					e.stopPropagation();
+					const step = (e.shiftKey ? 0.1 : 0.02) * (e.key === "ArrowLeft" ? -1 : 1);
+					compareView.set({ at: Math.max(0.02, Math.min(0.98, at + step)) });
+				}}
+			>
+				<div className="h-full w-px bg-white/90 shadow-[0_0_0_1px_rgb(0_0_0/0.35)]" />
+				<div className="absolute top-1/2 size-5 -translate-y-1/2 rounded-full border border-black/30 bg-white shadow" />
+			</div>
+		</div>
 	);
 }
 

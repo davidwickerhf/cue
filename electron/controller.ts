@@ -697,6 +697,8 @@ export class Controller extends EventEmitter {
 					{ type: "addAdjustment", ...parseInput("add_adjustment_layer", params) },
 					actor,
 				);
+			case "copy_grade":
+				return this.store.apply({ type: "copyGrade", ...parseInput("copy_grade", params) }, actor);
 			case "speed_ramp":
 				return this.store.apply({ type: "speedRamp", ...parseInput("speed_ramp", params) }, actor);
 			case "lift_range":

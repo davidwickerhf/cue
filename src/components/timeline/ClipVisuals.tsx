@@ -14,7 +14,7 @@ function loadPeaks(assetId: string, file: string) {
 	return p;
 }
 
-function loadThumbs(assetId: string, file: string) {
+export function loadThumbs(assetId: string, file: string) {
 	const key = `${assetId}|${file}`;
 	let p = thumbsCache.get(key);
 	if (!p) {

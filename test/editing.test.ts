@@ -167,3 +167,84 @@ describe("analysis", () => {
 		expect(extractJson<{ a: number }[]>('Sure! ```json\n[{"a": 1}]\n```')).toEqual([{ a: 1 }]);
 	});
 });
+
+describe("copy grade", () => {
+	const graded = () => {
+		let data = base();
+		const [a] = v1(data);
+		data = applyOp(data, {
+			type: "updateClip",
+			id: a.id,
+			patch: {
+				color: { brightness: 0.2, saturation: 1.4 },
+				effects: { vignette: 0.5 },
+			},
+		}).data;
+		data = applyOp(data, {
+			type: "addClips",
+			clips: [{ type: "text", trackId: "T1", startMs: 0, durationMs: 1000, text: "Hi" }],
+		}).data;
+		return data;
+	};
+
+	it("copies colour and effects to the targets, skipping text clips", () => {
+		const data = graded();
+		const [a, b] = v1(data);
+		const text = data.clips.find((c) => c.type === "text");
+		const next = applyOp(data, {
+			type: "copyGrade",
+			fromClipId: a.id,
+			toClipIds: [b.id, text?.id ?? ""],
+		}).data;
+		const copied = v1(next)[1];
+		expect(copied.color).toEqual(a.color);
+		expect(copied.effects).toEqual(a.effects);
+		// The copy is its own object, so later changes to one leave the other alone.
+		expect(copied.color).not.toBe(a.color);
+		expect(next.clips.find((c) => c.type === "text")).toEqual(text);
+	});
+
+	it("can leave effects alone and clears the grade from an ungraded source", () => {
+		const data = graded();
+		const [a, b] = v1(data);
+		const withEffects = applyOp(data, {
+			type: "updateClip",
+			id: b.id,
+			patch: { effects: { blur: 0.3 } },
+		}).data;
+		const colourOnly = v1(
+			applyOp(withEffects, {
+				type: "copyGrade",
+				fromClipId: a.id,
+				toClipIds: [b.id],
+				effects: false,
+			}).data,
+		)[1];
+		expect(colourOnly.color).toEqual(a.color);
+		expect(colourOnly.effects?.blur).toBe(0.3);
+		expect(colourOnly.effects?.vignette).toBe(0);
+		// Copying from the ungraded clip back resets the graded one.
+		const reset = v1(
+			applyOp(data, { type: "copyGrade", fromClipId: b.id, toClipIds: [a.id] }).data,
+		)[0];
+		expect(reset.color).toBeUndefined();
+		expect(reset.effects).toBeUndefined();
+	});
+
+	it("refuses locked tracks and lists with nothing to paste to", () => {
+		const data = graded();
+		const [a, b] = v1(data);
+		expect(() =>
+			applyOp(data, { type: "copyGrade", fromClipId: a.id, toClipIds: [a.id] }),
+		).toThrow();
+		const locked = applyOp(data, { type: "updateTrack", id: "V1", patch: { locked: true } }).data;
+		expect(() =>
+			applyOp(locked, { type: "copyGrade", fromClipId: a.id, toClipIds: [b.id] }),
+		).toThrow(/locked/);
+	});
+
+	it("is an agent tool", () => {
+		expect("copy_grade" in contract).toBe(true);
+		expect(AGENT_GUIDE).toContain("copy_grade");
+	});
+});

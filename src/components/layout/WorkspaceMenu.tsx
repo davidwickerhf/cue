@@ -110,7 +110,9 @@ export function WorkspaceMenu() {
 						[
 							["safeAreas", "Safe areas"],
 							["teleprompter", "Script prompter"],
-							["compare", "Before/after button"],
+							["compare", "Before/after"],
+							["sourceTwoUp", "Source monitor beside the viewer"],
+							["clipStrip", "Clip strip under the viewer"],
 						] as const
 					).map(([key, label]) => (
 						<button

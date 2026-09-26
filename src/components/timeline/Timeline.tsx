@@ -59,6 +59,7 @@ import { agentDraft } from "../../lib/chat";
 import { notes } from "../../lib/notes";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
+import { SOURCE_MIME } from "../../lib/source";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
 import { clampLayout, layout } from "../../lib/workspace";
@@ -645,6 +646,26 @@ export function Timeline() {
 	const onDrop = async (track: Track, e: React.DragEvent) => {
 		e.preventDefault();
 		const at = Math.round(timeAt(e.clientX));
+		// From the source monitor: only the part between its in and out marks.
+		const range = e.dataTransfer.getData(SOURCE_MIME);
+		if (range) {
+			const r = JSON.parse(range) as { assetId: string; inMs: number | null; outMs: number | null };
+			const inMs = r.inMs ?? 0;
+			const durationMs = r.outMs !== null && r.outMs > inMs ? r.outMs - inMs : undefined;
+			void run("add_clips", {
+				clips: [
+					{
+						type: "media",
+						trackId: track.id,
+						assetId: r.assetId,
+						startMs: snap(at) ?? at,
+						...(inMs ? { inMs } : {}),
+						...(durationMs ? { durationMs } : {}),
+					},
+				],
+			});
+			return;
+		}
 		const assetId = e.dataTransfer.getData(ASSET_MIME);
 		if (assetId) {
 			void run("add_clips", {

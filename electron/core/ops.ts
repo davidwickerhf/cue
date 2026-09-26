@@ -238,6 +238,13 @@ export const opSchema = z.discriminatedUnion("type", [
 		startMs: ms.min(0),
 		durationMs: ms.min(100).default(5000),
 	}),
+	z.object({
+		type: z.literal("copyGrade"),
+		fromClipId: z.string(),
+		toClipIds: z.array(z.string()).min(1),
+		/** Copy the picture effects (blur, sharpen, vignette, glow, stabilize) along with the colour. */
+		effects: z.boolean().default(true),
+	}),
 	// Sequences (several timelines per project) and nesting
 	z.object({
 		type: z.literal("newSequence"),
@@ -1697,6 +1704,34 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				data: { ...withAsset, clips: [...withAsset.clips, clip] },
 				summary: `Nested ${chosen.length} clip(s) into "${name}"`,
 				created: [clip.id, id],
+			};
+		}
+		case "copyGrade": {
+			const from = media(data, op.fromClipId);
+			// Text clips have no grade; the source itself needs no copy.
+			const targets = [...new Set(op.toClipIds)]
+				.map((id) => clip(data, id))
+				.filter((c): c is MediaClip => c.type === "media" && c.id !== from.id);
+			if (!targets.length) throw new Error("Pick at least one other video or picture clip.");
+			for (const c of targets) unlocked(data, c.trackId);
+			const ids = new Set(targets.map((c) => c.id));
+			// The whole look is copied, so an ungraded source clears the target's grade.
+			const copy = (c: MediaClip): MediaClip => {
+				const { color: _c, effects: _e, ...rest } = c;
+				const color = from.color ? { ...from.color } : undefined;
+				const effects = op.effects ? (from.effects ? { ...from.effects } : undefined) : c.effects;
+				return {
+					...rest,
+					...(color ? { color } : {}),
+					...(effects ? { effects } : {}),
+				};
+			};
+			return {
+				data: {
+					...data,
+					clips: data.clips.map((c) => (ids.has(c.id) ? copy(c as MediaClip) : c)),
+				},
+				summary: `Copied the grade of ${from.name ?? from.id} to ${targets.length} clip(s)`,
 			};
 		}
 		case "addAdjustment": {
