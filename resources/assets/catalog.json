@@ -1,0 +1,136 @@
+[
+  {
+    "id": "city-night-drive",
+    "name": "Night drive",
+    "category": "City",
+    "description": "Moving headlights and road perspective for energy, transitions and urban context.",
+    "sourcePage": "https://mixkit.co/free-stock-video/touring-a-city-at-night-42031/",
+    "downloadUrl": "https://assets.mixkit.co/videos/42031/42031-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "city.mp4",
+    "tags": [
+      "night",
+      "road",
+      "motion",
+      "urban"
+    ]
+  },
+  {
+    "id": "mountain-aerial",
+    "name": "Mountain aerial",
+    "category": "Nature",
+    "description": "A slow landscape move with layered ridgelines and room for labels.",
+    "sourcePage": "https://mixkit.co/free-stock-video/aerial-tour-over-a-mountain-range-44638/",
+    "downloadUrl": "https://assets.mixkit.co/videos/44638/44638-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "mountain.mp4",
+    "tags": [
+      "aerial",
+      "landscape",
+      "geography",
+      "slow"
+    ]
+  },
+  {
+    "id": "camera-portrait",
+    "name": "Photographer",
+    "category": "People",
+    "description": "A photographer raises the camera toward the lens; useful for action matches and character beats.",
+    "sourcePage": "https://mixkit.co/free-stock-video/portrait-of-a-woman-taking-a-photo-with-a-camera-44109/",
+    "downloadUrl": "https://assets.mixkit.co/videos/44109/44109-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "camera.mp4",
+    "tags": [
+      "photographer",
+      "camera",
+      "portrait",
+      "action"
+    ]
+  },
+  {
+    "id": "studio-portrait",
+    "name": "Studio portrait",
+    "category": "People",
+    "description": "A minimal warm portrait with open space for restrained titles and before/after studies.",
+    "sourcePage": "https://mixkit.co/free-stock-video/a-smiling-young-woman-with-black-short-hair-and-a-51998/",
+    "downloadUrl": "https://assets.mixkit.co/videos/51998/51998-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "portrait.mp4",
+    "tags": [
+      "portrait",
+      "studio",
+      "warm",
+      "minimal"
+    ]
+  },
+  {
+    "id": "hands-at-work",
+    "name": "Hands at work",
+    "category": "Work",
+    "description": "Close movement across a laptop keyboard for process and technology stories.",
+    "sourcePage": "https://mixkit.co/free-stock-video/hands-typing-away-on-a-laptop-146/",
+    "downloadUrl": "https://assets.mixkit.co/videos/146/146-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "hands.mp4",
+    "tags": [
+      "hands",
+      "typing",
+      "process",
+      "technology"
+    ]
+  },
+  {
+    "id": "runner-in-sun",
+    "name": "Runner in sunlight",
+    "category": "People",
+    "description": "A moving close shot with a bright backlight for motion cuts and light passages.",
+    "sourcePage": "https://mixkit.co/free-stock-video/a-concentrated-young-woman-running-at-the-park-with-a-52124/",
+    "downloadUrl": "https://assets.mixkit.co/videos/52124/52124-720.mp4",
+    "license": "Mixkit Stock Video Free License",
+    "licenseUrl": "https://mixkit.co/license/modal/videoFree/",
+    "file": "runner.mp4",
+    "tags": [
+      "runner",
+      "movement",
+      "sunlight",
+      "portrait"
+    ]
+  },
+  {
+    "id": "cartographic-grid",
+    "name": "Cartographic grid",
+    "category": "Graphics",
+    "description": "Original map-like canvas for a route, location and evidence labels. Generic marks must be replaced with accurate data.",
+    "file": "cartographic-grid.png",
+    "localPath": "resources/assets/original/cartographic-grid.png",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "tags": [
+      "map",
+      "grid",
+      "explainer",
+      "route"
+    ]
+  },
+  {
+    "id": "document-paper",
+    "name": "Document page",
+    "category": "Graphics",
+    "description": "Original ruled paper for source quotes, dates and document annotations. Replace placeholder text before publishing.",
+    "file": "document-paper.png",
+    "localPath": "resources/assets/original/document-paper.png",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "tags": [
+      "document",
+      "paper",
+      "evidence",
+      "explainer"
+    ]
+  }
+]

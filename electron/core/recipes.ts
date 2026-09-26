@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import styleCatalog from "../../resources/styles/catalog.json";
 import { contract, type MethodName, parseInput } from "../control/contract";
 import { mixRole } from "./audio";
-import styleCatalog from "../../resources/styles/catalog.json";
 import { clipEnd } from "./project";
 import type { MediaClip, ProjectData } from "./types";
 
@@ -45,6 +45,15 @@ export const recipeSchema = z
 		description: z.string().max(1000).default(""),
 		category: z.string().max(60).optional(),
 		format: z.enum(["recipe", "style"]).optional(),
+		preview: z
+			.object({
+				video: z.string(),
+				poster: z.string(),
+				durationMs: z.number().int().positive(),
+			})
+			.optional(),
+		assetIds: z.array(z.string()).optional(),
+		references: z.array(z.object({ label: z.string(), url: z.url() })).optional(),
 		guide: z
 			.object({
 				goal: z.string().min(1).max(1000),

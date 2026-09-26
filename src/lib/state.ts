@@ -128,6 +128,7 @@ export function findLine(project: ProjectSnapshot | null, id: string | null): Li
 
 export type SidebarPanel =
 	| "media"
+	| "library"
 	| "script"
 	| "transcript"
 	| "text"

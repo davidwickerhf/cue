@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import type { TextClip } from "../../electron/core/types";
+import { librarySelection } from "../lib/assetLibrary";
 import { capture } from "../lib/capture";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
-import { styleSelection } from "../lib/styleLibrary";
 import { app, editor, findLine, type SidebarPanel } from "../lib/state";
+import { styleSelection } from "../lib/styleLibrary";
 import { rasterise } from "../lib/textDraw";
 import { viewerZoom, zoomViewer } from "../lib/viewer";
 import { compareView, type Dock, layout, sequenceCompare, switchWorkspace } from "../lib/workspace";
@@ -101,6 +102,11 @@ export function useEditorCommands() {
 				case "showStyle":
 					styleSelection.set({ id: command.id });
 					editor.set({ panel: "generate" });
+					layout.set({ sidebarOpen: true });
+					break;
+				case "showLibraryAsset":
+					librarySelection.set({ id: command.id });
+					editor.set({ panel: "library" });
 					layout.set({ sidebarOpen: true });
 					break;
 				case "pauseScreen":

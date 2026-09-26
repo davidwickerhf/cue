@@ -124,6 +124,25 @@ export const contract = {
 	},
 
 	// --- Media and tracks -----------------------------------------------------------
+	list_library_assets: {
+		description:
+			"Browse Cue's curated stock footage and original graphics. Returns ids, descriptions, tags, preview paths, source and license. Use import_library_asset to add one to the project.",
+		input: { query: z.string().optional(), category: z.string().optional() },
+	},
+	show_library_asset: {
+		description:
+			"Select a curated asset in Cue's asset gallery and return its source, license and usage notes.",
+		input: { id: z.string() },
+	},
+	import_library_asset: {
+		description:
+			"Download or copy a curated asset into the open project and import it as media. Stock footage is downloaded from its credited source; the user must check the source license before publishing.",
+		input: {
+			id: z.string(),
+			trackId: z.string().optional(),
+			startMs: z.number().min(0).default(0),
+		},
+	},
 	import_media: {
 		description:
 			"Add video, audio or image files to the media library. With trackId, also place them back to back from startMs.",
@@ -932,7 +951,7 @@ export const contract = {
 	},
 	list_styles: {
 		description:
-			"Browse the style library. Returns each style's id, name, category, description and required footage; use show_style to select one in the editor and read its full guide.",
+			"Browse the style library. Returns each style's id, name, category, description, preview and recommended library assets; use show_style to select one in the editor and read its full guide.",
 		input: { category: z.string().optional(), query: z.string().optional() },
 	},
 	show_style: {

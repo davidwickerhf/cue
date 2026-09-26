@@ -6,6 +6,7 @@ import { notify, run } from "../../lib/api";
 import { agentDraft } from "../../lib/chat";
 import { editor } from "../../lib/state";
 import { styleSelection } from "../../lib/styleLibrary";
+import { stylePreview } from "../../lib/stylePreviews";
 import { Section } from "../ui/controls";
 
 interface RunResult {
@@ -62,7 +63,7 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 	};
 	const ask = (r: Recipe) => {
 		agentDraft.set({
-			text: `Follow the Cue style guide "${r.name}" (${r.id}) on this project. Call list_recipes to read its full guide, check the available footage, adapt the structure to it, and review the result before finishing.`,
+			text: `Follow the Cue style guide "${r.name}" (${r.id}) on this project. Call show_style to read its full guide. Check the available footage and use list_library_assets and import_library_asset for useful supporting media. Adapt the structure to this project and review the result before finishing.`,
 		});
 		editor.set({ panel: "agent" });
 	};
@@ -113,7 +114,7 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 						>
 							<details className="group">
 								<summary className="flex cursor-pointer items-center gap-3 p-2.5 focus-visible:outline-2 focus-visible:outline-accent">
-									<StyleThumb id={r.id} />
+									<StyleThumb recipe={r} />
 									<span className="min-w-0 flex-1">
 										<span className="block text-[12px] font-semibold">{r.name}</span>
 										<span className="block text-[11px] text-muted">{r.category}</span>
@@ -121,6 +122,19 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 									<ArrowRight className="size-3 shrink-0 text-muted transition-transform group-open:rotate-90" />
 								</summary>
 								<div className="border-t border-border px-3 pb-3 text-[11px] leading-relaxed">
+									{r.preview && (
+										<video
+											className="mt-3 aspect-video w-full rounded-md bg-black object-cover"
+											src={stylePreview(r.preview.video, "video")}
+											poster={stylePreview(r.preview.poster, "poster")}
+											controls
+											muted
+											loop
+											playsInline
+											preload="none"
+											aria-label={`${r.name} style preview`}
+										/>
+									)}
 									<p className="mt-2 text-muted">{r.description}</p>
 									{r.guide && (
 										<>
@@ -129,6 +143,18 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 											<GuideList title="Structure" items={r.guide.structure} ordered />
 											<GuideList title="Direction" items={r.guide.directions} />
 											<GuideList title="Check" items={r.guide.review} />
+											{r.assetIds && r.assetIds.length > 0 && (
+												<p className="mt-2 text-muted">
+													Recommended assets: {r.assetIds.join(", ").replaceAll("-", " ")}{" "}
+													<button
+														type="button"
+														className="text-accent underline underline-offset-2"
+														onClick={() => editor.set({ panel: "library" })}
+													>
+														Browse assets
+													</button>
+												</p>
+											)}
 										</>
 									)}
 									<button
@@ -228,28 +254,14 @@ function GuideList({
 	);
 }
 
-function StyleThumb({ id }: { id: string }) {
-	const visual: Record<string, { bg: string; text: string; mark: string }> = {
-		"style-kinetic-quote": { bg: "#d9c9aa", text: "SAY IT", mark: "✳" },
-		"style-beat-grid": { bg: "#322a57", text: "◼ ◼ ◼", mark: "▰" },
-		"style-match-motion": { bg: "#c55134", text: "→ →", mark: "→" },
-		"style-paper-collage": { bg: "#d8d1bf", text: "CUT / PASTE", mark: "▧" },
-		"style-light-leak": { bg: "#803b24", text: "LIGHT", mark: "✺" },
-		"style-screen-focus": { bg: "#31495b", text: "FOCUS", mark: "⌕" },
-		"style-split-reveal": { bg: "#455e4b", text: "A / B", mark: "▥" },
-		"style-quiet-portrait": { bg: "#535765", text: "STILL", mark: "●" },
-	};
-	const v = visual[id] ?? { bg: "#454545", text: "STYLE", mark: "•" };
+function StyleThumb({ recipe }: { recipe: Recipe }) {
+	const poster = recipe.preview && stylePreview(recipe.preview.poster, "poster");
 	return (
 		<span
 			aria-hidden="true"
-			className="relative flex h-12 w-16 shrink-0 items-end overflow-hidden rounded-md p-1.5"
-			style={{ background: v.bg }}
+			className="relative flex h-12 w-20 shrink-0 overflow-hidden rounded-md bg-default"
 		>
-			<span className="absolute -right-1 -top-4 text-[44px] font-black text-white/25">
-				{v.mark}
-			</span>
-			<span className="relative text-[9px] font-black tracking-tight text-white">{v.text}</span>
+			{poster && <img src={poster} alt="" className="size-full object-cover" />}
 		</span>
 	);
 }

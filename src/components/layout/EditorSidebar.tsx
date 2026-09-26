@@ -2,6 +2,7 @@ import { Tooltip } from "@heroui/react";
 import {
 	ClockCounterClockwise,
 	Faders,
+	FilmSlate,
 	Gear,
 	Images,
 	Microphone,
@@ -17,6 +18,7 @@ import { layout } from "../../lib/workspace";
 import { AgentPanel } from "../panels/AgentPanel";
 import { GeneratePanel } from "../panels/GeneratePanel";
 import { HistoryPanel } from "../panels/HistoryPanel";
+import { LibraryPanel } from "../panels/LibraryPanel";
 import { MediaPanel } from "../panels/MediaPanel";
 import { MixerPanel } from "../panels/MixerPanel";
 import { ScriptPanel } from "../panels/ScriptPanel";
@@ -26,6 +28,7 @@ import { TranscriptPanel } from "../panels/TranscriptPanel";
 
 const ITEMS: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
 	{ id: "media", label: "Media", icon: <Images className="size-[18px]" /> },
+	{ id: "library", label: "Asset library", icon: <FilmSlate className="size-[18px]" /> },
 	{ id: "script", label: "Voiceover", icon: <Microphone className="size-[18px]" /> },
 	{ id: "transcript", label: "Transcript", icon: <Subtitles className="size-[18px]" /> },
 	{ id: "text", label: "Text", icon: <TextT className="size-[18px]" /> },
@@ -37,6 +40,7 @@ const ITEMS: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
 
 const TITLES: Record<SidebarPanel, string> = {
 	media: "Media",
+	library: "Asset library",
 	script: "Voiceover",
 	transcript: "Transcript",
 	text: "Text",
@@ -96,6 +100,7 @@ export function EditorSidebar() {
 				</header>
 				<div key={panel} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
 					{panel === "media" && <MediaPanel />}
+					{panel === "library" && <LibraryPanel />}
 					{panel === "script" && <ScriptPanel />}
 					{panel === "transcript" && <TranscriptPanel />}
 					{panel === "text" && <TextPanel />}

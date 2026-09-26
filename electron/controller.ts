@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
+import { findLibraryAsset, LIBRARY_ASSETS, materializeLibraryAsset } from "./core/assetLibrary";
 import { binPath, filterMedia, mediaUses, usedAssetIds } from "./core/bins";
 import {
 	type CaptureSources,
@@ -627,6 +628,45 @@ export class Controller extends EventEmitter {
 					actor,
 				);
 
+			case "list_library_assets": {
+				const { query, category } = parseInput("list_library_assets", params);
+				return LIBRARY_ASSETS.filter(
+					(asset) => !category || asset.category.toLowerCase() === category.toLowerCase(),
+				)
+					.filter(
+						(asset) =>
+							!query ||
+							`${asset.name} ${asset.description} ${asset.tags.join(" ")}`
+								.toLowerCase()
+								.includes(query.toLowerCase()),
+					)
+					.map((asset) => ({
+						...asset,
+						posterUrl: `https://cue.wicker.life/assets/${asset.id}.jpg`,
+					}));
+			}
+			case "show_library_asset": {
+				const asset = findLibraryAsset(parseInput("show_library_asset", params).id);
+				this.hooks.sendCommand({ type: "showLibraryAsset", id: asset.id });
+				return { ...asset, posterUrl: `https://cue.wicker.life/assets/${asset.id}.jpg` };
+			}
+			case "import_library_asset": {
+				const { id, trackId, startMs } = parseInput("import_library_asset", params);
+				const asset = findLibraryAsset(id);
+				const file = await this.job(`Getting ${asset.name}`, () =>
+					materializeLibraryAsset(asset, this.store.projectDir),
+				);
+				const imported = await this.job(`Importing ${asset.name}`, () =>
+					this.store.importMedia([file], actor, trackId ? { trackId, startMs } : undefined),
+				);
+				return {
+					libraryId: id,
+					media: imported.map((item) => this.describeAsset(item)),
+					sourcePage: asset.sourcePage,
+					license: asset.license,
+					licenseUrl: asset.licenseUrl,
+				};
+			}
 			case "import_media": {
 				const { files, trackId, startMs } = parseInput("import_media", params);
 				const assets = await this.job(`Importing ${files.length} file(s)`, () =>
@@ -1260,12 +1300,18 @@ export class Controller extends EventEmitter {
 								.toLowerCase()
 								.includes(query.toLowerCase()),
 					)
-					.map(({ id, name, category, description, guide }) => ({
+					.map(({ id, name, category, description, guide, preview, assetIds }) => ({
 						id,
 						name,
 						category,
 						description,
 						requires: guide?.requires ?? [],
+						preview: preview && {
+							...preview,
+							videoUrl: `https://cue.wicker.life/styles/${preview.video}`,
+							posterUrl: `https://cue.wicker.life/styles/${preview.poster}`,
+						},
+						assetIds: assetIds ?? [],
 					}));
 			}
 			case "show_style": {
@@ -1276,7 +1322,14 @@ export class Controller extends EventEmitter {
 				if (!style) throw new Error(`No style "${id}". Use list_styles to browse them.`);
 				if (!this.hooks.sendCommand({ type: "showStyle", id }))
 					throw new Error("The Cue window is not open.");
-				return style;
+				return {
+					...style,
+					preview: style.preview && {
+						...style.preview,
+						videoUrl: `https://cue.wicker.life/styles/${style.preview.video}`,
+						posterUrl: `https://cue.wicker.life/styles/${style.preview.poster}`,
+					},
+				};
 			}
 			case "run_recipe": {
 				const { id, dryRun } = parseInput("run_recipe", params);

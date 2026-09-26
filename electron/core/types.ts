@@ -645,6 +645,7 @@ export type EditorCommand =
 	| { type: "seek"; ms: number }
 	| { type: "previewAsset"; assetId: string }
 	| { type: "showStyle"; id: string }
+	| { type: "showLibraryAsset"; id: string }
 	| {
 			type: "renderText";
 			requestId: string;

@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 149,
+	"count": 152,
 	"groups": [
 		{
 			"title": "Overview",
@@ -235,6 +235,55 @@
 		{
 			"title": "Media and tracks",
 			"tools": [
+				{
+					"name": "list_library_assets",
+					"description": "Browse Cue's curated stock footage and original graphics. Returns ids, descriptions, tags, preview paths, source and license. Use import_library_asset to add one to the project.",
+					"inputs": [
+						{
+							"name": "query",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "category",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "show_library_asset",
+					"description": "Select a curated asset in Cue's asset gallery and return its source, license and usage notes.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "import_library_asset",
+					"description": "Download or copy a curated asset into the open project and import it as media. Stock footage is downloaded from its credited source; the user must check the source license before publishing.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false,
+							"default": "0"
+						}
+					]
+				},
 				{
 					"name": "import_media",
 					"description": "Add video, audio or image files to the media library. With trackId, also place them back to back from startMs.",
@@ -2199,7 +2248,7 @@
 				},
 				{
 					"name": "list_styles",
-					"description": "Browse the style library. Returns each style's id, name, category, description and required footage; use show_style to select one in the editor and read its full guide.",
+					"description": "Browse the style library. Returns each style's id, name, category, description, preview and recommended library assets; use show_style to select one in the editor and read its full guide.",
 					"inputs": [
 						{
 							"name": "category",

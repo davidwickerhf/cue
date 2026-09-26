@@ -6,11 +6,44 @@
     "description": "A spoken line becomes a sequence of large, timed words with one phrase held for emphasis.",
     "guide": {
       "goal": "Make one memorable sentence feel paced by the speaker rather than by a preset animation.",
-      "requires": ["A short spoken passage with a transcript", "A clear background shot or room for text"],
-      "structure": ["Choose a line of 5–12 words with a clear point.", "Cut to its opening breath, then reveal words on their spoken beats.", "Hold the key phrase for roughly twice the duration of the surrounding words.", "End on the speaker or the next visual idea."],
-      "directions": ["Use auto_captions with a word animation as a starting point, then edit individual text clips where emphasis needs to differ.", "Keep text inside title safe and preserve faces.", "Use one type family and one accent colour; let scale and timing carry the effect."],
-      "review": ["Read every word at normal playback speed.", "Check that the emphasized phrase is still legible on a phone-sized frame."]
-    }
+      "requires": [
+        "A short spoken passage with a transcript",
+        "A clear background shot or room for text"
+      ],
+      "structure": [
+        "Choose a line of 5–12 words with a clear point.",
+        "Cut to its opening breath, then reveal words on their spoken beats.",
+        "Hold the key phrase for roughly twice the duration of the surrounding words.",
+        "End on the speaker or the next visual idea."
+      ],
+      "directions": [
+        "Use auto_captions with a word animation as a starting point, then edit individual text clips where emphasis needs to differ.",
+        "Keep text inside title safe and preserve faces.",
+        "Use one type family and one accent colour; let scale and timing carry the effect."
+      ],
+      "review": [
+        "Read every word at normal playback speed.",
+        "Check that the emphasized phrase is still legible on a phone-sized frame."
+      ]
+    },
+    "preview": {
+      "video": "kinetic-quote.mp4",
+      "poster": "kinetic-quote.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "runner-in-sun"
+    ],
+    "references": [
+      {
+        "label": "Remotion word captions",
+        "url": "https://www.remotion.dev/templates/tiktok"
+      },
+      {
+        "label": "Mixkit kinetic titles",
+        "url": "https://mixkit.co/free-after-effects-templates/"
+      }
+    ]
   },
   {
     "id": "style-beat-grid",
@@ -19,11 +52,49 @@
     "description": "A tight music-led run of changing shots, with one held beat to reset the rhythm.",
     "guide": {
       "goal": "Build energy from shot selection and rhythmic contrast, not from transitions on every cut.",
-      "requires": ["A music track with a steady beat", "At least six distinct shots or images"],
-      "structure": ["Find the downbeats and make a first pass of one shot every two beats.", "Cluster three quick cuts around the strongest musical accent.", "Hold one visually strong shot for four beats.", "Finish on a clear image or title rather than an arbitrary music stop."],
-      "directions": ["Use detect_beats and beat_montage for a draft, then adjust cuts by hand.", "Alternate wide and close views; avoid repeating adjacent angles.", "Reserve speed ramps or zooms for one or two emphasis points."],
-      "review": ["Watch once without audio: the visual sequence should still progress.", "Check the last cut against the music ending."]
-    }
+      "requires": [
+        "A music track with a steady beat",
+        "At least six distinct shots or images"
+      ],
+      "structure": [
+        "Find the downbeats and make a first pass of one shot every two beats.",
+        "Cluster three quick cuts around the strongest musical accent.",
+        "Hold one visually strong shot for four beats.",
+        "Finish on a clear image or title rather than an arbitrary music stop."
+      ],
+      "directions": [
+        "Use detect_beats and beat_montage for a draft, then adjust cuts by hand.",
+        "Alternate wide and close views; avoid repeating adjacent angles.",
+        "Reserve speed ramps or zooms for one or two emphasis points."
+      ],
+      "review": [
+        "Watch once without audio: the visual sequence should still progress.",
+        "Check the last cut against the music ending."
+      ]
+    },
+    "preview": {
+      "video": "beat-grid.mp4",
+      "poster": "beat-grid.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "city-night-drive",
+      "runner-in-sun",
+      "hands-at-work",
+      "camera-portrait",
+      "mountain-aerial",
+      "studio-portrait"
+    ],
+    "references": [
+      {
+        "label": "Mixkit grid slideshow",
+        "url": "https://mixkit.co/free-after-effects-templates/"
+      },
+      {
+        "label": "Remotion audiogram",
+        "url": "https://www.remotion.dev/templates"
+      }
+    ]
   },
   {
     "id": "style-match-motion",
@@ -32,11 +103,41 @@
     "description": "Two different shots meet at a cut because their subjects move in the same direction.",
     "guide": {
       "goal": "Make a cut feel continuous through direction, position and speed of movement.",
-      "requires": ["Two shots with related motion", "Enough handle before and after the cut"],
-      "structure": ["Find the action peak in each shot.", "Trim so the first movement exits as the next enters.", "Align the moving subject near the same screen position.", "Add a brief sound bridge if the cut feels abrupt."],
-      "directions": ["Use slip_clip, trim_clip and transform keyframes to align the action.", "Prefer a hard cut; use a transition only when the footage needs it.", "Keep the perceived motion direction consistent across the cut."],
-      "review": ["Step through two frames on each side of the cut.", "Play at full speed to confirm the eye follows the movement."]
-    }
+      "requires": [
+        "Two shots with related motion",
+        "Enough handle before and after the cut"
+      ],
+      "structure": [
+        "Find the action peak in each shot.",
+        "Trim so the first movement exits as the next enters.",
+        "Align the moving subject near the same screen position.",
+        "Add a brief sound bridge if the cut feels abrupt."
+      ],
+      "directions": [
+        "Use slip_clip, trim_clip and transform keyframes to align the action.",
+        "Prefer a hard cut; use a transition only when the footage needs it.",
+        "Keep the perceived motion direction consistent across the cut."
+      ],
+      "review": [
+        "Step through two frames on each side of the cut.",
+        "Play at full speed to confirm the eye follows the movement."
+      ]
+    },
+    "preview": {
+      "video": "match-motion.mp4",
+      "poster": "match-motion.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "camera-portrait",
+      "city-night-drive"
+    ],
+    "references": [
+      {
+        "label": "Motion Array transitions",
+        "url": "https://motionarray.com/browse/search/transitions/"
+      }
+    ]
   },
   {
     "id": "style-paper-collage",
@@ -45,11 +146,42 @@
     "description": "Layered picture cutouts, labels and staggered entrances create a tactile editorial spread.",
     "guide": {
       "goal": "Turn a group of related images into a composed, readable sequence with visible depth.",
-      "requires": ["Three or more related images or short shots", "A phrase or label that gives the sequence a subject"],
-      "structure": ["Start on a quiet background and introduce the first image.", "Layer two supporting images at different scales with slight timing offsets.", "Bring in a short label after the picture is understood.", "Clear the spread with one decisive cut or wipe."],
-      "directions": ["Use picture-in-picture layout or clip transforms on separate video tracks.", "Use restrained rotation and shadow; preserve a strong reading order.", "Animate position and scale with keyframes, staggered by a few frames."],
-      "review": ["Check overlaps at every entrance and exit.", "Ensure text remains legible over all layers."]
-    }
+      "requires": [
+        "Three or more related images or short shots",
+        "A phrase or label that gives the sequence a subject"
+      ],
+      "structure": [
+        "Start on a quiet background and introduce the first image.",
+        "Layer two supporting images at different scales with slight timing offsets.",
+        "Bring in a short label after the picture is understood.",
+        "Clear the spread with one decisive cut or wipe."
+      ],
+      "directions": [
+        "Use picture-in-picture layout or clip transforms on separate video tracks.",
+        "Use restrained rotation and shadow; preserve a strong reading order.",
+        "Animate position and scale with keyframes, staggered by a few frames."
+      ],
+      "review": [
+        "Check overlaps at every entrance and exit.",
+        "Ensure text remains legible over all layers."
+      ]
+    },
+    "preview": {
+      "video": "paper-collage.mp4",
+      "poster": "paper-collage.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "mountain-aerial",
+      "camera-portrait",
+      "hands-at-work"
+    ],
+    "references": [
+      {
+        "label": "Motion Array collage gallery",
+        "url": "https://motionarray.com/browse/search/collage/"
+      }
+    ]
   },
   {
     "id": "style-light-leak",
@@ -58,11 +190,40 @@
     "description": "A warm flash bridges two moments, then resolves quickly back into the picture.",
     "guide": {
       "goal": "Mark a change of place or time with one brief wash of light.",
-      "requires": ["Two shots with a motivated change", "A warm light texture or gradient image to use as a short overlay"],
-      "structure": ["Start the colour bloom just before the cut.", "Peak the wash across the cut for only a handful of frames.", "Reveal the second shot cleanly and let it settle."],
-      "directions": ["Place the light image on an upper picture track over the cut, with a short fade in and fade out.", "Avoid a full white frame unless it matches the footage's exposure.", "Match the brightness of the adjacent shots before adding the flash."],
-      "review": ["Check for an unintended blank frame.", "View the transition at full speed and at reduced brightness."]
-    }
+      "requires": [
+        "Two shots with a motivated change",
+        "A warm light texture or gradient image to use as a short overlay"
+      ],
+      "structure": [
+        "Start the colour bloom just before the cut.",
+        "Peak the wash across the cut for only a handful of frames.",
+        "Reveal the second shot cleanly and let it settle."
+      ],
+      "directions": [
+        "Place the light image on an upper picture track over the cut, with a short fade in and fade out.",
+        "Avoid a full white frame unless it matches the footage's exposure.",
+        "Match the brightness of the adjacent shots before adding the flash."
+      ],
+      "review": [
+        "Check for an unintended blank frame.",
+        "View the transition at full speed and at reduced brightness."
+      ]
+    },
+    "preview": {
+      "video": "light-leak.mp4",
+      "poster": "light-leak.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "mountain-aerial",
+      "runner-in-sun"
+    ],
+    "references": [
+      {
+        "label": "Motion Array light leak gallery",
+        "url": "https://motionarray.com/browse/search/light%20leaks%20transitions/"
+      }
+    ]
   },
   {
     "id": "style-screen-focus",
@@ -71,11 +232,38 @@
     "description": "A clean screen demo that follows the pointer, zooms into the important action and returns to context.",
     "guide": {
       "goal": "Help the viewer understand one interface action without losing where it happened.",
-      "requires": ["A screen recording", "One action or feature to explain"],
-      "structure": ["Open with the full interface for orientation.", "Move in before the action begins and hold through the interaction.", "Return to the full view after the result appears.", "Cut dead time around the action."],
-      "directions": ["Use the studio look when recording or add_zoom and transform keyframes afterward.", "Keep the pointer visible and the active target away from the camera bubble.", "Make each zoom slow enough to track, then hold still while text is read."],
-      "review": ["Check that every click target can be identified at normal playback speed.", "Verify the camera bubble never covers the active control."]
-    }
+      "requires": [
+        "A screen recording",
+        "One action or feature to explain"
+      ],
+      "structure": [
+        "Open with the full interface for orientation.",
+        "Move in before the action begins and hold through the interaction.",
+        "Return to the full view after the result appears.",
+        "Cut dead time around the action."
+      ],
+      "directions": [
+        "Use the studio look when recording or add_zoom and transform keyframes afterward.",
+        "Keep the pointer visible and the active target away from the camera bubble.",
+        "Make each zoom slow enough to track, then hold still while text is read."
+      ],
+      "review": [
+        "Check that every click target can be identified at normal playback speed.",
+        "Verify the camera bubble never covers the active control."
+      ]
+    },
+    "preview": {
+      "video": "screen-focus.mp4",
+      "poster": "screen-focus.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [],
+    "references": [
+      {
+        "label": "Remotion recorder",
+        "url": "https://www.remotion.dev/templates"
+      }
+    ]
   },
   {
     "id": "style-split-reveal",
@@ -84,11 +272,40 @@
     "description": "A two-up comparison starts balanced and then gives the winning image the full frame.",
     "guide": {
       "goal": "Show a meaningful before/after or two viewpoints with an unmistakable reveal.",
-      "requires": ["Two comparable shots or states", "A clear reason to favour one side"],
-      "structure": ["Introduce both views at equal size.", "Hold long enough for comparison.", "Move the divider or cut to the chosen view.", "End on the result at full frame."],
-      "directions": ["Use arrange_clips for the initial two-up layout.", "Match colour and scale before the reveal.", "Keep captions outside the dividing line."],
-      "review": ["The comparison must be understandable without a label.", "Check framing in square and vertical variants if needed."]
-    }
+      "requires": [
+        "Two comparable shots or states",
+        "A clear reason to favour one side"
+      ],
+      "structure": [
+        "Introduce both views at equal size.",
+        "Hold long enough for comparison.",
+        "Move the divider or cut to the chosen view.",
+        "End on the result at full frame."
+      ],
+      "directions": [
+        "Use arrange_clips for the initial two-up layout.",
+        "Match colour and scale before the reveal.",
+        "Keep captions outside the dividing line."
+      ],
+      "review": [
+        "The comparison must be understandable without a label.",
+        "Check framing in square and vertical variants if needed."
+      ]
+    },
+    "preview": {
+      "video": "split-reveal.mp4",
+      "poster": "split-reveal.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "mountain-aerial"
+    ],
+    "references": [
+      {
+        "label": "Mixkit transitions",
+        "url": "https://mixkit.co/free-after-effects-templates/transitions/"
+      }
+    ]
   },
   {
     "id": "style-quiet-portrait",
@@ -97,10 +314,265 @@
     "description": "A restrained character moment built from a close shot, breathing room and a spare title.",
     "guide": {
       "goal": "Let a person or object carry the scene with minimal editorial interference.",
-      "requires": ["A strong portrait or detail shot", "Clean natural sound or a low music bed"],
-      "structure": ["Begin before the visible action so the shot can settle.", "Introduce a short title after the subject is established.", "Hold through a natural gesture or line of speech.", "Leave on a motivated movement or breath."],
-      "directions": ["Use subtle grading and a gentle push-in only if the frame is truly static.", "Avoid decorative transitions and dense captions.", "Keep the title away from the face and use generous negative space."],
-      "review": ["Watch with sound muted to check the visual pacing.", "Confirm the title feels secondary to the subject."]
+      "requires": [
+        "A strong portrait or detail shot",
+        "Clean natural sound or a low music bed"
+      ],
+      "structure": [
+        "Begin before the visible action so the shot can settle.",
+        "Introduce a short title after the subject is established.",
+        "Hold through a natural gesture or line of speech.",
+        "Leave on a motivated movement or breath."
+      ],
+      "directions": [
+        "Use subtle grading and a gentle push-in only if the frame is truly static.",
+        "Avoid decorative transitions and dense captions.",
+        "Keep the title away from the face and use generous negative space."
+      ],
+      "review": [
+        "Watch with sound muted to check the visual pacing.",
+        "Confirm the title feels secondary to the subject."
+      ]
+    },
+    "preview": {
+      "video": "quiet-portrait.mp4",
+      "poster": "quiet-portrait.jpg",
+      "durationMs": 4000
+    },
+    "assetIds": [
+      "studio-portrait"
+    ],
+    "references": [
+      {
+        "label": "Mixkit fading text",
+        "url": "https://mixkit.co/free-after-effects-templates/fade/"
+      }
+    ]
+  },
+  {
+    "id": "style-whip-pan",
+    "name": "Whip pan",
+    "category": "Transitions",
+    "description": "A fast directional camera move carries the eye from one place to another.",
+    "guide": {
+      "goal": "Bridge a real change of scene with a short burst of matching lateral motion.",
+      "requires": [
+        "Two shots with camera or subject motion in the same direction",
+        "Several frames of handle on both sides of the cut"
+      ],
+      "structure": [
+        "Find the moment motion accelerates in shot A.",
+        "Cut on peak blur into a similarly directed motion in shot B.",
+        "Let shot B settle before adding text or another cut."
+      ],
+      "directions": [
+        "Trim or slip each shot to align the motion; try a short slide transition only if a hard cut does not read.",
+        "Keep the transition under half a second and preserve the original scene sound under it."
+      ],
+      "review": [
+        "Watch at normal speed for a visible hitch or reversal.",
+        "Pause before and after the cut to check that the subject remains legible."
+      ]
+    },
+    "assetIds": [
+      "city-night-drive",
+      "mountain-aerial"
+    ],
+    "references": [
+      {
+        "label": "Motion Array camera transitions",
+        "url": "https://motionarray.com/browse/search/transitions/"
+      },
+      {
+        "label": "Mixkit swipe transitions",
+        "url": "https://mixkit.co/free-after-effects-templates/transitions/"
+      }
+    ],
+    "preview": {
+      "video": "whip-pan.mp4",
+      "poster": "whip-pan.jpg",
+      "durationMs": 4000
+    }
+  },
+  {
+    "id": "style-film-strip",
+    "name": "Moving film strip",
+    "category": "Editorial",
+    "description": "Three moving frames travel through a tactile film contact sheet before one becomes the story.",
+    "guide": {
+      "goal": "Present several related views as selected evidence from a larger roll of footage.",
+      "requires": [
+        "Three or more distinct shots",
+        "A clear shot to land on"
+      ],
+      "structure": [
+        "Open on a moving strip of short views.",
+        "Slow the strip as the chosen frame nears center.",
+        "Cut or expand that frame to full picture and continue the scene."
+      ],
+      "directions": [
+        "Place the shots on separate picture tracks in a repeated three-column layout.",
+        "Use simple labels or frame numbers sparingly; avoid film damage overlays that hide the footage."
+      ],
+      "review": [
+        "Each frame must remain recognizable at phone size.",
+        "The chosen shot should be the same image before and after expansion."
+      ]
+    },
+    "assetIds": [
+      "runner-in-sun",
+      "camera-portrait",
+      "city-night-drive"
+    ],
+    "references": [
+      {
+        "label": "Mixkit photo frame slideshow",
+        "url": "https://mixkit.co/free-after-effects-templates/"
+      },
+      {
+        "label": "Motion Array film textures",
+        "url": "https://motionarray.com/browse/search/transitions/"
+      }
+    ],
+    "preview": {
+      "video": "film-strip.mp4",
+      "poster": "film-strip.jpg",
+      "durationMs": 4000
+    }
+  },
+  {
+    "id": "style-video-mask-title",
+    "name": "Video mask title",
+    "category": "Typography",
+    "description": "Moving footage lives inside a large word before the full scene takes over.",
+    "guide": {
+      "goal": "Let one word introduce the subject visually, then reveal the image behind it.",
+      "requires": [
+        "A concise word of four to eight letters",
+        "Footage with movement and contrast inside the letterforms"
+      ],
+      "structure": [
+        "Start on a dark field with the footage visible through the title.",
+        "Hold the word long enough to read.",
+        "Open to the full shot and continue the motion."
+      ],
+      "directions": [
+        "Use a large bold text clip with a media mask if available; otherwise build a similar reveal from a full-screen title followed by the same shot.",
+        "Choose footage with bright detail centered in the letters."
+      ],
+      "review": [
+        "Read the word at a glance on a phone.",
+        "Ensure the footage after the reveal matches what was visible inside the title."
+      ]
+    },
+    "assetIds": [
+      "runner-in-sun"
+    ],
+    "references": [
+      {
+        "label": "Mixkit video mask title",
+        "url": "https://mixkit.co/free-after-effects-templates/transitions/"
+      }
+    ],
+    "preview": {
+      "video": "video-mask-title.mp4",
+      "poster": "video-mask-title.jpg",
+      "durationMs": 4000
+    }
+  },
+  {
+    "id": "style-contact-grid",
+    "name": "Contact grid",
+    "category": "Layouts",
+    "description": "A four-up moving contact sheet narrows the viewer’s attention to one chosen shot.",
+    "guide": {
+      "goal": "Compare possibilities quickly, then make a deliberate visual choice.",
+      "requires": [
+        "Four related but visibly different shots",
+        "One preferred shot to continue"
+      ],
+      "structure": [
+        "Show all four shots together with even margins.",
+        "Allow the viewer to scan the set.",
+        "Expand or cut to the chosen tile at full frame."
+      ],
+      "directions": [
+        "Use arrange_clips for a two-by-two grid.",
+        "Match exposure and framing before the expansion.",
+        "Use an upper track or a cut to continue the chosen shot full frame."
+      ],
+      "review": [
+        "All four tiles are distinct and recognizable.",
+        "The exit leads to the same shot chosen in the grid."
+      ]
+    },
+    "assetIds": [
+      "mountain-aerial",
+      "runner-in-sun",
+      "hands-at-work",
+      "camera-portrait"
+    ],
+    "references": [
+      {
+        "label": "Mixkit grid photo slideshow",
+        "url": "https://mixkit.co/free-after-effects-templates/"
+      }
+    ],
+    "preview": {
+      "video": "contact-grid.mp4",
+      "poster": "contact-grid.jpg",
+      "durationMs": 4000
+    }
+  },
+  {
+    "id": "style-explainer-dossier",
+    "name": "Explainer dossier",
+    "category": "Editorial",
+    "description": "A question becomes a map, a piece of footage and a visible chain of evidence.",
+    "guide": {
+      "goal": "Explain a researched claim through geography, source material and human-scale footage, in Cue’s own editorial design.",
+      "requires": [
+        "One factual question and sources that support the answer",
+        "A relevant map or location visual",
+        "Context footage and at least one document or data point"
+      ],
+      "structure": [
+        "Open with the question and a specific geographic or visual hook.",
+        "Locate the subject on a map, labeling only what the viewer needs.",
+        "Move from map to real footage to document or data evidence.",
+        "Return to the question and state the supported conclusion."
+      ],
+      "directions": [
+        "Use the Cartographic grid and Document page from the asset library as optional canvases; replace their generic route and headings with accurate project-specific labels.",
+        "Use add_text and add_overlay for callouts and source lines; keep every claim tied to an on-screen citation or source.",
+        "Keep animated moves purposeful and give the map a readable hold."
+      ],
+      "review": [
+        "Every geographic label and number is sourced and accurate.",
+        "The conclusion is supported by the footage and evidence shown.",
+        "No decorative map route is mistaken for a real location."
+      ]
+    },
+    "assetIds": [
+      "cartographic-grid",
+      "document-paper",
+      "mountain-aerial",
+      "city-night-drive"
+    ],
+    "references": [
+      {
+        "label": "Johnny Harris — about his visual journalism",
+        "url": "https://www.johnnyharris.ch/about"
+      },
+      {
+        "label": "Johnny Harris — Vox Borders portfolio",
+        "url": "https://www.johnnyharris.ch/portfolio"
+      }
+    ],
+    "preview": {
+      "video": "explainer-dossier.mp4",
+      "poster": "explainer-dossier.jpg",
+      "durationMs": 4000
     }
   }
 ]
