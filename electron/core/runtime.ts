@@ -243,7 +243,7 @@ export function buildRuntime(
 			need("image");
 			return generateImage(creds as AiCredentials, {
 				prompt,
-				model: options.model ?? "gpt-image-1",
+				model: options.model ?? "gpt-image-2.5-flare",
 				size: options.size,
 			});
 		},

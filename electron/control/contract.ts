@@ -1035,7 +1035,7 @@ export const contract = {
 	},
 	update_ai: {
 		description:
-			"Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel.",
+			"Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable.",
 		input: { ai: aiSchema.partial() },
 	},
 	add_marker: {

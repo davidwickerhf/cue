@@ -7,6 +7,7 @@ import { ExportDialog } from "../ExportDialog";
 import { CaptureBar, RecordDialog } from "../RecordDialog";
 import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
+import { VoiceoverDialog } from "../VoiceoverDialog";
 import { Dock } from "./Dock";
 import { EditorHeader } from "./EditorHeader";
 import { EditorSidebar } from "./EditorSidebar";
@@ -84,6 +85,7 @@ export function EditorShell() {
 			<RelinkDialog />
 			<ExportDialog />
 			<RecordDialog />
+			<VoiceoverDialog />
 			<CaptureBar />
 		</div>
 	);

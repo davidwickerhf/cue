@@ -325,9 +325,7 @@ function Transport({ project }: { project: ProjectSnapshot }) {
 					disabled={!line && !recording}
 					aria-label={recording ? "Stop recording" : "Record the selected line"}
 					title={recording ? "Stop (Space)" : line ? `Record ${line.id} (R)` : "Record"}
-					onClick={() =>
-						recording ? void recorder.stop() : line && void recorder.record(project, line)
-					}
+					onClick={() => (recording ? void recorder.stop() : line && recorder.prepare(line.id))}
 				>
 					<span
 						className={cn(

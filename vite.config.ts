@@ -44,5 +44,5 @@ export default defineConfig(({ mode }) => ({
 	resolve: { alias: { "@": path.resolve(__dirname, "src") } },
 	base: "./",
 	build: { target: "esnext", outDir: "dist" },
-	test: { include: ["test/**/*.test.ts"], environment: "node", setupFiles: ["test/setup.ts"] },
+	test: { include: ["test/**/*.test.ts"], environment: "node", setupFiles: ["test/setup.ts"], maxWorkers: 2 },
 }));

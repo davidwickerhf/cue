@@ -1,9 +1,10 @@
 import type { LineView, ProjectSnapshot } from "../../electron/core/types";
 import { notify } from "./api";
 import { playback } from "./playback";
-import { createStore } from "./state";
+import { createStore, editor } from "./state";
 
 export type RecordPhase = "idle" | "countdown" | "recording" | "saving";
+export const voiceoverPrompt = createStore({ lineId: null as string | null });
 
 /**
  * Microphone recording over the timeline. The take's `recordedAtMs` is the
@@ -13,6 +14,7 @@ export type RecordPhase = "idle" | "countdown" | "recording" | "saving";
 class Recorder {
 	readonly status = createStore({
 		phase: "idle" as RecordPhase,
+		countdown: 0,
 		lineId: null as string | null,
 		level: 0,
 		micReady: false,
@@ -28,6 +30,12 @@ class Recorder {
 	private recordedAtMs = 0;
 	private stopTimer: (() => void) | null = null;
 	private requestId: string | undefined;
+	private startToken = 0;
+
+	prepare(lineId: string) {
+		if (this.status.get().phase !== "idle") return;
+		voiceoverPrompt.set({ lineId });
+	}
 
 	async ensureMic(): Promise<MediaStream> {
 		const { deviceId } = this.status.get();
@@ -41,7 +49,9 @@ class Recorder {
 			throw new Error(
 				"Microphone access is off. Allow Cue in System Settings → Privacy & Security → Microphone.",
 			);
-		this.stream?.getTracks().forEach((t) => t.stop());
+		this.stream?.getTracks().forEach((t) => {
+			t.stop();
+		});
 		this.stream = await navigator.mediaDevices.getUserMedia({
 			audio: {
 				deviceId: deviceId ? { exact: deviceId } : undefined,
@@ -92,8 +102,12 @@ class Recorder {
 	) {
 		if (this.status.get().phase !== "idle") return;
 		this.requestId = options.requestId;
+		const token = ++this.startToken;
+		this.status.set({ phase: "countdown", lineId: line.id, countdown: 0, error: null });
+		window.cue.reportRecorder({ recordingLineId: line.id });
 		try {
 			const stream = await this.ensureMic();
+			if (token !== this.startToken) return;
 			const settings = project.data.settings;
 			const preroll = options.prerollMs ?? settings.prerollMs;
 			const from = Math.max(0, line.startMs - preroll);
@@ -110,10 +124,15 @@ class Recorder {
 			recorder.ondataavailable = (event) => {
 				if (event.data.size > 0) this.chunks.push(event.data);
 			};
-			this.status.set({ phase: "countdown", lineId: line.id, error: null });
-			window.cue.reportRecorder({ recordingLineId: line.id });
+			this.status.set({ countdown: 3 });
 			playback.pause();
 			playback.seek(from);
+			for (let count = 3; count > 0; count--) {
+				this.status.set({ countdown: count });
+				await new Promise((resolve) => setTimeout(resolve, 1000));
+				if (this.recorder !== recorder) return;
+			}
+			this.status.set({ countdown: 0 });
 			await new Promise<void>((resolve) => {
 				recorder.onstart = () => {
 					this.recordedAtMs = playback.currentMs;
@@ -130,10 +149,12 @@ class Recorder {
 			});
 			this.stopTimer = unsubscribe;
 		} catch (error) {
+			if (token !== this.startToken) return;
+			const requestId = this.requestId;
 			this.reset();
 			const message = (error as Error).message;
 			this.status.set({ error: message });
-			if (this.requestId) window.cue.failRecording(this.requestId, message);
+			if (requestId) window.cue.failRecording(requestId, message);
 			notify(message, "danger");
 		}
 	}
@@ -142,6 +163,7 @@ class Recorder {
 		const recorder = this.recorder;
 		const { lineId, phase } = this.status.get();
 		if (!recorder || !lineId || phase === "saving" || phase === "idle") return;
+		if (recorder.state === "inactive") return this.cancel();
 		this.stopTimer?.();
 		this.stopTimer = null;
 		this.status.set({ phase: "saving" });
@@ -184,10 +206,12 @@ class Recorder {
 	}
 
 	private reset() {
+		this.startToken++;
+		playback.setFilter(editor.get().previewMode);
 		this.recorder = null;
 		this.chunks = [];
 		this.requestId = undefined;
-		this.status.set({ phase: "idle", lineId: null });
+		this.status.set({ phase: "idle", lineId: null, countdown: 0 });
 		window.cue.reportRecorder({ recordingLineId: null });
 	}
 }

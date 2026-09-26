@@ -2444,7 +2444,7 @@
 				},
 				{
 					"name": "update_ai",
-					"description": "Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel.",
+					"description": "Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable.",
 					"inputs": [
 						{
 							"name": "ai",

@@ -112,9 +112,7 @@ function MicBar() {
 				type="button"
 				aria-label={recording ? "Stop recording" : "Record the selected line"}
 				disabled={!line && !recording}
-				onClick={() =>
-					recording ? void recorder.stop() : project && line && void recorder.record(project, line)
-				}
+				onClick={() => (recording ? void recorder.stop() : line && recorder.prepare(line.id))}
 				className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-field transition-colors hover:border-danger/60 disabled:opacity-40"
 			>
 				{recording ? (
@@ -181,7 +179,6 @@ function LineRow({
 	aiReady: boolean;
 	busy: boolean;
 }) {
-	const project = useProject();
 	const status = STATUS_STYLE[line.status];
 	return (
 		<li>
@@ -231,7 +228,7 @@ function LineRow({
 						label="Record this line"
 						shortcut="R"
 						disabled={busy}
-						onPress={() => project && void recorder.record(project, line)}
+						onPress={() => recorder.prepare(line.id)}
 					>
 						<Microphone className="size-3.5" />
 					</IconButton>
@@ -373,8 +370,8 @@ function LineDetail({ line, aiReady }: { line: LineView; aiReady: boolean }) {
 			>
 				{line.takes.length === 0 ? (
 					<p className="text-[12px] text-muted">
-						Press record (R) and read the line when the countdown reaches it. Recording stops on its
-						own after the max length.
+						Press record (R) to review the line, then start a take when ready. Cue counts down
+						before rolling and stops after the max length.
 					</p>
 				) : (
 					<ul className="-mx-1 flex flex-col gap-1">

@@ -770,7 +770,7 @@ export function Timeline() {
 									role="button"
 									tabIndex={-1}
 									onPointerDown={(e) => onLineDown(line, e)}
-									onDoubleClick={() => project && void recorder.record(project, line)}
+									onDoubleClick={() => recorder.prepare(line.id)}
 									title={`${line.id}: ${line.text}`}
 									className={cn(
 										"absolute top-1.5 bottom-1.5 flex cursor-grab items-center gap-1.5 overflow-hidden rounded-md border px-1.5 text-[11px] font-medium",

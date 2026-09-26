@@ -59,7 +59,7 @@ export const DEFAULT_AI: AiSettings = {
 	voice: "cedar",
 	voiceInstructions: "Natural, warm and conversational. Clear, moderate pace.",
 	transcriptionModel: "gpt-4o-transcribe",
-	imageModel: "gpt-image-1",
+	imageModel: "gpt-image-2.5-flare",
 };
 
 export const NO_CROP = { left: 0, top: 0, right: 0, bottom: 0 };

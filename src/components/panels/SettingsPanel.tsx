@@ -21,7 +21,7 @@ const SIZES = [
 export function SettingsPanel() {
 	const project = useProject();
 	if (!project) return null;
-	const { canvas, settings, export: out } = project.data;
+	const { canvas, settings, export: out, ai } = project.data;
 	const setSettings = (patch: Record<string, unknown>) =>
 		void run("update_settings", { settings: patch });
 	const setExport = (patch: Record<string, unknown>) =>
@@ -29,6 +29,29 @@ export function SettingsPanel() {
 
 	return (
 		<div className="flex flex-col divide-y divide-separator">
+			<Section title="Generated images">
+				<Field
+					label="OpenAI model"
+					hint="Flare is fast; Sunburst gives finer control. Existing projects keep their saved model."
+				>
+					<select
+						value={ai.imageModel}
+						onChange={(event) => void run("update_ai", { ai: { imageModel: event.target.value } })}
+						className="h-8 w-full rounded-md border border-border bg-field px-2 text-[12px] outline-none focus:border-accent"
+					>
+						<option value="gpt-image-2.5-flare">GPT Image 2.5 Flare</option>
+						<option value="gpt-image-2.5-sunburst">GPT Image 2.5 Sunburst</option>
+						{ai.imageModel !== "gpt-image-2.5-flare" &&
+							ai.imageModel !== "gpt-image-2.5-sunburst" && (
+								<option value={ai.imageModel}>{ai.imageModel} (saved)</option>
+							)}
+					</select>
+				</Field>
+				<p className="text-[11px] leading-relaxed text-muted">
+					Uses the OpenAI key already stored in Cue's app settings. Generated stills are added to
+					this project's media library.
+				</p>
+			</Section>
 			<Section title="Canvas">
 				<div className="flex flex-wrap gap-1.5">
 					{SIZES.map((s) => (

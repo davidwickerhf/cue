@@ -262,7 +262,7 @@ export function useShortcuts() {
 			// Voiceover
 			else if (key === "r" && !mod) {
 				const line = findLine(project, state.selectedLineId);
-				if (line) void recorder.record(project, line);
+				if (line) recorder.prepare(line.id);
 			}
 		};
 		// The Edit menu's copy/cut/paste arrive as clipboard events rather than key presses.
