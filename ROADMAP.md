@@ -76,8 +76,8 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 
 Today a workspace only resizes panels and switches the sidebar tab. Each one should change what the editor is for:
 
-- [ ] Editing: source monitor next to the viewer (two-up), media bins
-- [ ] Colour: a clip strip to grade shot by shot, split-screen before/after
+- [x] Editing: source monitor next to the viewer (two-up, with its own transport, in/out marks, insert and overwrite, and drag to the timeline), media bins
+- [x] Colour: a clip strip to grade shot by shot (copy and paste grades, match the previous shot, copy_grade for agents), split-screen before/after with a draggable divider
 - [x] Audio: tall audio tracks with waveforms and volume lines, the mixer docked beside the viewer with meters per track, video tracks low (EQ, compressor and LUFS readout: see section 4)
 - [x] Colour: scopes (waveform, vectorscope, histogram), hold-to-compare before/after, colour tools open in the inspector
 - [x] Voiceover: script as a teleprompter beside the viewer, takes per line, record controls and input meter always visible, the voiceover track pinned at the top

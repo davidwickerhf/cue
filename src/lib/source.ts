@@ -18,6 +18,9 @@ export const source = createStore<{
 	playing: boolean;
 }>({ assetId: null, active: false, inMs: null, outMs: null, currentMs: 0, playing: false });
 
+/** Drag data for the marked range of the source clip: {assetId, inMs, outMs}. */
+export const SOURCE_MIME = "application/x-cue-source-range";
+
 let element: HTMLMediaElement | null = null;
 
 export function attachSource(el: HTMLMediaElement | null) {

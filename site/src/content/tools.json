@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 143,
+	"count": 144,
 	"groups": [
 		{
 			"title": "Overview",
@@ -853,6 +853,28 @@
 							"name": "trackId",
 							"type": "string",
 							"required": false
+						}
+					]
+				},
+				{
+					"name": "copy_grade",
+					"description": "Copy one clip's colour grade (color, including its LUT) to other video or picture clips, e.g. to match shots from the same scene. effects (default true) copies the picture effects (blur, sharpen, vignette, glow, stabilize) too. The whole look is copied: an ungraded source clears the targets' grade. Text clips in toClipIds are skipped.",
+					"inputs": [
+						{
+							"name": "fromClipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "toClipIds",
+							"type": "string[]",
+							"required": true
+						},
+						{
+							"name": "effects",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
 						}
 					]
 				},

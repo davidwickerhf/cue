@@ -1,10 +1,19 @@
-import { ArrowFatLinesDown, ArrowLineDown, Pause, Play, Waveform, X } from "@phosphor-icons/react";
+import {
+	ArrowFatLinesDown,
+	ArrowLineDown,
+	FilmSlate,
+	Pause,
+	Play,
+	Waveform,
+	X,
+} from "@phosphor-icons/react";
 import { useEffect } from "react";
-import type { ProjectSnapshot } from "../../../electron/core/types";
+import type { Asset, ProjectSnapshot } from "../../../electron/core/types";
 import {
 	attachSource,
 	closeSource,
 	markSource,
+	SOURCE_MIME,
 	seekSource,
 	showTimeline,
 	source,
@@ -52,33 +61,140 @@ export function ViewerTabs({ project }: { project: ProjectSnapshot }) {
 	);
 }
 
+/** The source monitor over the viewer (single-viewer layout), while its tab is chosen. */
 export function SourceMonitor({ project }: { project: ProjectSnapshot }) {
-	const { assetId, active, inMs, outMs, currentMs, playing } = source.use((s) => s);
+	const { assetId, active } = source.use((s) => s);
 	const asset = project.data.assets.find((a) => a.id === assetId);
-	const url = asset ? project.assetUrls[asset.id] : "";
-	const durationMs = asset?.durationMs ?? 0;
-
 	useEffect(() => () => attachSource(null), []);
-
 	if (!asset || !active) return null;
+	return (
+		<div className="absolute inset-0 z-30 flex flex-col bg-viewer">
+			<SourceBody project={project} asset={asset} className="pt-12" />
+		</div>
+	);
+}
+
+/**
+ * The source monitor beside the viewer (two-up, as in Premiere and Resolve):
+ * always there, empty until a clip is opened. Clicking it gives it the
+ * transport keys; clicking the viewer gives them back to the timeline.
+ */
+export function SourcePane({ project }: { project: ProjectSnapshot }) {
+	const { assetId, active } = source.use((s) => s);
+	const asset = project.data.assets.find((a) => a.id === assetId);
+	useEffect(() => () => attachSource(null), []);
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: focus follows the click, as between Premiere's monitors
+		<div
+			className="relative flex min-w-0 flex-1 flex-col border-r border-separator bg-viewer"
+			onPointerDownCapture={() => asset && !active && source.set({ active: true })}
+		>
+			<MonitorHeader label="Source" active={active && !!asset}>
+				{asset && (
+					<>
+						<span className="min-w-0 truncate text-foreground/80">{asset.name}</span>
+						<button
+							type="button"
+							aria-label="Close source"
+							title="Close source"
+							onClick={closeSource}
+							className="ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+						>
+							<X className="size-3.5" />
+						</button>
+					</>
+				)}
+			</MonitorHeader>
+			{asset ? (
+				<SourceBody project={project} asset={asset} />
+			) : (
+				<div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+					<FilmSlate className="size-8 text-white/25" />
+					<p className="text-[13px] font-medium text-white/70">No source clip</p>
+					<p className="max-w-60 text-[12px] text-white/45">
+						Double-click a clip in Media to open it here, mark in and out, then insert or overwrite
+						it on the timeline or drag it there.
+					</p>
+				</div>
+			)}
+		</div>
+	);
+}
+
+/** The strip over each monitor in two-up: its name, lit while it has the transport keys. */
+export function MonitorHeader({
+	label,
+	active,
+	children,
+}: {
+	label: string;
+	active: boolean;
+	children?: React.ReactNode;
+}) {
+	return (
+		<div className="flex h-8 shrink-0 items-center gap-2 border-b border-separator bg-surface px-3 text-[12px]">
+			<span
+				className={cn("size-1.5 shrink-0 rounded-full", active ? "bg-accent" : "bg-white/20")}
+			/>
+			<span className={cn("font-semibold", active ? "text-foreground" : "text-muted")}>
+				{label}
+			</span>
+			{children}
+		</div>
+	);
+}
+
+function SourceBody({
+	project,
+	asset,
+	className,
+}: {
+	project: ProjectSnapshot;
+	asset: Asset;
+	className?: string;
+}) {
+	const { inMs, outMs, currentMs, playing } = source.use((s) => s);
+	const url = project.assetUrls[asset.id] ?? "";
+	const durationMs = asset.durationMs ?? 0;
 	const pct = (ms: number) => `${durationMs ? (ms / durationMs) * 100 : 0}%`;
 	const onBar = (e: React.PointerEvent<HTMLDivElement>) => {
 		const r = e.currentTarget.getBoundingClientRect();
 		seekSource(((e.clientX - r.left) / r.width) * durationMs);
 	};
 	const span = (outMs ?? durationMs) - (inMs ?? 0);
+	const marked = inMs !== null || outMs !== null;
 
 	return (
-		<div className="absolute inset-0 z-30 flex flex-col bg-viewer">
-			<div className="relative flex min-h-0 flex-1 items-center justify-center p-4 pt-12">
+		<>
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: dragging the picture places the marked range on the timeline */}
+			<div
+				draggable
+				onDragStart={(e) => {
+					e.dataTransfer.setData(SOURCE_MIME, JSON.stringify({ assetId: asset.id, inMs, outMs }));
+					e.dataTransfer.effectAllowed = "copy";
+				}}
+				title="Drag onto the timeline to place the marked part"
+				className={cn(
+					"relative flex min-h-0 flex-1 cursor-grab items-center justify-center p-4 active:cursor-grabbing",
+					className,
+				)}
+			>
 				{asset.kind === "image" ? (
-					<img src={url} alt="" className="max-h-full max-w-full object-contain" />
+					<img
+						src={url}
+						alt=""
+						draggable={false}
+						className="max-h-full max-w-full object-contain"
+					/>
 				) : (
 					<>
 						<video
 							ref={attachSource}
 							src={url}
-							className={cn("max-h-full max-w-full", asset.kind === "audio" && "hidden")}
+							className={cn(
+								"pointer-events-none max-h-full max-w-full",
+								asset.kind === "audio" && "hidden",
+							)}
 							// Coming back to the source monitor continues where it was.
 							onLoadedMetadata={(e) => {
 								e.currentTarget.currentTime = source.get().currentMs / 1000;
@@ -91,7 +207,7 @@ export function SourceMonitor({ project }: { project: ProjectSnapshot }) {
 					</>
 				)}
 			</div>
-			<div className="flex flex-col gap-2 border-t border-separator bg-surface px-4 py-2.5">
+			<div className="flex flex-col gap-2 border-t border-separator bg-surface px-3 py-2">
 				{asset.kind !== "image" && (
 					// biome-ignore lint/a11y/noStaticElementInteractions: a scrub bar, like the timeline ruler
 					<div
@@ -103,10 +219,23 @@ export function SourceMonitor({ project }: { project: ProjectSnapshot }) {
 						onPointerMove={(e) => e.buttons && onBar(e)}
 					>
 						<div className="absolute inset-x-0 top-2 h-1 rounded-full bg-default" />
-						{(inMs !== null || outMs !== null) && (
+						{marked && (
 							<div
 								className="absolute top-1.5 h-2 rounded-sm bg-accent/50"
-								style={{ left: pct(inMs ?? 0), width: pct((outMs ?? durationMs) - (inMs ?? 0)) }}
+								style={{ left: pct(inMs ?? 0), width: pct(span) }}
+							/>
+						)}
+						{/* The in and out marks as brackets on the bar. */}
+						{inMs !== null && (
+							<div
+								className="absolute top-0.5 h-4 w-1 rounded-l-sm border-y-2 border-l-2 border-accent"
+								style={{ left: pct(inMs) }}
+							/>
+						)}
+						{outMs !== null && (
+							<div
+								className="absolute top-0.5 h-4 w-1 -translate-x-full rounded-r-sm border-y-2 border-r-2 border-accent"
+								style={{ left: pct(outMs) }}
 							/>
 						)}
 						<div
@@ -115,7 +244,7 @@ export function SourceMonitor({ project }: { project: ProjectSnapshot }) {
 						/>
 					</div>
 				)}
-				<div className="grid grid-cols-[1fr_auto_1fr] items-center">
+				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 					<span className="font-mono text-[12px] tabular text-foreground">
 						{formatTime(currentMs)}
 					</span>
@@ -140,25 +269,59 @@ export function SourceMonitor({ project }: { project: ProjectSnapshot }) {
 						<Mark label="Mark out (O)" onPress={() => markSource("out")}>
 							{"}"}
 						</Mark>
-						<div className="mx-2 h-5 w-px bg-separator" />
-						<Mark label="Insert at the playhead (,)" onPress={() => void sourceEdit("insert")}>
-							<ArrowFatLinesDown className="size-4" />
-						</Mark>
-						<Mark
-							label="Overwrite at the playhead (.)"
+						<div className="mx-1.5 h-5 w-px bg-separator" />
+						<EditButton
+							label="Insert"
+							keys=","
+							title="Insert at the playhead: later clips move along (,)"
+							onPress={() => void sourceEdit("insert")}
+						>
+							<ArrowFatLinesDown className="size-3.5" />
+						</EditButton>
+						<EditButton
+							label="Overwrite"
+							keys="."
+							title="Overwrite at the playhead: replaces what is there (.)"
 							onPress={() => void sourceEdit("overwrite")}
 						>
-							<ArrowLineDown className="size-4" />
-						</Mark>
+							<ArrowLineDown className="size-3.5" />
+						</EditButton>
 					</div>
-					<span className="justify-self-end text-[11px] text-muted tabular">
-						{inMs !== null || outMs !== null
+					<span className="text-[11px] text-muted tabular">
+						{marked
 							? `In ${formatTime(inMs ?? 0)} · Out ${formatTime(outMs ?? durationMs)} · ${formatTime(span)}`
-							: "Mark in and out, then insert or overwrite"}
+							: "Mark in and out, then insert, overwrite or drag"}
 					</span>
 				</div>
 			</div>
-		</div>
+		</>
+	);
+}
+
+function EditButton({
+	label,
+	keys,
+	title,
+	onPress,
+	children,
+}: {
+	label: string;
+	keys: string;
+	title: string;
+	onPress: () => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			title={title}
+			onClick={onPress}
+			className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-foreground/85 hover:bg-default hover:text-foreground"
+		>
+			{children}
+			{label}
+			<kbd className="font-mono text-[11px] text-muted">{keys}</kbd>
+		</button>
 	);
 }
 

@@ -38,6 +38,8 @@ interface Slot {
 	/** Set once the slot's layer is rebuilt; stops its frame callbacks. */
 	disposed?: boolean;
 	keyedClip?: MediaClip | null;
+	/** Split before/after: the ungraded picture, drawn over the left part of the viewer. */
+	original?: HTMLCanvasElement;
 }
 
 interface VideoLayer {
@@ -60,7 +62,7 @@ interface Index {
 
 const clipEnd = (c: Clip) => c.startMs + c.durationMs;
 
-function cssFilter(grade: ColorGrade | undefined): string {
+export function cssFilter(grade: ColorGrade | undefined): string {
 	if (!grade) return "none";
 	const parts: string[] = [];
 	if (grade.brightness) parts.push(`brightness(${(1 + grade.brightness).toFixed(3)})`);
@@ -178,6 +180,8 @@ class PlaybackEngine {
 	private lastGrain = 0;
 	/** Before/after: pictures without their grade and effects. */
 	private original = false;
+	/** Split before/after: the divider as a share of the viewer's width, or null when off. */
+	private splitAt: number | null = null;
 	private stageW = 0;
 	private stageH = 0;
 	private warmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -256,6 +260,18 @@ class PlaybackEngine {
 	setOriginal(on: boolean) {
 		if (this.original === on) return;
 		this.original = on;
+		this.render(this.currentMs);
+	}
+
+	/**
+	 * Split before/after: left of the divider (a share of the width, 0–1) the
+	 * pictures show without their grade and effects, right of it as graded.
+	 * null turns it off.
+	 */
+	setSplit(at: number | null) {
+		const next = at === null ? null : Math.max(0, Math.min(1, at));
+		if (this.splitAt === next) return;
+		this.splitAt = next;
 		this.render(this.currentMs);
 	}
 
@@ -578,6 +594,7 @@ class PlaybackEngine {
 			image.addEventListener("load", () => {
 				if (slot.keyer && slot.keyedClip?.key && slot.image.style.display !== "none")
 					slot.keyer.draw(slot.image, slot.keyedClip.key);
+				this.drawOriginal(slot);
 			});
 			image.decoding = "async";
 			frame.append(video, image);
@@ -593,6 +610,7 @@ class PlaybackEngine {
 			const redraw = () => {
 				if (slot.keyer && slot.keyedClip?.key && video.style.display !== "none")
 					slot.keyer.draw(video, slot.keyedClip.key);
+				this.drawOriginal(slot);
 			};
 			const onFrame = () => {
 				redraw();
@@ -798,6 +816,7 @@ class PlaybackEngine {
 			slot.image.style.opacity = "";
 			if (slot.keyer) slot.keyer.canvas.style.display = "none";
 		}
+		this.placeOriginal(slot, element, x * W - w / 2, w, h);
 		slot.clipId = clip.id;
 		if (isImage) {
 			if (slot.src !== url) {
@@ -848,7 +867,9 @@ class PlaybackEngine {
 		frame.height = `${this.stageH}px`;
 		frame.transform = "none";
 		frame.opacity = String(Math.max(0, Math.min(1, opacity)));
-		frame.clipPath = "none";
+		// Split before/after: the layer grades only what is right of the divider.
+		const split = this.original ? null : this.splitAt;
+		frame.clipPath = split === null ? "none" : `inset(0 0 0 ${split * 100}%)`;
 		frame.maskImage = clip.mask
 			? `url(${maskUrl(clip.mask, this.stageW / Math.max(1, this.stageH))})`
 			: "none";
@@ -865,6 +886,63 @@ class PlaybackEngine {
 		if (slot.keyer) slot.keyer.canvas.style.display = "none";
 		if (!slot.video.paused) slot.video.pause();
 		slot.clipId = clip.id;
+	}
+
+	/**
+	 * Split before/after: shows the slot's picture ungraded over the part of it
+	 * left of the divider. It sits inside the slot's frame, so position, crop,
+	 * mask, zoom and transitions stay exactly as graded; only the look differs.
+	 * `left` and `w`, `h` are the frame's place and size in the viewer.
+	 */
+	private placeOriginal(slot: Slot, element: HTMLElement, left: number, w: number, h: number) {
+		const cut = this.splitAt === null || this.original ? 0 : this.splitAt * this.stageW - left;
+		const graded = element.style.filter !== "none" || slot.vignette?.style.display === "";
+		if (cut <= 0 || !graded) {
+			if (slot.original && slot.original.style.display !== "none")
+				slot.original.style.display = "none";
+			return;
+		}
+		if (!slot.original) {
+			slot.original = document.createElement("canvas");
+			slot.original.className = "pointer-events-none absolute inset-0 size-full";
+			// Above the picture and its vignette.
+			slot.original.style.zIndex = "3";
+			slot.frame.append(slot.original);
+		}
+		const o = slot.original;
+		o.style.display = "";
+		o.style.clipPath = cut >= w ? "none" : `inset(0 ${w - cut}px 0 0)`;
+		o.style.transform = element.style.transform;
+		o.style.transformOrigin = element.style.transformOrigin;
+		const dpr = window.devicePixelRatio || 1;
+		const cw = Math.max(1, Math.min(4096, Math.round(w * dpr)));
+		const ch = Math.max(1, Math.min(4096, Math.round(h * dpr)));
+		if (o.width !== cw || o.height !== ch) {
+			o.width = cw;
+			o.height = ch;
+		}
+		this.drawOriginal(slot);
+	}
+
+	/** Copies the slot's current frame, without filters, into its split-compare canvas. */
+	private drawOriginal(slot: Slot) {
+		const o = slot.original;
+		if (!o || o.style.display === "none") return;
+		const ctx = o.getContext("2d");
+		if (!ctx) return;
+		// A keyed clip is copied from its keyer (drawn in this same task, so its buffer is still there).
+		const keyed = slot.keyer && slot.keyedClip?.key && slot.keyer.canvas.style.display !== "none";
+		const src = keyed
+			? (slot.keyer as Keyer).canvas
+			: slot.video.style.display !== "none"
+				? slot.video
+				: slot.image;
+		if (src instanceof HTMLVideoElement && src.readyState < 2) return;
+		if (src instanceof HTMLImageElement && !src.complete) return;
+		ctx.clearRect(0, 0, o.width, o.height);
+		try {
+			ctx.drawImage(src, 0, 0, o.width, o.height);
+		} catch {}
 	}
 
 	/** At most one seek in flight per picture; newer requests replace the queued one. */

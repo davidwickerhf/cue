@@ -77,7 +77,7 @@ A fast, open-source video editor for macOS. Edit by hand with the shortcuts you 
 ## Quick start
 
 1. **New Project** (⌘N): pick a frame size and rate, or start from a video.
-2. **Import media** (⌘I) or drag files onto the timeline. Double-click a clip in Media to open it in the source monitor.
+2. **Import media** (⌘I) or drag files onto the timeline. Double-click a clip in Media to open it in the source monitor (beside the viewer in the Editing workspace), mark in and out, then insert (,), overwrite (.) or drag it onto the timeline.
 3. Edit with the keys you already know:
 
 | Action | Keys | Action | Keys |
