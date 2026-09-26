@@ -219,6 +219,14 @@ export const opSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("renameSequence"), id: z.string(), name: z.string().min(1).max(120) }),
 	z.object({ type: z.literal("duplicateSequence"), id: z.string() }),
 	z.object({ type: z.literal("deleteSequence"), id: z.string() }),
+	/** An alternative cut: a copy of a timeline, named "… · alt N" and opened. */
+	z.object({
+		type: z.literal("branchSequence"),
+		from: z.string().optional(),
+		name: z.string().min(1).max(120).optional(),
+	}),
+	/** Keep a branch: it takes the original's name and the original becomes "… (old)". */
+	z.object({ type: z.literal("promoteBranch"), id: z.string(), originalId: z.string().optional() }),
 	z.object({
 		type: z.literal("nestClips"),
 		ids: z.array(z.string()).min(1),
@@ -518,6 +526,21 @@ function swapIn(
 		tracks: target.tracks,
 		clips: target.clips,
 		markers: target.markers,
+	};
+}
+
+/** The name a branch is an alternative of: "Main · alt 2" → "Main". */
+export function branchBase(name: string): string {
+	return name.replace(/ · alt \d+$/, "");
+}
+
+/** Renames a timeline, open or stored, and the media that nests it. */
+function renameSeq(data: ProjectData, id: string, name: string): ProjectData {
+	if (activeSequence(data).id === id) return { ...data, sequence: { id, name } };
+	return {
+		...data,
+		sequences: (data.sequences ?? []).map((q) => (q.id === id ? { ...q, name } : q)),
+		assets: data.assets.map((a) => (a.sequenceId === id ? { ...a, name } : a)),
 	};
 }
 
@@ -1328,6 +1351,52 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				data: { ...data, sequences: [...(data.sequences ?? []), copy] },
 				summary: `Duplicated "${source.name}"`,
 				created: [copy.id],
+			};
+		}
+		case "branchSequence": {
+			const all = allSequences(data);
+			const source = all.find((q) => q.id === (op.from ?? activeSequence(data).id));
+			if (!source) throw new Error(`No sequence "${op.from}".`);
+			const base = branchBase(source.name);
+			const names = new Set(all.map((q) => q.name));
+			let n = 1;
+			while (names.has(`${base} · alt ${n}`)) n++;
+			const copy = {
+				id: newId("s"),
+				name: op.name ?? `${base} · alt ${n}`,
+				tracks: source.tracks,
+				clips: source.clips.map((c) => ({ ...c, id: newId("c") })),
+				markers: source.markers.map((m) => ({ ...m, id: newId("m") })),
+			};
+			// Linked clips stay linked to each other in the copy, not to the original's.
+			const groups = new Map<string, string>();
+			copy.clips = copy.clips.map((c) => {
+				if (!c.groupId) return c;
+				if (!groups.has(c.groupId)) groups.set(c.groupId, newId("g"));
+				return { ...c, groupId: groups.get(c.groupId) };
+			});
+			return {
+				data: swapIn(stash(data), copy),
+				summary: `Branched "${source.name}" as "${copy.name}"`,
+				created: [copy.id],
+			};
+		}
+		case "promoteBranch": {
+			const all = allSequences(data);
+			const branch = all.find((q) => q.id === op.id);
+			if (!branch) throw new Error(`No sequence "${op.id}".`);
+			const original = op.originalId
+				? all.find((q) => q.id === op.originalId)
+				: all.find((q) => q.id !== branch.id && q.name === branchBase(branch.name));
+			if (!original || original.id === branch.id)
+				throw new Error(
+					`Can't tell which sequence "${branch.name}" is an alternative of; pass originalId.`,
+				);
+			let next = renameSeq(data, original.id, `${original.name} (old)`);
+			next = renameSeq(next, branch.id, original.name);
+			return {
+				data: next,
+				summary: `Kept "${branch.name}" as "${original.name}"; the original is now "${original.name} (old)"`,
 			};
 		}
 		case "deleteSequence": {

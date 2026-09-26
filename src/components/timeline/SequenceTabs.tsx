@@ -1,8 +1,17 @@
-import { Plus, X } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { GitBranch, Plus, X } from "@phosphor-icons/react";
+import { useCallback, useEffect, useState } from "react";
 import type { ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
+import { playback } from "../../lib/playback";
 import { cn, nameFieldKeys } from "../../lib/utils";
+
+/** "Main · alt 2" is an alternative of "Main". */
+const isBranch = (name: string) => / · alt \d+$/.test(name);
+
+function typing(target: EventTarget | null) {
+	const el = target as HTMLElement | null;
+	return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+}
 
 /** Timelines in the project as tabs, like Premiere's sequence tabs. */
 export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
@@ -10,6 +19,8 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 	const others = project.data.sequences ?? [];
 	const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 	const [renaming, setRenaming] = useState<string | null>(null);
+	// A/B compare lives in the editor only: the two sequences being compared.
+	const [compare, setCompare] = useState<[string, string] | null>(null);
 	useEffect(() => {
 		if (!menu) return;
 		const close = () => setMenu(null);
@@ -20,6 +31,31 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 	const all = [open, ...others].sort((a, b) =>
 		a.id === "main" ? -1 : b.id === "main" ? 1 : a.id.localeCompare(b.id),
 	);
+	const ids = all.map((q) => q.id).join("|");
+	// A compared sequence that was deleted ends the comparison.
+	useEffect(() => {
+		if (compare && !compare.every((id) => ids.split("|").includes(id))) setCompare(null);
+	}, [compare, ids]);
+	const flip = useCallback(async () => {
+		if (!compare) return;
+		const current = project.data.sequence?.id ?? "main";
+		const target = compare[0] === current ? compare[1] : compare[0];
+		// Same moment in the other version, so the difference is what you see and hear.
+		const at = playback.currentMs;
+		await run("open_sequence", { id: target });
+		playback.seek(at);
+	}, [compare, project.data.sequence?.id]);
+	useEffect(() => {
+		if (!compare) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.code !== "Backquote" || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+			e.preventDefault();
+			void flip();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [compare, flip]);
+	const nameOf = (id: string) => all.find((q) => q.id === id)?.name ?? id;
 	return (
 		<div className="flex h-8 shrink-0 items-end gap-0.5 border-b border-separator bg-background px-2">
 			{all.map((q) => {
@@ -77,6 +113,48 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 			>
 				<Plus className="size-3.5" />
 			</button>
+			<button
+				type="button"
+				onClick={() => void run("branch_sequence", {})}
+				title="Branch: try an alternative cut in a copy, keeping the original"
+				aria-label="Branch sequence"
+				className="mb-0.5 flex size-6 items-center justify-center rounded text-muted hover:bg-default hover:text-foreground"
+			>
+				<GitBranch className="size-3.5" />
+			</button>
+			{compare && (
+				<div className="mb-0.5 ml-auto flex h-6 items-center gap-1 text-[11px]">
+					{compare.map((id, i) => (
+						<span
+							key={id}
+							className={cn(
+								"max-w-[140px] truncate rounded px-1.5 py-0.5",
+								id === open.id ? "bg-accent text-accent-foreground" : "text-muted",
+							)}
+							title={id === open.id ? `${nameOf(id)} (live)` : nameOf(id)}
+						>
+							{i === 0 ? "A" : "B"}: {nameOf(id)}
+						</span>
+					))}
+					<button
+						type="button"
+						onClick={() => void flip()}
+						title="Flip between the two versions at the same moment (`)"
+						className="rounded border border-separator px-1.5 py-0.5 font-medium hover:bg-default"
+					>
+						A/B
+					</button>
+					<button
+						type="button"
+						onClick={() => setCompare(null)}
+						title="Stop comparing"
+						aria-label="Stop comparing"
+						className="flex size-5 items-center justify-center rounded text-muted hover:bg-default hover:text-foreground"
+					>
+						<X className="size-3" />
+					</button>
+				</div>
+			)}
 			{menu && (
 				<div
 					className="fixed z-[120] min-w-[160px] rounded-lg border border-border bg-overlay p-1 text-[12px] shadow-xl shadow-black/40"
@@ -86,6 +164,26 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 					{[
 						{ label: "Rename", action: () => setRenaming(menu.id) },
 						{ label: "Duplicate", action: () => void run("duplicate_sequence", { id: menu.id }) },
+						{
+							label: "Branch (try an alternative)",
+							action: () => void run("branch_sequence", { from: menu.id }),
+						},
+						...(menu.id !== open.id
+							? [
+									{
+										label: "A/B compare with this",
+										action: () => setCompare([open.id, menu.id]),
+									},
+								]
+							: []),
+						...(isBranch(all.find((q) => q.id === menu.id)?.name ?? "")
+							? [
+									{
+										label: "Use this version",
+										action: () => void run("promote_branch", { id: menu.id }),
+									},
+								]
+							: []),
 						...(menu.id !== open.id
 							? [
 									{

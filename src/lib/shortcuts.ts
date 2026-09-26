@@ -23,6 +23,11 @@ export const SHORTCUTS: {
 			{ label: "Mark in / out", keys: ["I", "O"] },
 			{ label: "Play in to out", keys: ["/"] },
 			{ label: "Clear in and out", keys: ["⌥X"] },
+			{
+				label: "A/B compare two versions",
+				keys: ["`"],
+				note: "Flips between the compared sequences at the same moment",
+			},
 		],
 	},
 	{
