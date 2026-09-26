@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { applyPatch } from "../../electron/core/delta";
 import type { AppState, Clip, LineView, ProjectSnapshot } from "../../electron/core/types";
 
 /** A tiny external store with selector hooks (no extra dependency). */
@@ -54,17 +55,28 @@ function merge(prev: AppState | null, next: AppState): AppState {
 }
 
 export function startSync() {
-	void window.cue
-		.getState()
-		.then((state) => app.set((current) => ({ state: merge(current.state, state) })));
-	return window.cue.onState((state, projectUnchanged) =>
+	const full = () =>
+		void window.cue
+			.getState()
+			.then((state) => app.set((current) => ({ state: merge(current.state, state) })));
+	full();
+	return window.cue.onState((state, projectUnchanged, patch) => {
+		const have = app.get().state?.project ?? null;
+		if (patch) {
+			const project = have ? applyPatch(have, patch) : null;
+			// Missed a version (or none yet): keep the rest and ask for the whole project.
+			if (!project) {
+				app.set((current) => ({ state: merge(current.state, { ...state, project: have }) }));
+				full();
+				return;
+			}
+			app.set((current) => ({ state: merge(current.state, { ...state, project }) }));
+			return;
+		}
 		app.set((current) => ({
-			state: merge(
-				current.state,
-				projectUnchanged ? { ...state, project: current.state?.project ?? null } : state,
-			),
-		})),
-	);
+			state: merge(current.state, projectUnchanged ? { ...state, project: have } : state),
+		}));
+	});
 }
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@ import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
 import type { CaptureSources } from "./core/capture";
+import { diffSnapshot } from "./core/delta";
 import type { TextRender } from "./core/exporter";
 import {
 	detectLocal,
@@ -41,7 +42,7 @@ import { resolveInProject } from "./core/paths";
 import { isProjectFile, PROJECT_EXTENSION } from "./core/project";
 import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtime";
 import { ProjectStore } from "./core/store";
-import type { EditorCommand, RecorderStatus, TextClip } from "./core/types";
+import type { EditorCommand, ProjectSnapshot, RecorderStatus, TextClip } from "./core/types";
 
 app.setName("Cue");
 const MEDIA_SCHEME = "cue-media";
@@ -361,15 +362,26 @@ const controller = new Controller(store, {
 let stateTimer: NodeJS.Timeout | null = null;
 /** The project version the window has; unchanged projects aren't sent again. */
 let sentProject: string | null = null;
+/** The snapshot last sent, so an edit only sends what changed since. */
+let sentSnapshot: ProjectSnapshot | null = null;
 controller.on("state", () => {
 	if (stateTimer) return;
 	stateTimer = setTimeout(() => {
 		stateTimer = null;
 		if (!win || win.isDestroyed()) return;
 		const key = store.snapshotKey;
-		const same = key === sentProject;
+		if (key === sentProject) {
+			win.webContents.send("cue:state", controller.state(false), true);
+			return;
+		}
 		sentProject = key;
-		win.webContents.send("cue:state", controller.state(!same), same);
+		const snapshot = store.snapshot();
+		const patch = sentSnapshot && snapshot ? diffSnapshot(sentSnapshot, snapshot) : null;
+		sentSnapshot = snapshot;
+		// A patch against the last sent version; another project or a reload gets it whole.
+		if (patch) win.webContents.send("cue:state", controller.state(false), false, patch);
+		else
+			win.webContents.send("cue:state", { ...controller.state(false), project: snapshot }, false);
 	}, 16);
 });
 store.on("error", (error: Error) => store.log("system", `Autosave failed: ${error.message}`));
@@ -567,10 +579,12 @@ function createWindow() {
 	// A (re)loaded page has no project yet.
 	win.webContents.on("did-start-loading", () => {
 		sentProject = null;
+		sentSnapshot = null;
 	});
 	win.on("closed", () => {
 		win = null;
 		sentProject = null;
+		sentSnapshot = null;
 		// Nothing will answer requests sent to the old window.
 		for (const [id, request] of waiting) {
 			waiting.delete(id);

@@ -1,5 +1,6 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 import type { MethodName } from "./control/contract";
+import type { ProjectPatch } from "./core/delta";
 import type { AppState, EditorCommand, ProjectSummary, RecorderStatus } from "./core/types";
 
 const api = {
@@ -7,10 +8,19 @@ const api = {
 	call: <T = unknown>(method: MethodName, params?: unknown) =>
 		ipcRenderer.invoke("cue:call", method, params) as Promise<T>,
 	getState: () => ipcRenderer.invoke("cue:state") as Promise<AppState>,
-	/** `projectUnchanged`: the project was left out because the window already has this version. */
-	onState: (listener: (state: AppState, projectUnchanged: boolean) => void) => {
-		const handler = (_event: IpcRendererEvent, state: AppState, projectUnchanged = false) =>
-			listener(state, projectUnchanged);
+	/**
+	 * `projectUnchanged`: the project was left out because the window already has this version.
+	 * `patch`: the project was left out; apply this to the version the window has.
+	 */
+	onState: (
+		listener: (state: AppState, projectUnchanged: boolean, patch?: ProjectPatch) => void,
+	) => {
+		const handler = (
+			_event: IpcRendererEvent,
+			state: AppState,
+			projectUnchanged = false,
+			patch?: ProjectPatch,
+		) => listener(state, projectUnchanged, patch);
 		ipcRenderer.on("cue:state", handler);
 		return () => {
 			ipcRenderer.removeListener("cue:state", handler);
