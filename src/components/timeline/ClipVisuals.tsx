@@ -75,7 +75,7 @@ export function Waveform({
 		ctx.fillStyle = color;
 		const msPerPx = spanMs / Math.max(1, width);
 		const first = ((inMs + from * msPerPx) / 1000) * PEAKS_PER_SECOND;
-		const perPx = ((shown * msPerPx) / 1000) * PEAKS_PER_SECOND / w;
+		const perPx = (((shown * msPerPx) / 1000) * PEAKS_PER_SECOND) / w;
 		const mid = h / 2;
 		for (let x = 0; x < w; x++) {
 			const a = Math.floor(first + x * perPx);

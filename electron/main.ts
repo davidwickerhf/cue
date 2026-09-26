@@ -1001,9 +1001,11 @@ else {
 			flushed = true;
 			for (const chat of chats.values()) chat.stop();
 			void control.close();
-			void Promise.race([store.flush(), new Promise((r) => setTimeout(r, 5000))])
+			// Everything is stopped and saved, so exit directly (a second app.quit() is
+			// ignored when the quit came from a signal, which left the app running).
+			void Promise.race([store.flushAll(), new Promise((r) => setTimeout(r, 5000))])
 				.catch((error) => store.log("system", `Could not save before quitting: ${error}`))
-				.finally(() => app.quit());
+				.finally(() => app.exit(0));
 		});
 		createWindow();
 		started = true;

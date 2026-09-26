@@ -8,7 +8,7 @@ import {
 import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
-import { cn } from "../../lib/utils";
+import { cn, nameFieldKeys } from "../../lib/utils";
 import { exportDialog } from "../ExportDialog";
 import { IconButton } from "../ui/controls";
 import { WindowDots } from "../WindowDots";
@@ -67,10 +67,7 @@ export function EditorHeader() {
 						const name = e.target.value.trim();
 						if (name && name !== project.data.name) void run("rename_project", { name });
 					}}
-					onKeyDown={(e) => {
-						e.stopPropagation();
-						if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-					}}
+					onKeyDown={nameFieldKeys(project.data.name)}
 					className="h-7 min-w-0 truncate rounded-md bg-transparent px-1.5 text-center text-[13px] font-semibold outline-none hover:bg-default/60 focus:bg-default"
 					aria-label="Project name"
 				/>

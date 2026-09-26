@@ -2,7 +2,7 @@ import { Plus, X } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import type { ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
-import { cn } from "../../lib/utils";
+import { cn, nameFieldKeys } from "../../lib/utils";
 
 /** Timelines in the project as tabs, like Premiere's sequence tabs. */
 export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
@@ -50,11 +50,7 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 									const name = e.target.value.trim();
 									if (name && name !== q.name) void run("rename_sequence", { id: q.id, name });
 								}}
-								onKeyDown={(e) => {
-									e.stopPropagation();
-									if (e.key === "Enter" || e.key === "Escape")
-										(e.target as HTMLInputElement).blur();
-								}}
+								onKeyDown={nameFieldKeys(q.name)}
 								className="w-28 rounded bg-field px-1 outline-none"
 							/>
 						) : (

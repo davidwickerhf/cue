@@ -55,7 +55,7 @@ import { agentDraft } from "../../lib/chat";
 import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
-import { cn, formatTime } from "../../lib/utils";
+import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
 import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
 import { IconButton, Segmented } from "../ui/controls";
@@ -66,6 +66,37 @@ const HEADER_W = 212;
 const RULER_H = 28;
 const SCRIPT_H = 34;
 const TRACK_H: Record<Track["kind"], number> = { video: 58, audio: 50, text: 34 };
+
+/**
+ * Track heights the user dragged, per project (a view setting, not an edit, so
+ * it isn't undone and doesn't change the project file).
+ */
+export const trackHeights = createStore<{ project: string; heights: Record<string, number> }>({
+	project: "",
+	heights: {},
+});
+const heightsKey = (project: string) => `cue.trackHeights.${project}`;
+app.subscribe(() => {
+	const project = app.get().state?.project?.path ?? "";
+	if (project === trackHeights.get().project) return;
+	let heights: Record<string, number> = {};
+	try {
+		heights = JSON.parse(localStorage.getItem(heightsKey(project)) ?? "{}");
+	} catch {}
+	trackHeights.set({ project, heights });
+});
+function setTrackHeight(trackId: string, height: number | null) {
+	const { project, heights } = trackHeights.get();
+	const next = { ...heights };
+	if (height === null) delete next[trackId];
+	else next[trackId] = Math.round(Math.min(220, Math.max(26, height)));
+	trackHeights.set({ heights: next });
+	try {
+		localStorage.setItem(heightsKey(project), JSON.stringify(next));
+	} catch {}
+}
+const heightOf = (track: Track, heights: Record<string, number>) =>
+	heights[track.id] ?? TRACK_H[track.kind];
 const SNAP_PX = 8;
 
 type Drag =
@@ -104,6 +135,15 @@ type Drag =
 
 const end = (c: { startMs: number; durationMs: number }) => c.startMs + c.durationMs;
 
+/** A selection rectangle being drawn, in window coordinates. */
+interface Marquee {
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+	add: boolean;
+}
+
 export function Timeline() {
 	const project = useProject();
 	const selected = useApp((s) => s.selectedClipIds) ?? [];
@@ -123,6 +163,9 @@ export function Timeline() {
 	}, [revision, committed]);
 	const [menu, setMenu] = useState<{ x: number; y: number; clip: Clip; atMs: number } | null>(null);
 	const [viewWidth, setViewWidth] = useState(1000);
+	const heights = trackHeights.use((s) => s.heights);
+	const [marquee, setMarquee] = useState<Marquee | null>(null);
+	const marqueeRef = useRef<Marquee | null>(null);
 	const scrollBucket = useScrollBucket(scroller);
 
 	useEffect(() => {
@@ -224,6 +267,19 @@ export function Timeline() {
 	// ---------------------------------------------------------------------
 	// Pointer handling
 	// ---------------------------------------------------------------------
+
+	// Esc during a drag, trim or slip puts everything back where it was.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "Escape" || !dragRef.current) return;
+			e.preventDefault();
+			e.stopImmediatePropagation();
+			dragRef.current = null;
+			setDrag(null);
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, []);
 
 	const begin = (d: Drag, e: ReactPointerEvent) => {
 		dragRef.current = d;
@@ -335,6 +391,12 @@ export function Timeline() {
 	};
 
 	const onMove = (e: ReactPointerEvent) => {
+		if (marqueeRef.current) {
+			const m = { ...marqueeRef.current, x1: e.clientX, y1: e.clientY };
+			marqueeRef.current = m;
+			setMarquee(m);
+			return;
+		}
 		const d = dragRef.current;
 		if (!d) return;
 		let next: Drag = d;
@@ -445,6 +507,29 @@ export function Timeline() {
 	};
 
 	const onUp = () => {
+		const m = marqueeRef.current;
+		if (m) {
+			marqueeRef.current = null;
+			setMarquee(null);
+			// Every drawn clip the rectangle touches is selected (added to the selection with ⇧).
+			const box = {
+				left: Math.min(m.x0, m.x1),
+				right: Math.max(m.x0, m.x1),
+				top: Math.min(m.y0, m.y1),
+				bottom: Math.max(m.y0, m.y1),
+			};
+			if (box.right - box.left < 3 && box.bottom - box.top < 3) return;
+			const hit = [...document.querySelectorAll<HTMLElement>("[data-clip-id]")]
+				.filter((el) => {
+					const r = el.getBoundingClientRect();
+					return (
+						r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom
+					);
+				})
+				.map((el) => el.dataset.clipId as string);
+			window.cue.selectClips(m.add ? [...new Set([...selected, ...hit])] : hit);
+			return;
+		}
 		const d = dragRef.current;
 		dragRef.current = null;
 		setDrag(null);
@@ -580,12 +665,22 @@ export function Timeline() {
 				onPointerUp={onUp}
 				onPointerCancel={onUp}
 				onPointerDown={(e) => {
-					// Clicking empty timeline deselects; the ruler only moves the playhead.
+					// Clicking empty timeline deselects and starts a selection rectangle;
+					// the ruler only moves the playhead.
+					const target = e.target as HTMLElement;
 					if (
-						e.button === 0 &&
-						!(e.target as HTMLElement).closest("[data-clip],[data-track-header],[data-ruler]")
+						e.button !== 0 ||
+						target.closest(
+							"[data-clip],[data-track-header],[data-ruler],button,input,[role=button]",
+						)
 					)
-						window.cue.selectClips([]);
+						return;
+					if (!e.shiftKey) window.cue.selectClips([]);
+					if (tool !== "select") return;
+					const m = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, add: e.shiftKey };
+					marqueeRef.current = m;
+					setMarquee(m);
+					e.currentTarget.setPointerCapture(e.pointerId);
 				}}
 			>
 				<div className="relative" style={{ width: HEADER_W + contentWidth }}>
@@ -659,7 +754,8 @@ export function Timeline() {
 							<Row
 								key={track.id}
 								trackId={track.id}
-								height={TRACK_H[track.kind]}
+								height={heightOf(track, heights)}
+								onResize={(h) => setTrackHeight(track.id, h)}
 								header={<TrackHeader track={track} project={project} />}
 								dim={track.hidden || track.muted}
 								onDragOver={(e) => {
@@ -685,7 +781,7 @@ export function Timeline() {
 											width={width}
 											visible={[Math.max(0, windowStart - left), Math.min(width, windowEnd - left)]}
 											inMs={view.inMs}
-											height={TRACK_H[track.kind]}
+											height={heightOf(track, heights)}
 											pxPerMs={pxPerMs}
 											selected={selected.includes(clip.id)}
 											dragging={
@@ -712,6 +808,7 @@ export function Timeline() {
 					{/* Snap guide and playhead */}
 					{snapLine !== null && <SnapGuide x={HEADER_W + toX(snapLine)} scroller={scroller} />}
 					<Playhead pxPerMs={pxPerMs} scroller={scroller} />
+					{marquee && <MarqueeBox marquee={marquee} scroller={scroller} />}
 				</div>
 			</div>
 			{menu && (
@@ -904,6 +1001,7 @@ function Row({
 	dim,
 	onDragOver,
 	onDrop,
+	onResize,
 }: {
 	header: React.ReactNode;
 	children: React.ReactNode;
@@ -912,6 +1010,8 @@ function Row({
 	dim?: boolean;
 	onDragOver?: (e: React.DragEvent) => void;
 	onDrop?: (e: React.DragEvent) => void;
+	/** Drag the header's bottom edge to change the height; null resets it. */
+	onResize?: (height: number | null) => void;
 }) {
 	const drop = trackDrag.use((d) =>
 		d.overId === trackId && d.id !== trackId ? (d.after ? "after" : "before") : null,
@@ -932,6 +1032,28 @@ function Row({
 				style={{ width: HEADER_W }}
 			>
 				{header}
+				{onResize && (
+					// biome-ignore lint/a11y/noStaticElementInteractions: a resize handle, double-click resets
+					<div
+						title="Drag to resize, double-click to reset"
+						className="absolute inset-x-0 -bottom-[3px] z-10 h-[6px] cursor-row-resize touch-none hover:bg-accent/40"
+						onPointerDown={(e) => {
+							e.stopPropagation();
+							e.currentTarget.setPointerCapture(e.pointerId);
+							const y0 = e.clientY;
+							const h0 = height;
+							const el = e.currentTarget;
+							const move = (m: PointerEvent) => onResize(h0 + m.clientY - y0);
+							const up = () => {
+								el.removeEventListener("pointermove", move);
+								el.removeEventListener("pointerup", up);
+							};
+							el.addEventListener("pointermove", move);
+							el.addEventListener("pointerup", up);
+						}}
+						onDoubleClick={() => onResize(null)}
+					/>
+				)}
 			</div>
 			<div
 				className={cn("timeline-grid relative flex-1", dim && "opacity-50")}
@@ -1044,10 +1166,7 @@ function TrackHeader({ track, project }: { track: Track; project: ProjectSnapsho
 						e.target.value !== track.name &&
 						patch({ name: e.target.value.trim() })
 					}
-					onKeyDown={(e) => {
-						e.stopPropagation();
-						if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-					}}
+					onKeyDown={nameFieldKeys(track.name)}
 					className="w-full truncate rounded bg-transparent px-1 text-[12px] font-semibold outline-none focus:bg-default"
 				/>
 				{track.kind === "audio" && (track.voiceover || track.duck) && (
@@ -1294,6 +1413,108 @@ function Ruler({
 	);
 }
 
+/** Volume 0–2 as a height inside a clip (1 = unity sits at a third from the top). */
+const volumeY = (v: number, h: number) =>
+	Math.max(2, h - 4 - (Math.min(2, Math.max(0, v)) / 2) * (h - 8) * 1.33);
+
+/**
+ * The clip's volume drawn as a line (following its volume keyframes). Dragging
+ * the line up or down sets the clip's level, as in Premiere; the keyframes
+ * themselves are edited in the inspector.
+ */
+function VolumeLine({ clip, width, height }: { clip: MediaClip; width: number; height: number }) {
+	const [live, setLive] = useState<number | null>(null);
+	const keys = clip.keyframes?.volume ?? [];
+	const volume = live ?? clip.volume;
+	const points =
+		keys.length && live === null
+			? [
+					`0,${volumeY(keys[0].value, height)}`,
+					...keys.map((k) => `${(k.atMs / clip.durationMs) * width},${volumeY(k.value, height)}`),
+					`${width},${volumeY(keys[keys.length - 1].value, height)}`,
+				].join(" ")
+			: `0,${volumeY(volume, height)} ${width},${volumeY(volume, height)}`;
+	const db = volume > 0 ? `${(20 * Math.log10(volume)).toFixed(1)} dB` : "−∞ dB";
+	return (
+		<svg
+			className="absolute inset-0 z-[6]"
+			width={width}
+			height={height}
+			aria-label={`Volume ${db}`}
+			role="img"
+		>
+			<title>{`Volume ${db}${keys.length ? " (keyframed)" : ""}`}</title>
+			<polyline points={points} fill="none" stroke="rgba(255,236,140,0.9)" strokeWidth={1.25} />
+			{!keys.length && (
+				// A wider invisible line to grab.
+				<line
+					x1={0}
+					x2={width}
+					y1={volumeY(volume, height)}
+					y2={volumeY(volume, height)}
+					stroke="transparent"
+					strokeWidth={8}
+					className="cursor-ns-resize"
+					onPointerDown={(e) => {
+						e.stopPropagation();
+						const el = e.currentTarget;
+						el.setPointerCapture(e.pointerId);
+						const y0 = e.clientY;
+						const v0 = clip.volume;
+						const scale = (height - 8) * 1.33;
+						let value = v0;
+						const move = (m: PointerEvent) => {
+							value =
+								Math.round(Math.min(2, Math.max(0, v0 - ((m.clientY - y0) / scale) * 2)) * 100) /
+								100;
+							setLive(value);
+						};
+						const up = () => {
+							el.removeEventListener("pointermove", move);
+							el.removeEventListener("pointerup", up);
+							if (value !== v0) void run("update_clip", { id: clip.id, patch: { volume: value } });
+							setLive(null);
+						};
+						el.addEventListener("pointermove", move);
+						el.addEventListener("pointerup", up);
+					}}
+				/>
+			)}
+			{live !== null && (
+				<text x={6} y={Math.max(12, volumeY(volume, height) - 4)} fill="white" fontSize={10}>
+					{db}
+				</text>
+			)}
+		</svg>
+	);
+}
+
+/** The selection rectangle, drawn in the timeline's content. */
+function MarqueeBox({
+	marquee: m,
+	scroller,
+}: {
+	marquee: Marquee;
+	scroller: React.RefObject<HTMLDivElement | null>;
+}) {
+	const el = scroller.current;
+	if (!el) return null;
+	const r = el.getBoundingClientRect();
+	const x = (v: number) => v - r.left + el.scrollLeft;
+	const y = (v: number) => v - r.top + el.scrollTop;
+	return (
+		<div
+			className="pointer-events-none absolute z-40 rounded-sm border border-accent bg-accent/15"
+			style={{
+				left: Math.min(x(m.x0), x(m.x1)),
+				top: Math.min(y(m.y0), y(m.y1)),
+				width: Math.abs(m.x1 - m.x0),
+				height: Math.abs(m.y1 - m.y0),
+			}}
+		/>
+	);
+}
+
 /** Clips are culled against the scroll position rounded to this many pixels. */
 const SCROLL_BUCKET = 512;
 
@@ -1303,8 +1524,7 @@ function useScrollBucket(scroller: React.RefObject<HTMLDivElement | null>) {
 	useEffect(() => {
 		const el = scroller.current;
 		if (!el) return;
-		const update = () =>
-			setBucket(Math.floor(el.scrollLeft / SCROLL_BUCKET) * SCROLL_BUCKET);
+		const update = () => setBucket(Math.floor(el.scrollLeft / SCROLL_BUCKET) * SCROLL_BUCKET);
 		update();
 		el.addEventListener("scroll", update, { passive: true });
 		return () => el.removeEventListener("scroll", update);
@@ -1480,6 +1700,7 @@ function ClipView({
 	return (
 		<div
 			data-clip
+			data-clip-id={clip.id}
 			onPointerDown={onDown}
 			onContextMenu={onContext}
 			onDoubleClick={() => {
@@ -1533,23 +1754,30 @@ function ClipView({
 				/>
 			)}
 			{/* The sound of a video clip, as a thin strip along its bottom edge. */}
-			{media && asset?.kind === "video" && asset.hasAudio && track?.kind === "video" && media.volume > 0 && (
-				<>
-					<div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-black/60 to-transparent" />
-					<Waveform
-						assetId={asset.id}
-						file={asset.path}
-						inMs={sourceIn}
-						spanMs={media.durationMs * media.speed}
-						width={width}
-						height={14}
-						visible={visible}
-						color="rgba(255,255,255,0.5)"
-					/>
-				</>
-			)}
+			{media &&
+				asset?.kind === "video" &&
+				asset.hasAudio &&
+				track?.kind === "video" &&
+				media.volume > 0 && (
+					<>
+						<div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-black/60 to-transparent" />
+						<Waveform
+							assetId={asset.id}
+							file={asset.path}
+							inMs={sourceIn}
+							spanMs={media.durationMs * media.speed}
+							width={width}
+							height={14}
+							visible={visible}
+							color="rgba(255,255,255,0.5)"
+						/>
+					</>
+				)}
 			{media && track?.kind === "video" && (
 				<div className="absolute inset-x-0 top-0 h-5 bg-gradient-to-b from-black/55 to-transparent" />
+			)}
+			{media && track?.kind === "audio" && !locked && inner > 30 && (
+				<VolumeLine clip={media} width={width} height={inner} />
 			)}
 			{media && media.fadeInMs > 0 && (
 				<div

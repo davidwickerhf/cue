@@ -37,14 +37,15 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 ## 3. Performance
 
 - [x] Timeline draws only visible clips (zoom at 500 clips is about 30 fps).
-- [x] Send project changes instead of the whole project on every edit (170 KB at 500 clips).
+- [x] Leave the project out of state updates when it hasn't changed (selection, jobs, recorder).
+- [ ] Send only the changed clips on an edit (still the whole project, 170 KB at 500 clips; edits take 10–35 ms).
 - [x] Tune HEVC quality so it is smaller than H.264.
 - [x] Trim the 460 KB stylesheet.
 
 ## 4. Standard editor features
 
-- [ ] Rubber-band selection
-- [ ] Resizable track heights
+- [x] Rubber-band selection
+- [x] Resizable track heights
 - [ ] Keyframe lanes and a curve editor
 - [x] Waveforms on video clips
 - [ ] Effects library: blur, sharpen, vignette, glow, stabilisation
@@ -52,7 +53,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [ ] Shapes and overlays: arrows, callouts, blur and redact boxes
 - [ ] Picture-in-picture and split-screen layouts
 - [ ] Per-track EQ and compressor
-- [ ] Volume line on audio clips
+- [x] Volume line on audio clips
 - [ ] Screen and camera recording
 - [ ] Media bins, tags and media info
 - [ ] Scene detection on import
@@ -64,9 +65,9 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [ ] Inspector in tabs or collapsible sections
 - [ ] First-run guide and a "drop footage here" empty state
 - [ ] Keyboard focus for clips, the clip menu and pane dividers
-- [ ] Esc cancels drags and trims and restores name fields
+- [x] Esc cancels drags and trims and restores name fields
 - [ ] Viewer overlay follows keyframes, zoom and crop
-- [ ] Source monitor keeps its position
+- [x] Source monitor keeps its position
 - [ ] Audible scrubbing while shuttling
 - [ ] History panel appends instead of reloading
 - [ ] Consistent shortcut labels in the inspector

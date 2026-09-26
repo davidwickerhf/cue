@@ -1168,6 +1168,12 @@ export class ProjectStore extends EventEmitter {
 		return run;
 	}
 
+	/** Saves the project and its history (before quitting). */
+	async flushAll(): Promise<void> {
+		await this.flush();
+		await this.history?.flush();
+	}
+
 	/** Resolves once no transaction is running. */
 	settled(): Promise<void> {
 		return this.transactions;

@@ -21,3 +21,15 @@ export function formatSeconds(ms: number | null | undefined, digits = 1): string
 
 export const clamp = (value: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, value));
+
+/**
+ * Keys for a name field that saves on blur: Enter saves, Esc puts the original
+ * back and leaves. Keys never reach the timeline shortcuts.
+ */
+export function nameFieldKeys(original: string) {
+	return (e: React.KeyboardEvent<HTMLInputElement>) => {
+		e.stopPropagation();
+		if (e.key === "Escape") e.currentTarget.value = original;
+		if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+	};
+}

@@ -14,7 +14,7 @@ import type { MediaClip, ProjectSnapshot, TextClip } from "../../../electron/cor
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
-import { cn, formatTime } from "../../lib/utils";
+import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
 import { layout } from "../../lib/workspace";
 import {
 	ColorInput,
@@ -1121,10 +1121,7 @@ function MarkerList({ markers }: { markers: ProjectSnapshot["data"]["markers"] }
 									e.target.value !== m.label &&
 									void run("update_marker", { id: m.id, patch: { label: e.target.value.trim() } })
 								}
-								onKeyDown={(e) => {
-									e.stopPropagation();
-									if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-								}}
+								onKeyDown={nameFieldKeys(m.label)}
 								className="min-w-0 flex-1 truncate rounded bg-transparent px-1 text-[12px] outline-none focus:bg-default"
 							/>
 							<button

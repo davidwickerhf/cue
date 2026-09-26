@@ -79,6 +79,10 @@ export function SourceMonitor({ project }: { project: ProjectSnapshot }) {
 							ref={attachSource}
 							src={url}
 							className={cn("max-h-full max-w-full", asset.kind === "audio" && "hidden")}
+							// Coming back to the source monitor continues where it was.
+							onLoadedMetadata={(e) => {
+								e.currentTarget.currentTime = source.get().currentMs / 1000;
+							}}
 							onTimeUpdate={(e) => source.set({ currentMs: e.currentTarget.currentTime * 1000 })}
 							onPlay={() => source.set({ playing: true })}
 							onPause={() => source.set({ playing: false })}
