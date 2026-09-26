@@ -1,11 +1,27 @@
 "use client";
 
 import { Plus } from "@phosphor-icons/react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
+import type { FaqItem } from "@/content/faq";
 import { Reveal } from "./Reveal";
 
+/** The answer text, with its optional link. */
+function Answer({ item }: { item: FaqItem }) {
+	const at = item.link ? item.a.indexOf(item.link.text) : -1;
+	if (!item.link || at < 0) return <>{item.a}</>;
+	return (
+		<>
+			{item.a.slice(0, at)}
+			<a href={item.link.href} className="underline underline-offset-4 hover:text-white">
+				{item.link.text}
+			</a>
+			{item.a.slice(at + item.link.text.length)}
+		</>
+	);
+}
+
 /** FAQ items that open and close with a smooth height animation. */
-export function Faq({ items }: { items: { q: string; a: ReactNode }[] }) {
+export function Faq({ items }: { items: FaqItem[] }) {
 	const [open, setOpen] = useState<number | null>(null);
 	return (
 		<div className="flex flex-col gap-3">
@@ -36,7 +52,7 @@ export function Faq({ items }: { items: { q: string; a: ReactNode }[] }) {
 										className="px-4 pb-4 text-[14px] leading-relaxed text-muted transition-opacity duration-300"
 										style={{ opacity: isOpen ? 1 : 0 }}
 									>
-										{f.a}
+										<Answer item={f} />
 									</p>
 								</div>
 							</div>

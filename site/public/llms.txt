@@ -1,0 +1,47 @@
+# Cue
+
+> Cue is a free, open-source (MIT) video editor for macOS on Apple Silicon that people and AI agents edit together. You can edit by hand with Premiere-style shortcuts, or let Claude Code, Codex, Gemini CLI or any MCP client edit the same project through 110+ MCP tools. Every edit, by a person or an agent, is recorded, attributed and undoable.
+
+- Website: https://cue.wicker.life
+- Source code: https://github.com/davidwickerhf/cue
+- Download (macOS, Apple Silicon): https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip
+- Price: free, no account, no watermark. License: MIT.
+- Author: David Henry Francis Wicker (https://wicker.life)
+
+## Connect an AI agent (MCP)
+
+With Cue installed in /Applications, run once:
+
+```sh
+claude mcp add --scope user cue -- node "/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs"
+```
+
+The MCP server starts Cue when needed and gives every client a written guide to editing in Cue. Inside the app, the Agent panel can instead run Claude Code, Codex or Gemini CLI (if installed, signed in with the user's own account) with access to Cue's tools only: no shell, files or web.
+
+## Features
+
+- Timeline: video, text and audio tracks; selection, blade, slip, roll and slide tools; ripple delete, lift and extract, ripple trim, snapping, markers, clip labels.
+- Editing: source monitor with three-point insert and overwrite, J/K/L shuttle, frame holds, speed and speed ramps, crossfades, grouping and linked audio.
+- Sequences: several timelines per project and nested sequences.
+- Look and motion: keyframes, push-in zooms, crop, colour grading and LUTs, adjustment layers, masks, chroma key.
+- Titles: eleven templates, all installed fonts, outlines, gradients, in and out animations, editing directly on the viewer.
+- Audio: mixer with level, pan, solo and meters, ducking under voiceover, denoise, loudness normalisation, beat detection and cut-to-the-beat.
+- Speech: word-level transcripts, text-based editing (delete words to cut), filler-word removal, search by meaning, chapters, SRT and VTT captions.
+- Voiceover: teleprompter recording with takes per line, AI voices.
+- AI providers: on-device whisper.cpp, macOS voices, Ollama and LM Studio, or OpenAI with your own key (stored in the macOS keychain). Footage stays on the Mac unless a cloud model is chosen.
+- Projects: plain JSON .cueproj files, relinking of moved media, persistent history of every change.
+- Export: H.264, HEVC and ProRes with hardware encoding, stills, stems, captions. Timelines export to OpenTimelineIO, FCPXML (Final Cut Pro, DaVinci Resolve), MLT (Shotcut) and CMX3600 EDL; OpenTimelineIO can be imported.
+
+## Requirements and limits
+
+- macOS on Apple Silicon only for now. ffmpeg is bundled; editing needs no API key.
+- The app is signed but not notarised yet: the first time, right-click Cue in Applications and choose Open.
+
+## Pages
+
+- [AI video editor for Mac](https://cue.wicker.life/ai-video-editor-mac)
+- [Open-source Premiere Pro alternative](https://cue.wicker.life/open-source-premiere-alternative)
+- [Edit video with Claude Code and MCP](https://cue.wicker.life/edit-video-with-claude-code)
+- [Text-based video editing](https://cue.wicker.life/text-based-video-editing)
+- [Changelog](https://cue.wicker.life/changelog)
+- [README and documentation](https://github.com/davidwickerhf/cue#readme)
