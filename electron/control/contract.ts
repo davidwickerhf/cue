@@ -42,6 +42,7 @@ export const contract = {
 			lines: z.array(line).optional(),
 		},
 	},
+	rename_project: { description: "Rename the project.", input: { name: z.string().min(1).max(200) } },
 	set_canvas: {
 		description: "Output size, frame rate and background colour.",
 		input: { width: z.number().int().optional(), height: z.number().int().optional(), fps: z.number().optional(), background: z.string().optional() },
@@ -100,6 +101,10 @@ export const contract = {
 
 	// --- Voiceover script and takes --------------------------------------------------
 	set_lines: { description: "Replace the voiceover script.", input: { lines: z.array(line) } },
+	import_script: {
+		description: "Load script lines from an .srt file or a JSON array of lines. replace=false appends.",
+		input: { file: z.string(), replace: z.boolean().default(true) },
+	},
 	add_line: { description: "Add one script line.", input: { line } },
 	update_line: { description: "Change a line. Moving startMs also moves its voiceover clip.", input: { id: z.string(), patch: lineInputSchema.partial() } },
 	remove_line: { description: "Delete a script line (takes stay in the library).", input: { id: z.string() } },

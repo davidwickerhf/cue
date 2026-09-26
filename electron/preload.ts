@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent, webUtils } from "electron";
 import type { MethodName } from "./control/contract";
 import type { AppState, EditorCommand, RecorderStatus } from "./core/types";
 
@@ -33,6 +33,8 @@ const api = {
 	reveal: (file: string) => ipcRenderer.invoke("cue:reveal", file),
 	setApiKey: (key: string | null) => ipcRenderer.invoke("cue:setApiKey", key),
 	mcpCommand: () => ipcRenderer.invoke("cue:mcpCommand") as Promise<string>,
+	/** Real path of a file dropped from Finder. */
+	pathForFile: (file: File) => webUtils.getPathForFile(file),
 	platform: process.platform,
 };
 

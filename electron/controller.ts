@@ -1,5 +1,8 @@
 import { EventEmitter } from "node:events";
-import { DEFAULT_TEXT_STYLE, clipEnd, speechOf } from "./core/project";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { DEFAULT_TEXT_STYLE, type LineInput, clipEnd, speechOf } from "./core/project";
+import { parseSrt } from "./core/srt";
 import type { AiCredentials } from "./core/ai";
 import type { ProjectStore } from "./core/store";
 import type {
@@ -158,6 +161,8 @@ export class Controller extends EventEmitter {
 			case "create_project":
 				await this.store.create(parseInput("create_project", params), actor);
 				return this.afterOpen();
+			case "rename_project":
+				return this.store.apply({ type: "rename", name: parseInput("rename_project", params).name }, actor);
 			case "set_canvas":
 				return this.store.apply({ type: "setCanvas", canvas: parseInput("set_canvas", params) }, actor);
 
@@ -212,6 +217,12 @@ export class Controller extends EventEmitter {
 
 			case "set_lines":
 				return this.store.apply({ type: "setLines", lines: parseInput("set_lines", params).lines }, actor);
+			case "import_script": {
+				const { file, replace } = parseInput("import_script", params);
+				const text = await fs.readFile(path.resolve(file), "utf8");
+				const lines = file.toLowerCase().endsWith(".srt") ? parseSrt(text) : (JSON.parse(text) as LineInput[]);
+				return this.store.apply({ type: "setLines", lines: replace ? lines : [...this.store.current.lines, ...lines] }, actor);
+			}
 			case "add_line":
 				return this.store.apply({ type: "addLine", line: parseInput("add_line", params).line }, actor);
 			case "update_line": {

@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => ({
 										fileName: () => "main.cjs",
 									},
 									rollupOptions: { external: nodeExternals },
+									rolldownOptions: { external: nodeExternals },
 								},
 							},
 						},
@@ -41,6 +42,7 @@ export default defineConfig(({ mode }) => ({
 				]),
 	],
 	resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+	base: "./",
 	build: { target: "esnext", outDir: "dist" },
 	test: { include: ["test/**/*.test.ts"], environment: "node" },
 }));

@@ -1,0 +1,87 @@
+import { Tooltip } from "@heroui/react";
+import { Gear, Images, Microphone, Robot, Sparkle, TextT } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
+import { type SidebarPanel, editor, useApp } from "../../lib/state";
+import { cn } from "../../lib/utils";
+import { AgentPanel } from "../panels/AgentPanel";
+import { GeneratePanel } from "../panels/GeneratePanel";
+import { MediaPanel } from "../panels/MediaPanel";
+import { ScriptPanel } from "../panels/ScriptPanel";
+import { SettingsPanel } from "../panels/SettingsPanel";
+import { TextPanel } from "../panels/TextPanel";
+
+const ITEMS: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
+	{ id: "media", label: "Media", icon: <Images className="size-[18px]" /> },
+	{ id: "script", label: "Voiceover", icon: <Microphone className="size-[18px]" /> },
+	{ id: "text", label: "Text", icon: <TextT className="size-[18px]" /> },
+	{ id: "generate", label: "Generate", icon: <Sparkle className="size-[18px]" /> },
+	{ id: "agent", label: "Agent", icon: <Robot className="size-[18px]" /> },
+];
+
+const TITLES: Record<SidebarPanel, string> = {
+	media: "Media",
+	script: "Voiceover",
+	text: "Text",
+	generate: "Generate",
+	agent: "Agent",
+	settings: "Project",
+};
+
+export function EditorSidebar() {
+	const panel = editor.use((s) => s.panel);
+	const agentSeen = useApp((s) => s.agent.lastSeenAt);
+	return (
+		<div className="flex min-h-0 shrink-0 border-r border-separator bg-surface">
+			<nav className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-separator py-2" aria-label="Panels">
+				{ITEMS.map((item) => (
+					<RailButton key={item.id} label={item.label} active={panel === item.id} onPress={() => editor.set({ panel: item.id })} dot={item.id === "agent" && !!agentSeen}>
+						{item.icon}
+					</RailButton>
+				))}
+				<div className="mt-auto">
+					<RailButton label="Project settings" active={panel === "settings"} onPress={() => editor.set({ panel: "settings" })}>
+						<Gear className="size-[18px]" />
+					</RailButton>
+				</div>
+			</nav>
+			<div className="flex w-[300px] min-h-0 flex-col">
+				<header className="flex h-10 shrink-0 items-center border-b border-separator px-4">
+					<h2 className="text-[12px] font-semibold">{TITLES[panel]}</h2>
+				</header>
+				<div key={panel} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
+					{panel === "media" && <MediaPanel />}
+					{panel === "script" && <ScriptPanel />}
+					{panel === "text" && <TextPanel />}
+					{panel === "generate" && <GeneratePanel />}
+					{panel === "agent" && <AgentPanel />}
+					{panel === "settings" && <SettingsPanel />}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function RailButton({ label, active, onPress, children, dot }: { label: string; active: boolean; onPress: () => void; children: ReactNode; dot?: boolean }) {
+	return (
+		<Tooltip delay={300} closeDelay={0}>
+			<Tooltip.Trigger>
+				<button
+					type="button"
+					aria-label={label}
+					aria-pressed={active}
+					onClick={onPress}
+					className={cn(
+						"relative flex size-8 items-center justify-center rounded-md transition-colors",
+						active ? "bg-default text-foreground" : "text-muted hover:bg-default/60 hover:text-foreground",
+					)}
+				>
+					{children}
+					{dot && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-success" />}
+				</button>
+			</Tooltip.Trigger>
+			<Tooltip.Content placement="right" className="text-xs">
+				{label}
+			</Tooltip.Content>
+		</Tooltip>
+	);
+}

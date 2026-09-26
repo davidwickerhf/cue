@@ -13,8 +13,10 @@ function unpacked(binary: string): string {
 
 export function ffmpegPath(): string {
 	if (process.env.CUE_FFMPEG) return process.env.CUE_FFMPEG;
-	if (!ffmpegStatic) throw new Error("ffmpeg-static has no binary for this platform.");
-	return unpacked(ffmpegStatic as unknown as string);
+	// Bundlers may hand the CommonJS export back as { default }.
+	const bin = typeof ffmpegStatic === "string" ? ffmpegStatic : (ffmpegStatic as unknown as { default?: string } | null)?.default;
+	if (!bin) throw new Error("ffmpeg-static has no binary for this platform.");
+	return unpacked(bin);
 }
 
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -38,7 +40,9 @@ export async function probe(file: string): Promise<ProbeResult> {
 		log = await ffmpeg(["-i", file]);
 	} catch (error) {
 		// `ffmpeg -i` without an output always exits non-zero; the report is in stderr.
-		log = String((error as { stderr?: string }).stderr ?? "");
+		const stderr = (error as { stderr?: string }).stderr;
+		if (typeof stderr !== "string") throw error;
+		log = stderr;
 	}
 	if (/No such file|Invalid data found/.test(log)) throw new Error(`Cannot read media: ${file}`);
 	const duration = /Duration: (\d+):(\d+):([\d.]+)/.exec(log);

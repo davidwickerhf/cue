@@ -1,0 +1,125 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+@custom-variant dark (&:where(.dark, .dark *));
+@source "../index.html";
+
+/*
+ * Cue theme. HeroUI supplies the component styles; these tokens make it a
+ * neutral, dense editor palette (no tinted greys) with tighter radii.
+ */
+:root {
+	--radius: 0.375rem;
+	--field-radius: 0.375rem;
+	--accent: oklch(0.63 0.17 254);
+	--accent-foreground: #fff;
+	--viewer: #e9e9ec;
+	--lane: #f4f4f6;
+	--clip-video: oklch(0.62 0.1 252);
+	--clip-audio: oklch(0.63 0.09 175);
+	--clip-voice: oklch(0.62 0.12 150);
+	--clip-text: oklch(0.6 0.12 300);
+	--clip-image: oklch(0.66 0.1 70);
+}
+
+.dark {
+	--background: #0f0f11;
+	--foreground: #ececef;
+	--surface: #17171a;
+	--surface-secondary: #1d1d21;
+	--surface-tertiary: #232328;
+	--overlay: #1d1d21;
+	--default: #26262b;
+	--default-foreground: #ececef;
+	--muted: #8e8e98;
+	--border: #2a2a30;
+	--separator: #232328;
+	--field-background: #121215;
+	--field-border: #2a2a30;
+	--segment: #2c2c32;
+	--viewer: #0a0a0b;
+	--lane: #121215;
+	--clip-video: oklch(0.47 0.08 252);
+	--clip-audio: oklch(0.49 0.07 180);
+	--clip-voice: oklch(0.5 0.1 152);
+	--clip-text: oklch(0.47 0.1 300);
+	--clip-image: oklch(0.52 0.08 70);
+}
+
+@theme inline {
+	--font-sans: "DM Sans Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+	--font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+	--color-viewer: var(--viewer);
+	--color-lane: var(--lane);
+	--color-clip-video: var(--clip-video);
+	--color-clip-audio: var(--clip-audio);
+	--color-clip-voice: var(--clip-voice);
+	--color-clip-text: var(--clip-text);
+	--color-clip-image: var(--clip-image);
+	--color-field: var(--field-background);
+}
+
+@layer base {
+	html,
+	body,
+	#root {
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		overflow: hidden;
+	}
+	body {
+		background: var(--background);
+		color: var(--foreground);
+		font-family: var(--font-sans);
+		font-size: 13px;
+		user-select: none;
+		-webkit-font-smoothing: antialiased;
+	}
+	input,
+	textarea,
+	[contenteditable] {
+		user-select: text;
+	}
+	button,
+	input,
+	textarea,
+	select,
+	[role="button"],
+	[role="slider"],
+	[role="switch"],
+	[data-no-drag] {
+		-webkit-app-region: no-drag;
+	}
+	::selection {
+		background: color-mix(in srgb, var(--accent) 35%, transparent);
+	}
+}
+
+@layer utilities {
+	.app-drag {
+		-webkit-app-region: drag;
+	}
+	.custom-scrollbar {
+		scrollbar-width: thin;
+		scrollbar-color: color-mix(in srgb, var(--foreground) 16%, transparent) transparent;
+	}
+	.timeline-grid {
+		background-color: var(--lane);
+	}
+	.tabular {
+		font-variant-numeric: tabular-nums;
+	}
+}
+
+@keyframes rec-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.35;
+	}
+}
+.rec-pulse {
+	animation: rec-pulse 1.2s ease-in-out infinite;
+}
