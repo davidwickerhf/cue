@@ -50,6 +50,7 @@ import {
 	probe,
 	toWav,
 } from "./media";
+import { type MontageSource, planMontage } from "./montage";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
@@ -64,6 +65,7 @@ import {
 	projectDuration,
 } from "./project";
 import { findMoved, isOffline } from "./relink";
+import { planRoughCut } from "./roughcut";
 import type { AiRuntime } from "./runtime";
 import { parseSrt } from "./srt";
 import type {
@@ -651,6 +653,226 @@ export class ProjectStore extends EventEmitter {
 			}
 		});
 		return { cuts: clips.length - 1, moved };
+	}
+
+	/**
+	 * Rough cut from a script: finds where each line was said in the
+	 * transcribed media and lays those stretches out, in line order, in a new
+	 * sequence. On device (word alignment), one undo step.
+	 */
+	async roughCut(
+		actor: Actor,
+		options: { lines?: string[]; assetIds?: string[]; name?: string; padMs?: number } = {},
+	) {
+		const data = this.current;
+		const lines = (
+			options.lines ?? [...data.lines].sort((a, b) => a.startMs - b.startMs).map((l) => l.text)
+		)
+			.map((l) => l.trim())
+			.filter(Boolean);
+		if (!lines.length)
+			throw new Error("Pass the lines of the script or brief, or write a script first.");
+		const media = options.assetIds
+			? options.assetIds.map((id) => {
+					const a = data.assets.find((x) => x.id === id);
+					if (!a) throw new Error(`No media "${id}".`);
+					return a;
+				})
+			: data.assets.filter((a) => (a.kind === "video" || a.kind === "audio") && a.hasAudio);
+		const untranscribed = media.filter((a) => !a.transcript?.words.length);
+		const sources = media
+			.filter((a) => a.transcript?.words.length)
+			.map((a) => ({
+				assetId: a.id,
+				words: a.transcript?.words ?? [],
+				durationMs: a.durationMs,
+			}));
+		if (!sources.length)
+			throw new Error(
+				media.length
+					? `Nothing is transcribed yet. Transcribe these first with transcribe_media: ${untranscribed.map((a) => a.name).join(", ")}.`
+					: "There is no media with speech in this project.",
+			);
+		const plan = planRoughCut(lines, sources, { padMs: options.padMs ?? 150 });
+		const found = plan.filter((p) => p.match);
+		if (!found.length) throw new Error("None of the lines were found in the transcribed media.");
+		const name = options.name ?? "Rough cut";
+		return this.transaction(
+			actor,
+			`Rough cut "${name}": ${found.length} of ${lines.length} lines`,
+			() => {
+				const sequenceId = this.apply({ type: "newSequence", name }, actor).created?.[0] as string;
+				const picture = this.current.tracks.find((t) => t.kind === "video")?.id as string;
+				let sound: string | undefined;
+				let at = 0;
+				const placed = [];
+				for (const { line, match } of plan) {
+					if (!match) continue;
+					const a = this.current.assets.find((x) => x.id === match.assetId) as Asset;
+					let trackId = picture;
+					if (a.kind === "audio") {
+						sound ??= this.apply({ type: "addTrack", kind: "audio", name: "Dialogue" }, actor)
+							.created?.[0];
+						trackId = sound as string;
+					}
+					const durationMs = match.endMs - match.startMs;
+					const clipId = this.apply(
+						{
+							type: "addClips",
+							clips: [
+								{
+									type: "media",
+									trackId,
+									assetId: a.id,
+									startMs: at,
+									inMs: match.startMs,
+									durationMs,
+									name: line.slice(0, 120),
+								},
+							],
+						},
+						actor,
+					).created?.[0];
+					placed.push({ line, clipId, atMs: at, ...match });
+					at += durationMs;
+				}
+				return {
+					sequenceId,
+					durationMs: at,
+					placed,
+					unmatched: plan.filter((p) => !p.match).map((p) => p.line),
+					...(untranscribed.length
+						? { notTranscribed: untranscribed.map((a) => ({ id: a.id, name: a.name })) }
+						: {}),
+				};
+			},
+		);
+	}
+
+	/**
+	 * Music-driven montage: a new sequence with the music on an audio track and
+	 * the pictures cut on its beats, cycling through the footage (fresh shots
+	 * first). One undo step.
+	 */
+	async beatMontage(
+		actor: Actor,
+		options: {
+			musicAssetId: string;
+			assetIds?: string[];
+			every?: number;
+			lengthSec?: number;
+			name?: string;
+			zoomStills?: boolean;
+		},
+	) {
+		const data = this.current;
+		const music = data.assets.find((a) => a.id === options.musicAssetId);
+		if (!music?.hasAudio) throw new Error("Pick music: a media item with sound.");
+		const pictures = options.assetIds
+			? options.assetIds.map((id) => {
+					const a = data.assets.find((x) => x.id === id);
+					if (!a) throw new Error(`No media "${id}".`);
+					if (a.kind !== "video" && a.kind !== "image")
+						throw new Error(`${a.name} has no picture.`);
+					return a;
+				})
+			: data.assets.filter(
+					(a) => (a.kind === "video" || a.kind === "image") && a.id !== music.id && !a.sequenceId,
+				);
+		if (!pictures.length) throw new Error("Import some video or pictures to cut to the music.");
+		const { beats, bpm } = detectBeatsIn(await this.peaks(music.id), PEAKS_PER_SECOND);
+		if (beats.length < 2) throw new Error(`No steady beat found in ${music.name}.`);
+		// Shot changes let each cut start on a fresh shot; footage without them still works.
+		const sources: MontageSource[] = await Promise.all(
+			pictures.map(async (a) => ({
+				assetId: a.id,
+				kind: a.kind as "video" | "image",
+				durationMs: a.durationMs,
+				scenes: a.kind === "video" ? await this.sceneCuts(a.id).catch(() => []) : undefined,
+			})),
+		);
+		const plan = planMontage({
+			beats,
+			musicDurationMs: music.durationMs,
+			sources,
+			every: options.every ?? 2,
+			lengthMs: options.lengthSec ? options.lengthSec * 1000 : undefined,
+		});
+		const name = options.name ?? "Montage";
+		return this.transaction(
+			actor,
+			`Montage "${name}": ${plan.clips.length} cuts at ${bpm} BPM`,
+			() => {
+				const sequenceId = this.apply({ type: "newSequence", name }, actor).created?.[0] as string;
+				const picture = this.current.tracks.find((t) => t.kind === "video")?.id as string;
+				const musicTrack = (
+					this.current.tracks.find((t) => t.kind === "audio" && !t.voiceover) ??
+					this.current.tracks.find((t) => t.kind === "audio")
+				)?.id as string;
+				this.apply(
+					{
+						type: "addClips",
+						clips: [
+							{
+								type: "media",
+								trackId: musicTrack,
+								assetId: music.id,
+								startMs: 0,
+								inMs: plan.musicInMs,
+								durationMs: plan.durationMs,
+								fadeOutMs: Math.min(2000, Math.round(plan.durationMs / 4)),
+							},
+						],
+					},
+					actor,
+				);
+				const created =
+					this.apply(
+						{
+							type: "addClips",
+							clips: plan.clips.map((c) => ({
+								type: "media" as const,
+								trackId: picture,
+								assetId: c.assetId,
+								startMs: c.startMs,
+								durationMs: c.durationMs,
+								inMs: c.inMs,
+								speed: c.speed,
+								// The music carries the sound.
+								volume: 0,
+							})),
+						},
+						actor,
+					).created ?? [];
+				let zooms = 0;
+				if (options.zoomStills !== false)
+					plan.clips.forEach((c, i) => {
+						if (c.kind !== "image" || !created[i]) return;
+						// A gentle push-in keeps stills alive (Ken Burns).
+						for (const [atMs, value] of [
+							[0, 1],
+							[c.durationMs, 1.08],
+						])
+							this.apply(
+								{
+									type: "setKeyframe",
+									clipId: created[i],
+									prop: "scale",
+									keyframe: { atMs, value, ease: "linear" },
+								},
+								actor,
+							);
+						zooms++;
+					});
+				return {
+					sequenceId,
+					bpm,
+					cuts: plan.clips.length,
+					durationMs: plan.durationMs,
+					stillsZoomed: zooms,
+				};
+			},
+		);
 	}
 
 	/** Loudness of the whole mix as it would be exported (EBU R128). */

@@ -437,6 +437,25 @@ export class Controller extends EventEmitter {
 					{ type: "deleteSequence", ...parseInput("delete_sequence", params) },
 					actor,
 				);
+			case "branch_sequence": {
+				const { name, from } = parseInput("branch_sequence", params);
+				return this.afterSequence(this.store.apply({ type: "branchSequence", name, from }, actor));
+			}
+			case "promote_branch":
+				return this.store.apply(
+					{ type: "promoteBranch", ...parseInput("promote_branch", params) },
+					actor,
+				);
+			case "rough_cut": {
+				const input = parseInput("rough_cut", params);
+				return this.afterSequence(await this.store.roughCut(actor, input));
+			}
+			case "beat_montage": {
+				const input = parseInput("beat_montage", params);
+				return this.afterSequence(
+					await this.job("Cutting to the beat", () => this.store.beatMontage(actor, input)),
+				);
+			}
 			case "nest_clips":
 				return this.afterSequence(
 					this.store.apply({ type: "nestClips", ...parseInput("nest_clips", params) }, actor),

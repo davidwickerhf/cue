@@ -281,6 +281,19 @@ export const contract = {
 		description: "Delete a timeline that is not open and not nested anywhere.",
 		input: { id: z.string() },
 	},
+	branch_sequence: {
+		description:
+			"Try an alternative cut without touching the original: copies the open timeline (or from) as a branch named e.g. 'Main · alt 1' and opens it. Edit the branch; the user can A/B compare it with the original (backquote key) and keep it with promote_branch.",
+		input: {
+			name: z.string().min(1).max(120).optional(),
+			from: z.string().optional().describe("sequence id to branch; default the open one"),
+		},
+	},
+	promote_branch: {
+		description:
+			"Keep a branch ('Use this version'): it takes the original's name and the original is renamed '… (old)', in one undoable step. The original is found by name ('Main · alt 1' → 'Main') unless originalId is given.",
+		input: { id: z.string(), originalId: z.string().optional() },
+	},
 	nest_clips: {
 		description:
 			"Nest clips (Premiere's Nest): move them into a new sequence that takes their place as one clip. Open the new sequence to edit inside it; the nested clip updates when you come back.",
@@ -627,6 +640,28 @@ export const contract = {
 			trackId: z.string(),
 			musicAssetId: z.string(),
 			toleranceMs: z.number().min(20).max(1000).default(350),
+		},
+	},
+	rough_cut: {
+		description:
+			"Rough cut from a script or brief, on device: finds where each line was said in the transcribed media (word matching that tolerates small wording changes and gaps) and lays the matches out in line order in a new sequence (opened), padded by padMs. Video keeps its sound; audio-only media goes on a Dialogue track. lines default to the project's script lines; assetIds to all media with speech. Returns each match with its confidence (0–1) and the lines not found. Media must be transcribed first (transcribe_media). One undoable step.",
+		input: {
+			lines: z.array(z.string().min(1).max(2000)).min(1).max(200).optional(),
+			assetIds: z.array(z.string()).optional(),
+			name: z.string().min(1).max(120).optional(),
+			padMs: z.number().min(0).max(1000).default(150),
+		},
+	},
+	beat_montage: {
+		description:
+			"Music-driven montage: detects the music's beats and builds a new sequence (opened) with the music on an audio track (fading out at the end) and the pictures cut exactly on every 1, 2 or 4 beats, cycling through the media and taking a different part each time (starting on shot changes where found). Stills last one cut and get a gentle push-in. assetIds default to every video and image except the music; lengthSec defaults to the whole song. One undoable step.",
+		input: {
+			musicAssetId: z.string(),
+			assetIds: z.array(z.string()).min(1).optional(),
+			every: z.union([z.literal(1), z.literal(2), z.literal(4)]).default(2),
+			lengthSec: z.number().min(2).max(3600).optional(),
+			name: z.string().min(1).max(120).optional(),
+			zoomStills: z.boolean().default(true),
 		},
 	},
 	find_moments: {

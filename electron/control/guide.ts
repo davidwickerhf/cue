@@ -36,7 +36,8 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 - Speech: transcribe_media, get_transcript (search a phrase to get word indices), cut_words (text-based editing on every track), remove_filler_words, find_moments (search by meaning).
 - Voiceover script: set_lines/import_script/add_line/update_line, record_line (uses the user's microphone: tell them which line is about to roll first), generate_take (AI voice), rewrite_line (fit the line to its time), choose_take.
 - Sound: update_track eq {low, mid, high in dB, -12 to 12} and compressor {amount 0–1} shape a whole track (the Voice preset is eq low -3, mid +2, high +3 with compressor 0.5; Music bed is mid -2 with compressor 0.3). auto_mix levels everything in one step (dialogue about -16 LUFS, music 8 dB under it and ducked, Voice preset on the voiceover); measure_loudness reads the mix's loudness without changing anything. Check the result before and after with measure_loudness.
-- Music: detect_beats (optionally add beat markers), snap_cuts_to_beats.
+- Music: detect_beats (optionally add beat markers), snap_cuts_to_beats. beat_montage builds a whole montage in a new sequence: the music on an audio track and the pictures cut on every 1, 2 or 4 beats, a fresh part of the footage each time.
+- From a script or brief: rough_cut finds where each line was said in the transcribed footage (on device, no model) and lays the takes out in line order in a new sequence, reporting a confidence per line and the lines it could not find. Transcribe the media first (transcribe_media); rough_cut says which media still needs it.
 - Long takes and finished films: split_at_scenes cuts a video clip at its shot changes (or marks them), a quick way to break footage into shots before choosing.
 - Generate: generate_voiceover, auto_captions, generate_image, suggest_broll then add_broll, generate_chapters, script_from_media. Check get_ai_status first; if a provider is not ready, say so (the user sets keys in Settings).
 - Shape: set_canvas, reframe (e.g. 1080×1920 for vertical; then adjust transform.x per clip to follow the subject).
@@ -45,6 +46,8 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 
 ## Sequences (several timelines)
 A project can hold several timelines. list_sequences shows them; the open one is what every editing tool changes. new_sequence, open_sequence, rename_sequence, duplicate_sequence, delete_sequence. nest_clips turns selected clips into one clip backed by a new sequence (like Premiere's Nest); open_sequence on it to edit inside, then open "main" again. Nested clips play a render of their sequence that refreshes automatically.
+
+Try alternatives in a branch, keep the original: branch_sequence copies the open timeline as "Main · alt 1" (and so on) and opens it, so bold changes (a shorter cut, another order, a different music edit) never touch the original. The user compares the two with the A/B button above the timeline or the backquote key, which flips between them at the same playhead position. If the branch wins, promote_branch gives it the original's name and renames the original "… (old)"; otherwise open the original again and leave or delete the branch.
 
 ## Showing the user
 select_clips highlights clips; seek moves the playhead; play/pause; set_in_out marks a range; set_view switches workspace (editing; audio with the mixer and tall audio tracks; colour with scopes and before/after; voiceover with the script prompter; titles with safe areas; agent; review with markers), opens a panel, fits or zooms the timeline, or opens media in the source monitor. Use these to point at what you mean.
