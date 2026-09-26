@@ -62,6 +62,7 @@ A fast, open-source video editor for macOS. Edit by hand with the shortcuts you 
 | **Speech** | Word-level transcripts, text-based editing, filler-word removal, search by meaning, chapters, captions (SRT and VTT). |
 | **Voiceover** | A script on the timeline as timed lines, teleprompter recording with takes per line, AI voices. |
 | **Generate** | Voices, captions, images and B-roll with OpenAI, or on-device with macOS voices, Whisper and Ollama or LM Studio. |
+| **Media** | Bins and sub-bins, tags, star ratings and notes, search across names, tags, notes and transcripts, Unused and Rated filters, list and grid views, and media info (codecs, frame rate, bitrate, audio layout, recording date) with where each item is used. |
 | **Projects** | `.cueproj` files, projects overview with posters, relinking of moved media, persistent history of every change, workspaces. |
 | **Export** | H.264, HEVC and ProRes with hardware encoding, presets, in-to-out ranges, stills, per-line stems, captions, and timelines for other editors. |
 

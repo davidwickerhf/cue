@@ -124,12 +124,66 @@ export const contract = {
 	},
 	list_media: {
 		description:
-			"The media library: id, kind, duration, origin (import/recording/tts/generated), which line a take belongs to.",
-		input: {},
+			"The media library: id, kind, name, duration, origin (import/recording/tts/generated), the line a take belongs to, bin (id and path), tags, rating (0–5), note, whether and where it is used, and technical info (codec, fps, bitrate, file size, audio channels and sample rate, recording date). filter narrows it: binId (media directly in that bin; null for media in no bin), tag, kind, unused (no timeline uses it), minRating, query (words to find in the name, tags, note or transcript).",
+		input: {
+			filter: z
+				.object({
+					binId: z.string().nullable(),
+					tag: z.string(),
+					kind: z.enum(["video", "audio", "image"]),
+					unused: z.boolean(),
+					minRating: z.number().int().min(1).max(5),
+					query: z.string(),
+				})
+				.partial()
+				.optional(),
+		},
 	},
 	remove_media: {
-		description: "Remove a media item and every clip that uses it.",
+		description:
+			"Remove media items (id, or ids for several) and every clip that uses them, as one undo step.",
+		input: { id: z.string().optional(), ids: z.array(z.string()).min(1).optional() },
+	},
+	rename_media: {
+		description: "Rename a media item in the library (the file on disk keeps its name).",
+		input: { id: z.string(), name: z.string().min(1).max(200) },
+	},
+	list_bins: {
+		description:
+			"The bins (folders) of the media library: id, name, parentId for sub-bins, and how many items each holds directly.",
+		input: {},
+	},
+	create_bin: {
+		description:
+			"Create a bin (folder) for media. parentId makes it a sub-bin of a top-level bin (bins nest one level deep). Returns the new bin's id in created.",
+		input: {
+			name: z.string().min(1).max(120),
+			parentId: z.string().optional(),
+		},
+	},
+	rename_bin: {
+		description: "Rename a bin.",
+		input: { id: z.string(), name: z.string().min(1).max(120) },
+	},
+	remove_bin: {
+		description:
+			"Delete a bin. Nothing is lost: its media and sub-bins move up to where the bin was (its parent, or the top level).",
 		input: { id: z.string() },
+	},
+	move_media: {
+		description: "File media items in a bin, or at the top level with binId null.",
+		input: { assetIds: ids, binId: z.string().nullable() },
+	},
+	tag_media: {
+		description:
+			"Tag, rate and annotate media items. add and remove are lists of tags (merged with the tags they have; case doesn't matter). rating 1–5 stars (5 is a favourite), 0 clears it. note replaces the note; an empty note clears it. Fields you leave out stay as they are.",
+		input: {
+			assetIds: ids,
+			add: z.array(z.string().max(60)).optional(),
+			remove: z.array(z.string().max(60)).optional(),
+			rating: z.number().int().min(0).max(5).optional(),
+			note: z.string().max(4000).optional(),
+		},
 	},
 	add_track: {
 		description: "Add a video, audio or text track. index 0 is the top.",

@@ -17,6 +17,7 @@ import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
 import { layout } from "../../lib/workspace";
+import { AssetInspector } from "../panels/MediaInfo";
 import {
 	ColorInput,
 	Field,
@@ -72,10 +73,18 @@ function useFonts(): string[] {
 export function Inspector() {
 	const project = useProject();
 	const selected = useApp((s) => s.selectedClipIds) ?? [];
+	const assetIds = editor.use((s) => s.selectedAssetIds);
 	const inspectorWidth = layout.use((s) => s.inspectorWidth);
+	// Picking clips on the timeline takes over from media picked in the Media panel.
+	const clipKey = selected.join();
+	useEffect(() => {
+		if (clipKey) editor.set({ selectedAssetIds: [] });
+	}, [clipKey]);
 	if (!project) return null;
 	const clips = project.data.clips.filter((c) => selected.includes(c.id));
 	const clip = clips.length === 1 ? clips[0] : null;
+	const media =
+		clips.length === 0 ? project.data.assets.filter((a) => assetIds.includes(a.id)) : [];
 
 	return (
 		<FoldingSections.Provider value={true}>
@@ -91,7 +100,11 @@ export function Inspector() {
 								: (clip.name ?? "Clip")
 							: clips.length > 1
 								? `${clips.length} clips`
-								: "Inspector"}
+								: media.length === 1
+									? media[0].name
+									: media.length > 1
+										? `${media.length} media items`
+										: "Inspector"}
 					</h2>
 					{clips.length > 0 && (
 						<div className="flex gap-0.5">
@@ -127,7 +140,9 @@ export function Inspector() {
 					)}
 				</header>
 				<div className="custom-scrollbar min-h-0 flex-1 divide-y divide-separator overflow-y-auto">
-					{!clip ? (
+					{!clip && media.length > 0 ? (
+						<AssetInspector ids={media.map((a) => a.id)} project={project} />
+					) : !clip ? (
 						<Nothing count={clips.length} />
 					) : clip.type === "text" ? (
 						<TextInspector clip={clip} />

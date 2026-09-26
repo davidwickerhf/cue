@@ -55,7 +55,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [x] Per-track EQ and compressor (with Voice and Music bed presets, in the mixer and update_track)
 - [x] Volume line on audio clips
 - [ ] Screen and camera recording
-- [ ] Media bins, tags and media info
+- [x] Media bins, tags and media info
 - [x] Scene detection (split at shot changes, from the clip menu or split_at_scenes)
 - [x] GIF, MP3 and AAC export (social formats: see one-click variants)
 - [ ] Auto-update, notarisation, Windows and Linux builds

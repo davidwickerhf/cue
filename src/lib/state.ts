@@ -138,6 +138,8 @@ export const editor = createStore({
 	/** In and out points for playing or exporting a range. */
 	inPoint: null as number | null,
 	outPoint: null as number | null,
+	/** Media items picked in the Media panel; the inspector shows their info while no clip is selected. */
+	selectedAssetIds: [] as string[],
 });
 
 /** App-level dialogs that can open from the menu or the overview. */

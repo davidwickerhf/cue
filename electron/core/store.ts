@@ -30,6 +30,7 @@ import {
 	type ImportedStack,
 	INTERCHANGE_EXTENSIONS,
 	type InterchangeFormat,
+	type LibraryInfo,
 	toEdl,
 	toFcpxml,
 	toMlt,
@@ -74,6 +75,7 @@ import type {
 	Asset,
 	Clip,
 	MediaClip,
+	MediaInfo,
 	ProjectData,
 	ProjectSnapshot,
 	Proposal,
@@ -287,6 +289,59 @@ export class ProjectStore extends EventEmitter {
 			"system",
 			`Found ${ids.length} moved media file${ids.length === 1 ? "" : "s"} and relinked ${ids.length === 1 ? "it" : "them"}`,
 		);
+	}
+
+	private backfilling: Promise<void> | null = null;
+
+	/**
+	 * Reads codec, frame rate, bitrate and so on for media that doesn't have
+	 * them yet (projects from before Cue kept them, recorded takes). Each file
+	 * is probed once; the result is kept in the project, without an undo step.
+	 */
+	backfillInfo(): Promise<void> {
+		this.backfilling ??= this.probeMissing().finally(() => {
+			this.backfilling = null;
+		});
+		return this.backfilling;
+	}
+
+	private async probeMissing(): Promise<void> {
+		const file = this.file;
+		if (!this.data || !file) return;
+		const offline = new Set(this.offline());
+		const todo = this.data.assets.filter(
+			(a) => !a.info && a.path && !a.sequenceId && a.kind !== "adjustment" && !offline.has(a.id),
+		);
+		if (!todo.length) return;
+		const dir = this.projectDir;
+		const infos: Record<string, MediaInfo> = {};
+		const sizes: Record<string, number> = {};
+		// A few at a time: quick for hundreds of files without starting hundreds of ffmpegs.
+		for (let i = 0; i < todo.length; i += 4) {
+			await Promise.all(
+				todo.slice(i, i + 4).map(async (a) => {
+					const resolved = resolveInProject(dir, a.path);
+					try {
+						const [probed, stat] = await Promise.all([probe(resolved), fs.stat(resolved)]);
+						infos[a.id] = probed.info;
+						if (a.size === undefined) sizes[a.id] = stat.size;
+					} catch {
+						// Unreadable files are marked as probed so they aren't retried on every open.
+						infos[a.id] = { probedAt: new Date().toISOString() };
+					}
+				}),
+			);
+		}
+		// The project may have been closed or switched while probing.
+		if (this.file !== file || !this.data) return;
+		const op = { type: "setMediaInfo" as const, infos, sizes };
+		const withInfo = (d: ProjectData) => applyOp(d, op).data;
+		this.data = withInfo(this.data);
+		// Earlier states get the info too, so undoing past this point doesn't lose it.
+		this.past = this.past.map(withInfo);
+		this.future = this.future.map(withInfo);
+		if (this.proposal) this.proposal.base = withInfo(this.proposal.base);
+		this.touch();
 	}
 
 	/**
@@ -1628,6 +1683,7 @@ export class ProjectStore extends EventEmitter {
 		await this.autoRelink();
 		this.autoBuildProxies();
 		this.refreshPoster();
+		void this.backfillInfo();
 	}
 
 	/** Saves and closes the project, back to the projects overview. */
@@ -1805,6 +1861,16 @@ export class ProjectStore extends EventEmitter {
 				),
 			);
 		const all = [...new Set(media(timeline))];
+		const library = new Map<string, LibraryInfo>();
+		const collect = (stack: ImportedStack): void => {
+			for (const t of stack.tracks)
+				for (const c of t.clips) {
+					if (c.type === "media" && c.library && !library.has(c.file))
+						library.set(c.file, c.library);
+					if (c.type === "nested") collect(c.timeline);
+				}
+		};
+		collect(timeline);
 		const missing = all.filter((f) => !existsSync(f));
 		const counts = { clips: 0, sequences: 0 };
 		await this.transaction(actor, `Imported ${path.basename(source)}`, async () => {
@@ -1812,8 +1878,13 @@ export class ProjectStore extends EventEmitter {
 				this.current.assets.map((a) => [resolveInProject(this.projectDir, a.path), a.id]),
 			);
 			const files = all.filter((f) => existsSync(f) && !byPath.has(f) && kindOf(f));
-			for (const asset of await this.importMedia(files, actor))
-				byPath.set(resolveInProject(this.projectDir, asset.path), asset.id);
+			for (const asset of await this.importMedia(files, actor)) {
+				const resolved = resolveInProject(this.projectDir, asset.path);
+				byPath.set(resolved, asset.id);
+				// Media new to this project keeps the bin, tags and rating it had in Cue.
+				const info = library.get(resolved);
+				if (info) this.applyLibrary(asset.id, info, actor);
+			}
 			if (this.current.clips.length === 0 && timeline.width && timeline.height)
 				this.apply(
 					{ type: "setCanvas", canvas: { width: timeline.width, height: timeline.height } },
@@ -1827,6 +1898,34 @@ export class ProjectStore extends EventEmitter {
 			sequences: counts.sequences,
 			missing,
 		};
+	}
+
+	/** Files a media item in a bin (by path, creating bins as needed) and sets its tags, rating and note. */
+	private applyLibrary(assetId: string, info: LibraryInfo, actor: Actor): void {
+		if (info.bin) {
+			const [top, sub] = info.bin.split(" › ").map((n) => n.trim().slice(0, 120));
+			const find = (name: string, parentId?: string) =>
+				(this.current.bins ?? []).find(
+					(b) => b.parentId === parentId && b.name.toLowerCase() === name.toLowerCase(),
+				)?.id;
+			const binFor = (name: string, parentId?: string) =>
+				find(name, parentId) ??
+				this.apply({ type: "createBin", name, parentId }, actor).created?.[0];
+			let binId = top ? binFor(top) : undefined;
+			if (binId && sub) binId = binFor(sub, binId);
+			if (binId) this.apply({ type: "moveMedia", assetIds: [assetId], binId }, actor);
+		}
+		if (info.tags?.length || info.rating || info.note)
+			this.apply(
+				{
+					type: "tagMedia",
+					assetIds: [assetId],
+					add: info.tags,
+					rating: info.rating || undefined,
+					note: info.note,
+				},
+				actor,
+			);
 	}
 
 	/** Adds an imported stack's tracks and clips to the open timeline; nested stacks become nested sequences. */
@@ -2014,6 +2113,9 @@ export class ProjectStore extends EventEmitter {
 		this.touch();
 		this.log(actor, summary);
 		this.record(actor, summary, "edit");
+		// Takes, generated images and the like arrive without media info; read it in the background.
+		if ((op.type === "addAsset" || op.type === "addTake") && !op.asset.info)
+			void this.backfillInfo();
 		return { summary, created };
 	}
 
@@ -2251,6 +2353,7 @@ export class ProjectStore extends EventEmitter {
 				hasAudio: kind === "audio" ? true : info.hasAudio,
 				origin: "import",
 				createdAt: new Date().toISOString(),
+				info: info.info,
 				actor,
 			};
 			this.apply(
