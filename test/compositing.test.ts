@@ -180,4 +180,74 @@ describe("compositing", () => {
 		const probe = await run(ffmpegPath(), ["-i", out, "-hide_banner"]).catch((e) => e);
 		expect(String(probe.stderr)).toContain("Audio:");
 	}, 90000);
+
+	it("exports blur, sharpen, vignette, glow and stabilisation", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-fx-"));
+		const src = path.join(dir, "src.mp4");
+		// A white frame with a black square, moving a little (something to stabilise).
+		await ffmpeg([
+			"-f",
+			"lavfi",
+			"-i",
+			"color=c=white:s=320x180:r=30:d=3",
+			"-vf",
+			"drawbox=x='120+3*sin(t*9)':y=60:w=80:h=60:color=black:t=fill",
+			"-pix_fmt",
+			"yuv420p",
+			src,
+		]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Effects" });
+		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180 } }, "user");
+		const [asset] = await store.importMedia([src], "user");
+		store.apply(
+			{
+				type: "addClips",
+				clips: [{ type: "media", trackId: "V1", assetId: asset.id, startMs: 0, durationMs: 3000 }],
+			},
+			"user",
+		);
+		const clip = store.current.clips.find((c) => c.type === "media") as MediaClip;
+		store.apply(
+			{
+				type: "updateClip",
+				id: clip.id,
+				patch: { effects: { blur: 1, sharpen: 0.2, glow: 0.3, stabilize: true } },
+			},
+			"user",
+		);
+		store.apply({ type: "addAdjustment", startMs: 0, durationMs: 3000 }, "user");
+		const adj = store.current.clips.find(
+			(c) => c.type === "media" && c.assetId === "a_adjust",
+		) as MediaClip;
+		store.apply({ type: "updateClip", id: adj.id, patch: { effects: { vignette: 1 } } }, "user");
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
+			"user",
+		);
+		const out = (await store.export("video", "fx.mp4", "user")).outputs[0];
+		// Blurred edges of the square: some pixels across it are neither white nor black.
+		const across = await Promise.all(
+			[108, 112, 116, 120, 124, 128, 132].map(async (x) => (await pixel(out, 1.5, x, 90, 320))[0]),
+		);
+		expect(across.filter((v) => v > 40 && v < 215).length).toBeGreaterThan(1);
+		// The vignette darkens the corners of the white frame.
+		const [corner] = await pixel(out, 1.5, 2, 2, 320);
+		const [middle] = await pixel(out, 1.5, 60, 90, 320);
+		expect(corner).toBeLessThan(middle - 20);
+		// Turning every effect off leaves no effects object.
+		store.apply(
+			{
+				type: "updateClip",
+				id: adj.id,
+				patch: { effects: { vignette: 0 } },
+			},
+			"user",
+		);
+		expect((store.current.clips.find((c) => c.id === adj.id) as MediaClip).effects).toBeUndefined();
+	}, 90000);
 });

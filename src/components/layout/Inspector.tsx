@@ -342,6 +342,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 				</Section>
 			)}
 			{adjustment && <ColorSection clip={clip} />}
+			{adjustment && <EffectsSection clip={clip} adjustment />}
 			{adjustment && <MaskSection clip={clip} />}
 			{asset?.kind !== "image" && !adjustment && (
 				<Section title="Source">
@@ -547,6 +548,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 			)}
 			{visual && <ZoomSection clip={clip} />}
 			{visual && <ColorSection clip={clip} />}
+			{visual && <EffectsSection clip={clip} video={asset?.kind === "video"} />}
 			{visual && <MaskSection clip={clip} />}
 			{visual && asset?.kind === "video" && <KeySection clip={clip} />}
 			{clip.transitionIn && (
@@ -1271,6 +1273,59 @@ function MaskSection({ clip }: { clip: MediaClip }) {
 				checked={m.invert}
 				onChange={(invert) => set({ invert })}
 			/>
+		</Section>
+	);
+}
+
+/** Blur, sharpen, vignette, glow and stabilisation, previewed live and matched on export. */
+function EffectsSection({
+	clip,
+	video,
+	adjustment,
+}: {
+	clip: MediaClip;
+	video?: boolean;
+	adjustment?: boolean;
+}) {
+	const e = { blur: 0, sharpen: 0, vignette: 0, glow: 0, stabilize: false, ...clip.effects };
+	const set = (effects: Record<string, unknown> | null) =>
+		void run("update_clip", { id: clip.id, patch: { effects } });
+	const pct = (v: number) => (v ? `${Math.round(v * 100)}` : "Off");
+	const slider = (name: "blur" | "sharpen" | "vignette" | "glow", label: string) => (
+		<Field label={label}>
+			<Range
+				value={e[name]}
+				min={0}
+				max={1}
+				step={0.01}
+				format={pct}
+				onCommit={(v) => set({ [name]: v })}
+			/>
+		</Field>
+	);
+	return (
+		<Section
+			title="Effects"
+			action={
+				clip.effects ? (
+					<Button size="sm" variant="ghost" className="h-6 text-[11px]" onPress={() => set(null)}>
+						Reset
+					</Button>
+				) : null
+			}
+		>
+			{slider("blur", "Blur")}
+			{slider("sharpen", "Sharpen")}
+			{slider("vignette", "Vignette")}
+			{/* Glow needs the picture itself, so an adjustment layer can't glow what's below it. */}
+			{!adjustment && slider("glow", "Glow")}
+			{video && (
+				<Toggle
+					label="Stabilise (analysed on export)"
+					checked={e.stabilize}
+					onChange={(stabilize) => set({ stabilize })}
+				/>
+			)}
 		</Section>
 	);
 }

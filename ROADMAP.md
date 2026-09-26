@@ -48,7 +48,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [x] Resizable track heights
 - [ ] Keyframe lanes and a curve editor
 - [x] Waveforms on video clips
-- [ ] Effects library: blur, sharpen, vignette, glow, stabilisation
+- [x] Effects library: blur, sharpen, vignette, glow, stabilisation
 - [ ] More transitions: wipes, slides, zoom, blur
 - [ ] Shapes and overlays: arrows, callouts, blur and redact boxes
 - [ ] Picture-in-picture and split-screen layouts

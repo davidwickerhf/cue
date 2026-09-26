@@ -192,6 +192,14 @@ export const keySchema = z.object({
 	blend: z.number().min(0).max(0.5),
 });
 export const DEFAULT_KEY = { color: "#00ff00", similarity: 0.15, blend: 0.08 };
+export const effectsSchema = z.object({
+	blur: z.number().min(0).max(1),
+	sharpen: z.number().min(0).max(1),
+	vignette: z.number().min(0).max(1),
+	glow: z.number().min(0).max(1),
+	stabilize: z.boolean(),
+});
+export const NO_EFFECTS = { blur: 0, sharpen: 0, vignette: 0, glow: 0, stabilize: false };
 export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temperature: 0 };
 export const transitionSchema = z.object({
 	kind: z.enum(["crossfade", "dip"]),
@@ -289,6 +297,7 @@ const mediaClipSchema = z.object({
 	color: colorSchema.optional(),
 	mask: maskSchema.optional(),
 	key: keySchema.optional(),
+	effects: effectsSchema.optional(),
 	transitionIn: transitionSchema.optional(),
 	groupId: z.string().optional(),
 	disabled: z.boolean().optional(),

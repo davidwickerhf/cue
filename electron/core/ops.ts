@@ -12,6 +12,7 @@ import {
 	DEFAULT_TEXT_STYLE,
 	DEFAULT_TRANSFORM,
 	defaultTracks,
+	effectsSchema,
 	exportSchema,
 	groupTracks,
 	keyframeSchema,
@@ -20,6 +21,7 @@ import {
 	maskSchema,
 	NEUTRAL_COLOR,
 	NO_CROP,
+	NO_EFFECTS,
 	newId,
 	normaliseLine,
 	settingsSchema,
@@ -94,6 +96,7 @@ export const clipPatch = z
 		label: z.enum(CLIP_LABELS).nullable(),
 		mask: maskSchema.partial().nullable(),
 		key: keySchema.partial().nullable(),
+		effects: effectsSchema.partial().nullable(),
 	})
 	.partial();
 
@@ -881,7 +884,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		case "updateClip": {
 			const current = clip(data, op.id);
 			unlocked(data, current.trackId);
-			const { transform, style, color, label, mask, key, ...patch } = op.patch;
+			const { transform, style, color, label, mask, key, effects, ...patch } = op.patch;
 			// null clears a label, mask or key; a partial mask or key merges with what is there.
 			const rest = {
 				...patch,
@@ -901,6 +904,18 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 								key === null
 									? undefined
 									: keySchema.parse({ ...DEFAULT_KEY, ...current.key, ...key }),
+						}),
+				...(effects === undefined || current.type !== "media"
+					? {}
+					: {
+							effects: (() => {
+								if (effects === null) return undefined;
+								const next = effectsSchema.parse({ ...NO_EFFECTS, ...current.effects, ...effects });
+								// All off is the same as none.
+								return next.blur || next.sharpen || next.vignette || next.glow || next.stabilize
+									? next
+									: undefined;
+							})(),
 						}),
 			};
 			const merged =

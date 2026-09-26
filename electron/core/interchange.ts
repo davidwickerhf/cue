@@ -440,6 +440,7 @@ function parseStack(stack: OtioNode, baseDir: string, found: { fps: number }): I
 					extra: {
 						color: color ?? undefined,
 						mask: meta?.type === "media" ? meta.mask : undefined,
+						effects: meta?.type === "media" ? meta.effects : undefined,
 					},
 				});
 			} else if (typeof ref?.target_url === "string" && ref.target_url) {
@@ -462,6 +463,7 @@ function parseStack(stack: OtioNode, baseDir: string, found: { fps: number }): I
 								zooms: meta.zooms,
 								mask: meta.mask,
 								key: meta.key,
+								effects: meta.effects,
 							}
 						: undefined;
 				// Source times count from the media's own start timecode (Resolve starts at 01:00:00:00).

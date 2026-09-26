@@ -1087,6 +1087,7 @@ export class ProjectStore extends EventEmitter {
 						...(extra?.color ? { color: extra.color } : {}),
 						...(extra?.mask ? { mask: extra.mask } : {}),
 						...(extra?.key ? { key: extra.key } : {}),
+						...(extra?.effects ? { effects: extra.effects } : {}),
 					};
 					if (id && Object.keys(patch).length) this.apply({ type: "updateClip", id, patch }, actor);
 				}

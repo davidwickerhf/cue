@@ -18,6 +18,7 @@ import type {
 	Asset,
 	Clip,
 	ColorGrade,
+	Effects,
 	Mask,
 	MediaClip,
 	ProjectData,
@@ -463,9 +464,10 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const a = assetOf(data, clip.assetId);
 		if (a.kind === "adjustment") {
 			// An adjustment layer grades everything composited so far, for as long as it lasts.
-			const filters = gradeFilters(clip.color).map(
-				(f) => `${f}:enable='between(t,${start},${end})'`,
-			);
+			const filters = [
+				...gradeFilters(clip.color),
+				...effectFilters(clip.effects, H).filter((f) => !f.startsWith("glow:")),
+			].map((f) => `${f}:enable='between(t,${start},${end})'`);
 			if (filters.length) {
 				const out = `adj${adjustments++}`;
 				chains.push(`[${current}]${filters.join(",")},format=yuva420p[${out}]`);
@@ -488,9 +490,10 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const zoomChain = zoom
 			? `,scale=w='trunc(iw*${zoom.scale}/2)*2':h='trunc(ih*${zoom.scale}/2)*2':eval=frame:flags=bicubic,crop=w=${sw}:h=${sh}:x='max(0,min(iw-${sw},${zoom.x}*iw-${sw}/2))':y='max(0,min(ih-${sh},${zoom.y}*ih-${sh}/2))'`
 			: "";
-		const colorChain = gradeFilters(clip.color)
-			.map((f) => `,${f}`)
-			.join("");
+		const colorChain =
+			gradeFilters(clip.color)
+				.map((f) => `,${f}`)
+				.join("") + effectChain(clip.effects, sh, label);
 		// Chroma key removes the screen colour before anything is composited.
 		const keyChain = clip.key
 			? `,format=yuva420p,chromakey=color=0x${clip.key.color.slice(1)}:similarity=${clip.key.similarity.toFixed(3)}:blend=${clip.key.blend.toFixed(3)}`
@@ -527,7 +530,10 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS`;
 		} else if (a.kind === "video") {
 			index = addInput(["-i", file]);
-			source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
+			const steady = clip.effects?.stabilize
+				? `,vidstabtransform=input='${(await shakeAnalysis(ctx.dir, file, clip)).replace(/'/g, "\\'")}':smoothing=20:zoom=4`
+				: "";
+			source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))}${steady},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
 		} else continue;
 		const finish = `${crop}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`;
 		if (clip.mask) {
@@ -609,6 +615,73 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	}
 	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
 	return { kind: "video", outputs: [out], missing: [], durationMs: exported };
+}
+
+/**
+ * Filters for blur, sharpen and vignette, sized for a picture `height` pixels
+ * tall. Glow comes back as "glow:<sigma>:<strength>" (it needs a small graph).
+ */
+function effectFilters(effects: Effects | undefined, height: number): string[] {
+	if (!effects) return [];
+	const px = height / 1080;
+	return [
+		effects.blur > 0 ? `gblur=sigma=${(effects.blur * 24 * px).toFixed(2)}` : "",
+		effects.sharpen > 0 ? `unsharp=5:5:${(effects.sharpen * 2).toFixed(3)}:5:5:0` : "",
+		effects.vignette > 0 ? `vignette=angle=${(0.15 + effects.vignette * 0.75).toFixed(3)}` : "",
+		effects.glow > 0
+			? `glow:${(10 * px + effects.glow * 20 * px).toFixed(2)}:${(effects.glow * 0.8).toFixed(3)}`
+			: "",
+	].filter(Boolean);
+}
+
+/** Effects as a piece of a clip's filter chain (starting with a comma). */
+function effectChain(effects: Effects | undefined, height: number, label: string): string {
+	let chain = "";
+	for (const f of effectFilters(effects, height)) {
+		if (!f.startsWith("glow:")) {
+			chain += `,${f}`;
+			continue;
+		}
+		// Glow: a blurred copy screened over the picture.
+		const [, sigma, strength] = f.split(":");
+		chain +=
+			`,format=gbrp,split[gA${label}][gB${label}];` +
+			`[gB${label}]gblur=sigma=${sigma}[gC${label}];` +
+			`[gA${label}][gC${label}]blend=all_mode=screen:all_opacity=${strength}`;
+	}
+	return chain;
+}
+
+/**
+ * Pass one of stabilisation: the camera motion of the part of the source a
+ * clip uses, analysed once and cached next to the project.
+ */
+async function shakeAnalysis(dir: string, file: string, clip: MediaClip): Promise<string> {
+	const key = JSON.stringify([file, clip.inMs, sourceSpan(clip)]);
+	let hash = 0;
+	for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+	const trf = path.join(dir, ".cue-cache", "stabilize", `${(hash >>> 0).toString(36)}.trf`);
+	try {
+		await fs.access(trf);
+		return trf;
+	} catch {}
+	await fs.mkdir(path.dirname(trf), { recursive: true });
+	const tmp = `${trf}.part`;
+	await ffmpeg([
+		"-ss",
+		s(clip.inMs),
+		"-t",
+		s(sourceSpan(clip)),
+		"-i",
+		file,
+		"-vf",
+		`vidstabdetect=shakiness=6:result='${tmp.replace(/'/g, "\\'")}'`,
+		"-f",
+		"null",
+		"-",
+	]);
+	await fs.rename(tmp, trf);
+	return trf;
 }
 
 /** Colour-correction filters for a grade (shared by clips and adjustment layers). */

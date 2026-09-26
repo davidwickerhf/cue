@@ -3,6 +3,7 @@ import type {
 	Asset,
 	Clip,
 	ColorGrade,
+	Effects,
 	MediaClip,
 	ProjectSnapshot,
 	TextClip,
@@ -25,6 +26,8 @@ interface Slot {
 	pendingSeek: number | null;
 	/** WebGL canvas for chroma-keyed clips, made on first use. */
 	keyer?: Keyer | null;
+	/** Dark-edge overlay for the vignette effect, made on first use. */
+	vignette?: HTMLDivElement;
 	/** Set once the slot's layer is rebuilt; stops its frame callbacks. */
 	disposed?: boolean;
 	keyedClip?: MediaClip | null;
@@ -59,6 +62,56 @@ function cssFilter(grade: ColorGrade | undefined): string {
 	if (grade.temperature > 0) parts.push(`sepia(${(grade.temperature * 0.35).toFixed(3)})`);
 	if (grade.temperature < 0) parts.push(`hue-rotate(${(grade.temperature * 18).toFixed(1)}deg)`);
 	return parts.length ? parts.join(" ") : "none";
+}
+
+const joinFilters = (...parts: string[]) =>
+	parts.filter((p) => p && p !== "none").join(" ") || "none";
+
+/**
+ * CSS for blur, sharpen and glow at `px` screen pixels per export pixel of a
+ * 1080-line picture (same strengths as the exporter). Sharpen and glow use SVG
+ * filters added to the page once.
+ */
+function effectsFilter(effects: Effects | undefined, px: number): string {
+	if (!effects) return "none";
+	const parts: string[] = [];
+	if (effects.blur > 0) parts.push(`blur(${(effects.blur * 24 * px).toFixed(2)}px)`);
+	if (effects.sharpen > 0) parts.push(`url(#${svgFilter("sharpen", effects.sharpen)})`);
+	if (effects.glow > 0) parts.push(`url(#${svgFilter("glow", effects.glow)})`);
+	return parts.join(" ") || "none";
+}
+
+/** Id of a shared SVG filter for an effect, in ten steps of strength. */
+function svgFilter(kind: "sharpen" | "glow", amount: number): string {
+	const step = Math.max(1, Math.min(10, Math.round(amount * 10)));
+	const id = `cue-${kind}-${step}`;
+	if (document.getElementById(id)) return id;
+	let defs: Element | null = document.getElementById("cue-filters");
+	if (!defs) {
+		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+		svg.setAttribute("width", "0");
+		svg.setAttribute("height", "0");
+		svg.style.position = "absolute";
+		const created = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+		created.id = "cue-filters";
+		svg.append(created);
+		defs = created;
+		document.body.append(svg);
+	}
+	const k = step / 10;
+	const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
+	filter.id = id;
+	filter.setAttribute("color-interpolation-filters", "sRGB");
+	if (kind === "sharpen") {
+		// An unsharp kernel that sums to 1, so brightness is kept.
+		const a = (k * 0.6).toFixed(3);
+		const c = (1 + k * 2.4).toFixed(3);
+		filter.innerHTML = `<feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -${a} 0 -${a} ${c} -${a} 0 -${a} 0" divisor="1"/>`;
+	} else {
+		filter.innerHTML = `<feGaussianBlur in="SourceGraphic" stdDeviation="${(4 + k * 8).toFixed(1)}" result="b"/><feComponentTransfer in="b" result="s"><feFuncR type="linear" slope="${(k * 0.8).toFixed(2)}"/><feFuncG type="linear" slope="${(k * 0.8).toFixed(2)}"/><feFuncB type="linear" slope="${(k * 0.8).toFixed(2)}"/></feComponentTransfer><feBlend in="SourceGraphic" in2="s" mode="screen"/>`;
+	}
+	defs.append(filter);
+	return id;
 }
 
 /** Fade-out for a clip's sound, including a crossfade into the next clip (same rule as the exporter). */
@@ -484,6 +537,24 @@ class PlaybackEngine {
 		this.drawText(ms);
 	}
 
+	/** A dark edge over the slot's picture (made on first use). */
+	private showVignette(slot: Slot, effects: Effects | undefined) {
+		const amount = effects?.vignette ?? 0;
+		if (!amount) {
+			if (slot.vignette) slot.vignette.style.display = "none";
+			return;
+		}
+		if (!slot.vignette) {
+			slot.vignette = document.createElement("div");
+			slot.vignette.className = "pointer-events-none absolute inset-0";
+			slot.vignette.style.zIndex = "2";
+			slot.frame.append(slot.vignette);
+		}
+		slot.vignette.style.display = "";
+		const inner = Math.round(70 - amount * 45);
+		slot.vignette.style.background = `radial-gradient(ellipse at center, transparent ${inner}%, rgba(0,0,0,${(0.35 + amount * 0.55).toFixed(2)}) 100%)`;
+	}
+
 	/** Loads a clip's first frame into a hidden slot. */
 	private preload(slot: Slot, clip: MediaClip) {
 		const project = this.project;
@@ -554,7 +625,12 @@ class PlaybackEngine {
 		const z = zoomAt(clip.zooms, local);
 		element.style.transformOrigin = `${z.x * 100}% ${z.y * 100}%`;
 		element.style.transform = z.scale !== 1 ? `scale(${z.scale})` : "none";
-		element.style.filter = cssFilter(clip.color);
+		// Effects are sized like the export's: in pixels of a 1080-line picture.
+		element.style.filter = joinFilters(
+			cssFilter(clip.color),
+			effectsFilter(clip.effects, h / 1080),
+		);
+		this.showVignette(slot, clip.effects);
 		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
 		if (clip.key) {
 			if (slot.keyer === undefined) {
@@ -632,7 +708,12 @@ class PlaybackEngine {
 			? `url(${maskUrl(clip.mask, this.stageW / Math.max(1, this.stageH))})`
 			: "none";
 		frame.maskSize = "100% 100%";
-		frame.backdropFilter = cssFilter(clip.color) === "none" ? "" : cssFilter(clip.color);
+		const backdrop = joinFilters(
+			cssFilter(clip.color),
+			effectsFilter(clip.effects && { ...clip.effects, glow: 0 }, this.stageH / 1080),
+		);
+		frame.backdropFilter = backdrop === "none" ? "" : backdrop;
+		this.showVignette(slot, clip.effects);
 		slot.video.style.display = "none";
 		slot.image.style.display = "none";
 		if (slot.keyer) slot.keyer.canvas.style.display = "none";

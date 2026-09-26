@@ -164,6 +164,16 @@ export interface ColorGrade {
 	lut?: string;
 }
 
+/** Picture effects, each 0 (off) to 1. */
+export interface Effects {
+	blur: number;
+	sharpen: number;
+	vignette: number;
+	glow: number;
+	/** Smooth out camera shake (analysed on export). */
+	stabilize: boolean;
+}
+
 export interface Transition {
 	kind: "crossfade" | "dip";
 	durationMs: number;
@@ -192,6 +202,7 @@ export interface MediaClip {
 	color?: ColorGrade;
 	mask?: Mask;
 	key?: ChromaKey;
+	effects?: Effects;
 	/** How this clip enters from the clip before it on the same track. */
 	transitionIn?: Transition;
 	/** Clips with the same group move and delete together (e.g. linked picture and sound). */
