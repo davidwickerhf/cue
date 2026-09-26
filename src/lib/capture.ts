@@ -177,6 +177,11 @@ class ScreenCapture {
 				await new Promise((r) => setTimeout(r, 1000));
 				if (this.cancelled) return;
 			}
+			// Hide the countdown and let the screen catch up, so the recording doesn't open on a "1".
+			this.status.set({ count: 0 });
+			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+			await new Promise((r) => setTimeout(r, 250));
+			if (this.cancelled) return;
 			await this.begin(choice);
 		} catch (error) {
 			const message = (error as Error).message;

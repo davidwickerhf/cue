@@ -216,12 +216,13 @@ export function RecordDialog() {
 							checked={choice.camera}
 							onChange={(on) => set({ camera: on || choice.sourceId === null })}
 						/>
-						{choice.camera && (sources?.cameras.length ?? 0) > 1 && (
+						{choice.camera && (sources?.cameras.length ?? 0) > 0 && (
 							<select
 								className="h-8 rounded-md border border-border bg-default px-2 text-[12px]"
 								value={choice.cameraId ?? ""}
 								onChange={(e) => set({ cameraId: e.target.value || undefined })}
 							>
+								<option value="">System default camera</option>
 								{sources?.cameras.map((d) => (
 									<option key={d.id} value={d.id}>
 										{d.label}
@@ -229,27 +230,32 @@ export function RecordDialog() {
 								))}
 							</select>
 						)}
-						<Toggle
-							label="Camera as a bubble"
-							checked={choice.bubble}
-							onChange={(bubble) => set({ bubble })}
-						/>
-						<p className="-mt-1.5 text-[11px] text-muted">
-							{choice.bubble
-								? "The camera sits small in the bottom-right corner of the screen."
-								: "The camera goes full size on the track above; arrange it later."}
-						</p>
+						{choice.camera && choice.sourceId && (
+							<>
+								<Toggle
+									label="Camera as a bubble"
+									checked={choice.bubble}
+									onChange={(bubble) => set({ bubble })}
+								/>
+								<p className="-mt-1.5 text-[11px] text-muted">
+									{choice.bubble
+										? "The camera sits small in the bottom-right corner of the screen."
+										: "The camera goes full size on the track above; arrange it later."}
+								</p>
+							</>
+						)}
 						<Toggle
 							label="Microphone"
 							checked={choice.microphone}
 							onChange={(microphone) => set({ microphone })}
 						/>
-						{choice.microphone && (sources?.microphones.length ?? 0) > 1 && (
+						{choice.microphone && (sources?.microphones.length ?? 0) > 0 && (
 							<select
 								className="h-8 rounded-md border border-border bg-default px-2 text-[12px]"
 								value={choice.microphoneId ?? ""}
 								onChange={(e) => set({ microphoneId: e.target.value || undefined })}
 							>
+								<option value="">System default microphone</option>
 								{sources?.microphones.map((d) => (
 									<option key={d.id} value={d.id}>
 										{d.label}
@@ -300,7 +306,7 @@ export function CaptureBar() {
 	}, [phase]);
 	if (phase === "idle") return null;
 	if (phase === "countdown")
-		return (
+		return count === 0 ? null : (
 			<div
 				role="alertdialog"
 				aria-label="Recording starts in"
