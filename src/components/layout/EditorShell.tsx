@@ -6,6 +6,7 @@ import { clampLayout, layout } from "../../lib/workspace";
 import { ExportDialog } from "../ExportDialog";
 import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
+import { Dock } from "./Dock";
 import { EditorHeader } from "./EditorHeader";
 import { EditorSidebar } from "./EditorSidebar";
 import { Inspector } from "./Inspector";
@@ -17,6 +18,8 @@ export function EditorShell() {
 	useShortcuts();
 	const inspectorOpen = editor.use((s) => s.inspectorOpen);
 	const timelineHeight = layout.use((s) => s.timelineHeight);
+	const sidebarOpen = layout.use((s) => s.sidebarOpen);
+	const dock = layout.use((s) => s.dock);
 	const dragStart = useRef<{ y: number; h: number } | null>(null);
 
 	return (
@@ -25,8 +28,10 @@ export function EditorShell() {
 			<OfflineBanner />
 			<div className="flex min-h-0 flex-1">
 				<EditorSidebar />
-				<Splitter edge="sidebarWidth" />
+				{sidebarOpen && <Splitter edge="sidebarWidth" />}
 				<PreviewPanel />
+				{dock !== "none" && <Splitter edge="dockWidth" invert />}
+				<Dock />
 				{inspectorOpen && <Splitter edge="inspectorWidth" invert />}
 				{inspectorOpen && <Inspector />}
 			</div>
@@ -60,7 +65,13 @@ export function EditorShell() {
 }
 
 /** Drag handle between side-by-side panes. */
-function Splitter({ edge, invert }: { edge: "sidebarWidth" | "inspectorWidth"; invert?: boolean }) {
+function Splitter({
+	edge,
+	invert,
+}: {
+	edge: "sidebarWidth" | "inspectorWidth" | "dockWidth";
+	invert?: boolean;
+}) {
 	const start = useRef<{ x: number; w: number } | null>(null);
 	return (
 		<div

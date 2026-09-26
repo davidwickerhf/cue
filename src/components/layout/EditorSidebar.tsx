@@ -50,9 +50,18 @@ const TITLES: Record<SidebarPanel, string> = {
 export function EditorSidebar() {
 	const panel = editor.use((s) => s.panel);
 	const sidebarWidth = layout.use((s) => s.sidebarWidth);
+	const open = layout.use((s) => s.sidebarOpen);
+	// Clicking the open panel's icon folds the sidebar away; any icon opens it.
+	const choose = (id: SidebarPanel) => {
+		if (open && panel === id) layout.set({ sidebarOpen: false });
+		else {
+			editor.set({ panel: id });
+			layout.set({ sidebarOpen: true });
+		}
+	};
 	const agentSeen = useApp((s) => s.agent.lastSeenAt);
 	return (
-		<div className="flex min-h-0 shrink-0 border-r border-separator bg-surface">
+		<div className={cn("flex min-h-0 shrink-0 bg-surface", open && "border-r border-separator")}>
 			<nav
 				className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-separator py-2"
 				aria-label="Panels"
@@ -61,8 +70,8 @@ export function EditorSidebar() {
 					<RailButton
 						key={item.id}
 						label={item.label}
-						active={panel === item.id}
-						onPress={() => editor.set({ panel: item.id })}
+						active={open && panel === item.id}
+						onPress={() => choose(item.id)}
 						dot={item.id === "agent" && !!agentSeen}
 					>
 						{item.icon}
@@ -71,14 +80,17 @@ export function EditorSidebar() {
 				<div className="mt-auto">
 					<RailButton
 						label="Project settings"
-						active={panel === "settings"}
-						onPress={() => editor.set({ panel: "settings" })}
+						active={open && panel === "settings"}
+						onPress={() => choose("settings")}
 					>
 						<Gear className="size-[18px]" />
 					</RailButton>
 				</div>
 			</nav>
-			<div className="flex min-h-0 flex-col" style={{ width: sidebarWidth }}>
+			<div
+				className={cn("flex min-h-0 flex-col", !open && "hidden")}
+				style={{ width: sidebarWidth }}
+			>
 				<header className="flex h-10 shrink-0 items-center border-b border-separator px-4">
 					<h2 className="text-[12px] font-semibold">{TITLES[panel]}</h2>
 				</header>

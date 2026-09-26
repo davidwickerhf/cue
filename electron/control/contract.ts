@@ -746,7 +746,12 @@ export const contract = {
 			fitTimeline: z.boolean().optional(),
 			zoom: z.number().min(4).max(600).optional(),
 			openSource: z.string().optional().describe("asset id"),
-			workspace: z.enum(["editing", "audio", "colour", "voiceover", "titles", "agent"]).optional(),
+			workspace: z
+				.enum(["editing", "audio", "colour", "voiceover", "titles", "agent", "review"])
+				.optional()
+				.describe(
+					"editing; audio (mixer docked, tall audio tracks); colour (scopes, before/after, colour tools); voiceover (script and teleprompter); titles (safe areas, text tools); agent (chat and history); review (big viewer, markers list)",
+				),
 		},
 	},
 	get_app_settings: {

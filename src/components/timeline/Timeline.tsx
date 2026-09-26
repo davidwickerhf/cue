@@ -56,6 +56,7 @@ import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
+import { layout } from "../../lib/workspace";
 import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
 import { IconButton, Segmented } from "../ui/controls";
@@ -95,8 +96,12 @@ function setTrackHeight(trackId: string, height: number | null) {
 		localStorage.setItem(heightsKey(project), JSON.stringify(next));
 	} catch {}
 }
-const heightOf = (track: Track, heights: Record<string, number>) =>
-	heights[track.id] ?? TRACK_H[track.kind];
+/** A track's height: the user's own, else the workspace's for its kind. */
+const heightOf = (
+	track: Track,
+	heights: Record<string, number>,
+	byKind: Record<Track["kind"], number> = TRACK_H,
+) => heights[track.id] ?? byKind[track.kind];
 const SNAP_PX = 8;
 
 type Drag =
@@ -164,6 +169,7 @@ export function Timeline() {
 	const [menu, setMenu] = useState<{ x: number; y: number; clip: Clip; atMs: number } | null>(null);
 	const [viewWidth, setViewWidth] = useState(1000);
 	const heights = trackHeights.use((s) => s.heights);
+	const kindHeights = layout.use((s) => s.tracks);
 	const [marquee, setMarquee] = useState<Marquee | null>(null);
 	const marqueeRef = useRef<Marquee | null>(null);
 	const scrollBucket = useScrollBucket(scroller);
@@ -754,7 +760,7 @@ export function Timeline() {
 							<Row
 								key={track.id}
 								trackId={track.id}
-								height={heightOf(track, heights)}
+								height={heightOf(track, heights, kindHeights)}
 								onResize={(h) => setTrackHeight(track.id, h)}
 								header={<TrackHeader track={track} project={project} />}
 								dim={track.hidden || track.muted}
@@ -781,7 +787,7 @@ export function Timeline() {
 											width={width}
 											visible={[Math.max(0, windowStart - left), Math.min(width, windowEnd - left)]}
 											inMs={view.inMs}
-											height={heightOf(track, heights)}
+											height={heightOf(track, heights, kindHeights)}
 											pxPerMs={pxPerMs}
 											selected={selected.includes(clip.id)}
 											dragging={

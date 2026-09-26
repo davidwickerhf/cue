@@ -45,7 +45,7 @@ Look before and after you edit: render_frame(atMs) returns a PNG path of exactly
 A project can hold several timelines. list_sequences shows them; the open one is what every editing tool changes. new_sequence, open_sequence, rename_sequence, duplicate_sequence, delete_sequence. nest_clips turns selected clips into one clip backed by a new sequence (like Premiere's Nest); open_sequence on it to edit inside, then open "main" again. Nested clips play a render of their sequence that refreshes automatically.
 
 ## Showing the user
-select_clips highlights clips; seek moves the playhead; play/pause; set_in_out marks a range; set_view switches workspace (editing, audio, colour, voiceover, titles, agent), opens a panel, fits or zooms the timeline, or opens media in the source monitor. Use these to point at what you mean.
+select_clips highlights clips; seek moves the playhead; play/pause; set_in_out marks a range; set_view switches workspace (editing; audio with the mixer and tall audio tracks; colour with scopes and before/after; voiceover with the script prompter; titles with safe areas; agent; review with markers), opens a panel, fits or zooms the timeline, or opens media in the source monitor. Use these to point at what you mean.
 
 ## Output
 export kinds: video (optional range {startMs,endMs}), audio, voiceover, stems (one WAV per script line), captions (SRT+VTT), and otio/fcpxml/mlt/edl for other editors. export_frame saves a still. update_export sets codec (h264/hevc/prores), quality and size. Without an out path, files go to the project's export folder. You may create new files elsewhere (with the right file type), but you can only overwrite files in the export folder; pick a new name otherwise.

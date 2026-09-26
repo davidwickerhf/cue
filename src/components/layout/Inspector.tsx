@@ -19,6 +19,7 @@ import { layout } from "../../lib/workspace";
 import {
 	ColorInput,
 	Field,
+	FoldingSections,
 	IconButton,
 	NumberInput,
 	Range,
@@ -76,61 +77,63 @@ export function Inspector() {
 	const clip = clips.length === 1 ? clips[0] : null;
 
 	return (
-		<aside
-			className="flex shrink-0 flex-col border-l border-separator bg-surface"
-			style={{ width: inspectorWidth }}
-		>
-			<header className="flex h-10 shrink-0 items-center justify-between border-b border-separator pr-2 pl-4">
-				<h2 className="truncate text-[12px] font-semibold">
-					{clip
-						? clip.type === "text"
-							? "Text"
-							: (clip.name ?? "Clip")
-						: clips.length > 1
-							? `${clips.length} clips`
-							: "Inspector"}
-				</h2>
-				{clips.length > 0 && (
-					<div className="flex gap-0.5">
-						<IconButton
-							label="Split at playhead"
-							shortcut="⌘K"
-							onPress={() =>
-								void run("split_at", {
-									atMs: playback.currentMs,
-									trackIds: [...new Set(clips.map((c) => c.trackId))],
-								})
-							}
-						>
-							<Scissors className="size-4" />
-						</IconButton>
-						<IconButton
-							label="Duplicate"
-							shortcut="⌥ drag"
-							onPress={() => void run("duplicate_clips", { ids: selected })}
-						>
-							<Copy className="size-4" />
-						</IconButton>
-						<IconButton
-							label="Delete"
-							shortcut="⌫"
-							onPress={() => void run("delete_clips", { ids: selected })}
-						>
-							<Trash className="size-4" />
-						</IconButton>
-					</div>
-				)}
-			</header>
-			<div className="custom-scrollbar min-h-0 flex-1 divide-y divide-separator overflow-y-auto">
-				{!clip ? (
-					<Nothing count={clips.length} />
-				) : clip.type === "text" ? (
-					<TextInspector clip={clip} />
-				) : (
-					<MediaInspector clip={clip} project={project} />
-				)}
-			</div>
-		</aside>
+		<FoldingSections.Provider value={true}>
+			<aside
+				className="flex shrink-0 flex-col border-l border-separator bg-surface"
+				style={{ width: inspectorWidth }}
+			>
+				<header className="flex h-10 shrink-0 items-center justify-between border-b border-separator pr-2 pl-4">
+					<h2 className="truncate text-[12px] font-semibold">
+						{clip
+							? clip.type === "text"
+								? "Text"
+								: (clip.name ?? "Clip")
+							: clips.length > 1
+								? `${clips.length} clips`
+								: "Inspector"}
+					</h2>
+					{clips.length > 0 && (
+						<div className="flex gap-0.5">
+							<IconButton
+								label="Split at playhead"
+								shortcut="⌘K"
+								onPress={() =>
+									void run("split_at", {
+										atMs: playback.currentMs,
+										trackIds: [...new Set(clips.map((c) => c.trackId))],
+									})
+								}
+							>
+								<Scissors className="size-4" />
+							</IconButton>
+							<IconButton
+								label="Duplicate"
+								shortcut="⌥ drag"
+								onPress={() => void run("duplicate_clips", { ids: selected })}
+							>
+								<Copy className="size-4" />
+							</IconButton>
+							<IconButton
+								label="Delete"
+								shortcut="⌫"
+								onPress={() => void run("delete_clips", { ids: selected })}
+							>
+								<Trash className="size-4" />
+							</IconButton>
+						</div>
+					)}
+				</header>
+				<div className="custom-scrollbar min-h-0 flex-1 divide-y divide-separator overflow-y-auto">
+					{!clip ? (
+						<Nothing count={clips.length} />
+					) : clip.type === "text" ? (
+						<TextInspector clip={clip} />
+					) : (
+						<MediaInspector clip={clip} project={project} />
+					)}
+				</div>
+			</aside>
+		</FoldingSections.Provider>
 	);
 }
 
@@ -1074,7 +1077,7 @@ const MARKER_TONE = {
 } as const;
 
 /** Every marker in time order: click to jump, rename in place, delete. ⇧M / ⇧⌘M step through them. */
-function MarkerList({ markers }: { markers: ProjectSnapshot["data"]["markers"] }) {
+export function MarkerList({ markers }: { markers: ProjectSnapshot["data"]["markers"] }) {
 	const sorted = [...markers].sort((a, b) => a.atMs - b.atMs);
 	const labels = [...new Set(markers.map((m) => m.label))];
 	return (

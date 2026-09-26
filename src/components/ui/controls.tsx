@@ -1,6 +1,11 @@
 import { Button, Switch, Tooltip } from "@heroui/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { CaretRight } from "@phosphor-icons/react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
+import { isCollapsed, layout, sections, toggleSection } from "../../lib/workspace";
+
+/** Sections inside this fold by title (the inspector); elsewhere they stay open. */
+export const FoldingSections = createContext(false);
 
 export function IconButton({
 	label,
@@ -55,20 +60,40 @@ export function Section({
 	children: ReactNode;
 	className?: string;
 }) {
+	// Titled inspector sections fold; which start open depends on the workspace.
+	const folding = useContext(FoldingSections) && !!title;
+	sections.use((s) => s.collapsed[title ?? ""]);
+	layout.use((s) => s.sections);
+	const collapsed = folding && isCollapsed(title as string);
 	return (
 		<section
 			className={cn(
 				"flex flex-col gap-2.5 border-b border-separator px-4 py-3.5 last:border-b-0",
+				collapsed && "py-2",
 				className,
 			)}
 		>
 			{(title || action) && (
 				<div className="flex min-h-6 items-center justify-between gap-2">
-					{title && <h3 className="text-[11px] font-medium text-muted">{title}</h3>}
-					{action}
+					{title && !folding && <h3 className="text-[11px] font-medium text-muted">{title}</h3>}
+					{title && folding && (
+						<button
+							type="button"
+							onClick={() => toggleSection(title as string)}
+							aria-expanded={!collapsed}
+							className="-ml-1 flex items-center gap-1 rounded px-1 text-[11px] font-medium text-muted hover:text-foreground"
+						>
+							<CaretRight
+								className={cn("size-2.5 transition-transform", !collapsed && "rotate-90")}
+								weight="bold"
+							/>
+							{title}
+						</button>
+					)}
+					{!collapsed && action}
 				</div>
 			)}
-			{children}
+			{!collapsed && children}
 		</section>
 	);
 }

@@ -5,19 +5,19 @@ import {
 	applyWorkspace,
 	BUILT_IN,
 	deleteWorkspace,
-	type Layout,
 	layout,
 	savedWorkspaces,
 	saveWorkspace,
+	switchWorkspace,
 } from "../../lib/workspace";
-
-const same = (a: Layout, b: Layout) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Switch between window layouts, or save the current one under a name. */
 export function WorkspaceMenu() {
 	const [open, setOpen] = useState(false);
 	const [name, setName] = useState("");
-	const current = layout.use((s) => s);
+	const current = layout.use((s) => s.id);
+	const dock = layout.use((s) => s.dock);
+	const overlays = layout.use((s) => s.overlays);
 	const saved = savedWorkspaces.use((s) => s.list);
 	const ref = useRef<HTMLDivElement>(null);
 	useEffect(() => {
@@ -45,19 +45,21 @@ export function WorkspaceMenu() {
 				<LayoutIcon className="size-4" />
 			</button>
 			{open && (
-				<div className="absolute top-9 right-0 z-[120] w-60 rounded-lg border border-border bg-overlay p-1 shadow-xl shadow-black/40">
+				<div className="absolute top-9 right-0 z-[120] w-64 rounded-lg border border-border bg-overlay p-1 shadow-xl shadow-black/40">
 					<p className="px-2 pt-1 pb-1 text-[11px] text-muted">Workspaces</p>
 					{Object.entries(BUILT_IN).map(([id, w]) => (
 						<button
 							key={id}
 							type="button"
 							className={item}
-							onClick={() => (applyWorkspace(w.layout), setOpen(false))}
+							onClick={() => {
+								switchWorkspace(id);
+								setOpen(false);
+							}}
 						>
-							<span className="w-3.5">
-								{same(current, w.layout) && <Check className="size-3.5" />}
-							</span>
-							{w.label}
+							<span className="w-3.5">{current === id && <Check className="size-3.5" />}</span>
+							<span className="flex-1">{w.label}</span>
+							<span className="text-[11px] text-muted">{w.keys}</span>
 						</button>
 					))}
 					{Object.keys(saved).length > 0 && <div className="my-1 h-px bg-separator" />}
@@ -66,9 +68,12 @@ export function WorkspaceMenu() {
 							<button
 								type="button"
 								className={cn(item, "flex-1")}
-								onClick={() => (applyWorkspace(l), setOpen(false))}
+								onClick={() => {
+									applyWorkspace(l, n);
+									setOpen(false);
+								}}
 							>
-								<span className="w-3.5">{same(current, l) && <Check className="size-3.5" />}</span>
+								<span className="w-3.5">{current === n && <Check className="size-3.5" />}</span>
 								<span className="truncate">{n}</span>
 							</button>
 							<button
@@ -80,6 +85,41 @@ export function WorkspaceMenu() {
 								<Trash className="size-3.5" />
 							</button>
 						</div>
+					))}
+					<div className="my-1 h-px bg-separator" />
+					<p className="px-2 pt-1 pb-1 text-[11px] text-muted">Beside the viewer</p>
+					<div className="flex flex-wrap gap-1 px-2 pb-1">
+						{(["none", "mixer", "scopes", "markers", "history", "agent"] as const).map((d) => (
+							<button
+								key={d}
+								type="button"
+								onClick={() => layout.set({ dock: d })}
+								className={cn(
+									"h-6 rounded-md px-2 text-[11px] capitalize",
+									dock === d ? "bg-default text-foreground" : "text-muted hover:text-foreground",
+								)}
+							>
+								{d === "none" ? "Nothing" : d}
+							</button>
+						))}
+					</div>
+					<p className="px-2 pt-1 pb-1 text-[11px] text-muted">On the viewer</p>
+					{(
+						[
+							["safeAreas", "Safe areas"],
+							["teleprompter", "Script prompter"],
+							["compare", "Before/after button"],
+						] as const
+					).map(([key, label]) => (
+						<button
+							key={key}
+							type="button"
+							className={item}
+							onClick={() => layout.set({ overlays: { ...overlays, [key]: !overlays[key] } })}
+						>
+							<span className="w-3.5">{overlays[key] && <Check className="size-3.5" />}</span>
+							{label}
+						</button>
 					))}
 					<div className="my-1 h-px bg-separator" />
 					<form

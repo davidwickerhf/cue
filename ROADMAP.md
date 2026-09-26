@@ -62,7 +62,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 
 ## 5. UX and UI
 
-- [ ] Inspector in tabs or collapsible sections
+- [x] Inspector in tabs or collapsible sections
 - [ ] First-run guide and a "drop footage here" empty state
 - [ ] Keyboard focus for clips, the clip menu and pane dividers
 - [x] Esc cancels drags and trims and restores name fields
@@ -76,15 +76,16 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 
 Today a workspace only resizes panels and switches the sidebar tab. Each one should change what the editor is for:
 
-- [ ] Editing: source monitor next to the viewer (two-up), media bins, full-height timeline tools
-- [ ] Audio: tall audio tracks with waveforms and volume lines, the mixer docked below the viewer with meters per track, EQ and compressor in the inspector, loudness (LUFS) readout, video tracks collapsed
-- [ ] Colour: scopes (waveform, vectorscope, histogram), before/after split view, a thumbnail strip of the clips on the timeline to grade shot by shot, colour tools as the whole inspector
-- [ ] Voiceover: script as a teleprompter beside the viewer, takes per line, record controls and input meter always visible, the voiceover track pinned at the top
-- [ ] Titles: title templates as a gallery, safe-area guides on the viewer, text tracks expanded, font preview
-- [ ] Agent: chat beside the viewer, the agent's proposed edits as a reviewable list, activity and history docked
-- [ ] Review: full-size viewer, markers and comments as a list, export presets
-- [ ] Workspaces set the track heights, which tracks are shown, the viewer overlays and inspector sections, not just panel sizes; saved workspaces keep all of that
-- [ ] Switch with ⌥1–⌥7 and from the agent (set_view)
+- [ ] Editing: source monitor next to the viewer (two-up), media bins
+- [ ] Colour: a clip strip to grade shot by shot, split-screen before/after
+- [x] Audio: tall audio tracks with waveforms and volume lines, the mixer docked beside the viewer with meters per track, video tracks low (EQ, compressor and LUFS readout: see section 4)
+- [x] Colour: scopes (waveform, vectorscope, histogram), hold-to-compare before/after, colour tools open in the inspector
+- [x] Voiceover: script as a teleprompter beside the viewer, takes per line, record controls and input meter always visible, the voiceover track pinned at the top
+- [x] Titles: title templates as a gallery, safe-area guides on the viewer, text tracks expanded, font preview
+- [x] Agent: chat beside the viewer, the agent's proposed edits as a reviewable list, activity and history docked
+- [x] Review: full-size viewer, markers and comments as a list, export presets
+- [x] Workspaces set the track heights, which tracks are shown, the viewer overlays and inspector sections, not just panel sizes; saved workspaces keep all of that
+- [x] Switch with ⌥1–⌥7 and from the agent (set_view)
 
 ## 6. AI and new ideas
 

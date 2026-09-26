@@ -171,6 +171,8 @@ class PlaybackEngine {
 	private tickListeners = new Set<(ms: number) => void>();
 	private meterData = new Float32Array(1024);
 	private frameCount = 0;
+	/** Before/after: pictures without their grade and effects. */
+	private original = false;
 	private stageW = 0;
 	private stageH = 0;
 	private warmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -243,6 +245,75 @@ class PlaybackEngine {
 	private measure() {
 		this.stageW = this.stage?.clientWidth ?? 0;
 		this.stageH = this.stage?.clientHeight ?? 0;
+	}
+
+	/** Shows every picture without its grade and effects while on (before/after). */
+	setOriginal(on: boolean) {
+		if (this.original === on) return;
+		this.original = on;
+		this.render(this.currentMs);
+	}
+
+	/**
+	 * Draws roughly what the viewer shows into a small canvas (for scopes): each
+	 * visible picture with its filters, then the text. Crops, masks and zooms are
+	 * left out; it is for reading levels, not for export.
+	 */
+	drawComposite(ctx: CanvasRenderingContext2D, w: number, h: number) {
+		const stage = this.stage;
+		ctx.filter = "none";
+		ctx.globalAlpha = 1;
+		ctx.fillStyle = this.project?.data.canvas.background ?? "#000";
+		ctx.fillRect(0, 0, w, h);
+		if (!stage || !this.stageW || !this.stageH) return;
+		const sx = w / this.stageW;
+		const sy = h / this.stageH;
+		const text = new Set([...this.textLayers.values()].map((l) => l.canvas as Element));
+		const layers = new Map([...this.videoLayers.values()].map((l) => [l.root as Element, l]));
+		for (const child of stage.children) {
+			if (text.has(child)) {
+				ctx.filter = "none";
+				ctx.globalAlpha = 1;
+				ctx.drawImage(child as HTMLCanvasElement, 0, 0, w, h);
+				continue;
+			}
+			const layer = layers.get(child);
+			if (!layer) continue;
+			const slots = [...layer.slots].sort(
+				(a, b) => Number(a.frame.style.zIndex || 0) - Number(b.frame.style.zIndex || 0),
+			);
+			for (const slot of slots) {
+				const f = slot.frame.style;
+				if (f.display === "none") continue;
+				ctx.globalAlpha = Number(f.opacity || 1);
+				if (f.backdropFilter) {
+					// An adjustment layer: grade what is drawn so far.
+					ctx.filter = f.backdropFilter;
+					ctx.drawImage(ctx.canvas, 0, 0);
+					continue;
+				}
+				const [, x = "0", y = "0"] =
+					/translate3d\(([-\d.]+)px, ([-\d.]+)px/.exec(f.transform) ?? [];
+				const source =
+					slot.keyer && slot.keyer.canvas.style.display !== "none"
+						? slot.keyer.canvas
+						: slot.video.style.display !== "none"
+							? slot.video
+							: slot.image;
+				ctx.filter = (source as HTMLElement).style.filter || "none";
+				try {
+					ctx.drawImage(
+						source,
+						Number(x) * sx,
+						Number(y) * sy,
+						Number.parseFloat(f.width) * sx,
+						Number.parseFloat(f.height) * sy,
+					);
+				} catch {}
+			}
+		}
+		ctx.filter = "none";
+		ctx.globalAlpha = 1;
 	}
 
 	/** Redraw after the viewer changes size. */
@@ -626,11 +697,13 @@ class PlaybackEngine {
 		element.style.transformOrigin = `${z.x * 100}% ${z.y * 100}%`;
 		element.style.transform = z.scale !== 1 ? `scale(${z.scale})` : "none";
 		// Effects are sized like the export's: in pixels of a 1080-line picture.
+		// "Compare" shows the pictures as they were shot: no grade, no effects.
+		const look = this.original ? undefined : clip;
 		element.style.filter = joinFilters(
-			cssFilter(clip.color),
-			effectsFilter(clip.effects, h / 1080),
+			cssFilter(look?.color),
+			effectsFilter(look?.effects, h / 1080),
 		);
-		this.showVignette(slot, clip.effects);
+		this.showVignette(slot, look?.effects);
 		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
 		if (clip.key) {
 			if (slot.keyer === undefined) {
@@ -708,12 +781,13 @@ class PlaybackEngine {
 			? `url(${maskUrl(clip.mask, this.stageW / Math.max(1, this.stageH))})`
 			: "none";
 		frame.maskSize = "100% 100%";
+		const look = this.original ? undefined : clip;
 		const backdrop = joinFilters(
-			cssFilter(clip.color),
-			effectsFilter(clip.effects && { ...clip.effects, glow: 0 }, this.stageH / 1080),
+			cssFilter(look?.color),
+			effectsFilter(look?.effects && { ...look.effects, glow: 0 }, this.stageH / 1080),
 		);
 		frame.backdropFilter = backdrop === "none" ? "" : backdrop;
-		this.showVignette(slot, clip.effects);
+		this.showVignette(slot, look?.effects);
 		slot.video.style.display = "none";
 		slot.image.style.display = "none";
 		if (slot.keyer) slot.keyer.canvas.style.display = "none";

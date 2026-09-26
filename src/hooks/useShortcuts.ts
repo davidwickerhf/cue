@@ -12,6 +12,7 @@ import {
 	toggleSource,
 } from "../lib/source";
 import { app, appSettings, editor, findLine } from "../lib/state";
+import { BUILT_IN, switchWorkspace } from "../lib/workspace";
 
 function typing(target: EventTarget | null) {
 	const el = target as HTMLElement | null;
@@ -145,6 +146,11 @@ export function useShortcuts() {
 			else if (key === "end") playback.seek(project.durationMs);
 			else if (key === "i" && !mod) editor.set({ inPoint: Math.round(playback.currentMs) });
 			else if (key === "o" && !mod) editor.set({ outPoint: Math.round(playback.currentMs) });
+			// Workspaces: ⌥1–⌥7 (physical keys, since ⌥ changes the character).
+			else if (e.altKey && !mod && /^Digit[1-7]$/.test(e.code)) {
+				handled();
+				switchWorkspace(Object.keys(BUILT_IN)[Number(e.code.slice(5)) - 1]);
+			}
 			// ⌥ changes e.key on macOS (⌥X types ≈), so this one checks the physical key.
 			else if (e.code === "KeyX" && e.altKey) editor.set({ inPoint: null, outPoint: null });
 			else if (key === "/" && !mod) {

@@ -6,9 +6,13 @@ import { playback } from "../../lib/playback";
 import { recorder } from "../../lib/recorder";
 import { useApp, useProject } from "../../lib/state";
 import { cn, formatSeconds } from "../../lib/utils";
+import { layout } from "../../lib/workspace";
 import { SourceMonitor, ViewerTabs } from "./SourceMonitor";
 
 export function PreviewPanel() {
+	const safeAreas = layout.use((s) => s.overlays.safeAreas);
+	const prompter = layout.use((s) => s.overlays.teleprompter);
+	const compare = layout.use((s) => s.overlays.compare);
 	const project = useProject();
 	const area = useRef<HTMLDivElement>(null);
 	const stage = useRef<HTMLDivElement>(null);
@@ -61,8 +65,11 @@ export function PreviewPanel() {
 						className="pointer-events-none absolute inset-0 z-10 size-full"
 					/>
 					{project && <SelectionOverlay project={project} width={size.w} height={size.h} />}
+					{safeAreas && <SafeAreas />}
 				</div>
 				<Teleprompter />
+				{prompter && project && <ScriptPrompter />}
+				{compare && project && <CompareButton />}
 			</div>
 			{project && <Transport project={project} />}
 		</section>
@@ -343,6 +350,73 @@ function boxOf(clip: Clip, project: ProjectSnapshot, width: number, height: numb
 		cx: t.x,
 		cy: t.y,
 	};
+}
+
+/** Title-safe (80%) and action-safe (90%) frames, and a centre mark. */
+function SafeAreas() {
+	return (
+		<div className="pointer-events-none absolute inset-0 z-20">
+			<div className="absolute inset-[5%] border border-dashed border-white/35" />
+			<div className="absolute inset-[10%] border border-dashed border-white/50" />
+			<div className="absolute top-1/2 left-1/2 h-4 w-px -translate-1/2 bg-white/50" />
+			<div className="absolute top-1/2 left-1/2 h-px w-4 -translate-1/2 bg-white/50" />
+		</div>
+	);
+}
+
+/** Hold to see the pictures without their grade and effects. */
+function CompareButton() {
+	const [on, setOn] = useState(false);
+	const set = (value: boolean) => {
+		setOn(value);
+		playback.setOriginal(value);
+	};
+	useEffect(() => () => playback.setOriginal(false), []);
+	return (
+		<button
+			type="button"
+			onPointerDown={() => set(true)}
+			onPointerUp={() => set(false)}
+			onPointerLeave={() => on && set(false)}
+			className={cn(
+				"absolute top-3 right-3 z-30 h-7 rounded-md px-2.5 text-[11px] font-medium shadow ring-1 ring-white/10 backdrop-blur",
+				on ? "bg-accent text-accent-foreground" : "bg-black/55 text-white/85 hover:bg-black/70",
+			)}
+		>
+			{on ? "Original" : "Hold to compare"}
+		</button>
+	);
+}
+
+/**
+ * The script beside the picture while not recording (Voiceover workspace): the
+ * line under the playhead, or the selected one, with the next one below.
+ */
+function ScriptPrompter() {
+	const project = useProject();
+	const phase = recorder.status.use((s) => s.phase);
+	const selectedLineId = useApp((s) => s.selectedLineId);
+	const now = playback.clock.use((s) => Math.round(s.currentMs / 100) * 100);
+	if (!project || phase !== "idle" || project.lines.length === 0) return null;
+	const at = project.lines.findIndex((l) => now >= l.startMs && now < l.startMs + l.maxMs);
+	const index =
+		at >= 0
+			? at
+			: Math.max(
+					0,
+					project.lines.findIndex((l) => l.id === selectedLineId),
+				);
+	const line = project.lines[index];
+	const next = project.lines[index + 1];
+	return (
+		<div className="pointer-events-none absolute inset-x-8 bottom-6 z-30 flex justify-center">
+			<div className="w-full max-w-3xl rounded-2xl bg-slate-950/80 px-6 py-4 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur">
+				<p className="mb-1 text-[11px] font-medium text-white/60">{line.id} · press R to record</p>
+				<p className="text-[22px] leading-snug font-semibold">{line.text}</p>
+				{next && <p className="mt-2 text-[14px] text-white/45">{next.text}</p>}
+			</div>
+		</div>
+	);
 }
 
 function Teleprompter() {
