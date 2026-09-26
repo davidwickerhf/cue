@@ -2530,6 +2530,11 @@ export class ProjectStore extends EventEmitter {
 		const fps = this.current.canvas.fps;
 		const converted: string[] = [];
 		for (const raw of [input.main, input.overlay].filter((f): f is string => !!f)) {
+			// Recorded without the pointer: already an MP4.
+			if (/\.mp4$/i.test(raw)) {
+				converted.push(raw);
+				continue;
+			}
 			const out = mp4Name(raw);
 			// Hardware encoding is much faster; x264 is the fallback where it isn't available.
 			await ffmpeg(mp4Args(raw, out, { fps, hardware: process.platform === "darwin" })).catch(() =>

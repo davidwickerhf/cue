@@ -351,7 +351,9 @@ const mediaClipSchema = z.object({
 	fadeOutMs: ms.default(0),
 	transform: transformSchema.default(DEFAULT_TRANSFORM),
 	denoise: denoiseSchema.default("off"),
-	keyframes: z.partialRecord(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema)).optional(),
+	keyframes: z
+		.partialRecord(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema))
+		.optional(),
 	zooms: z.array(zoomSchema).optional(),
 	color: colorSchema.optional(),
 	mask: maskSchema.optional(),

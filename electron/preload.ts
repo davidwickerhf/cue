@@ -72,11 +72,17 @@ const api = {
 		requestId?: string;
 		sourceId?: string | null;
 		pointer?: boolean;
+		native?: { showCursor: boolean };
 	}) =>
 		ipcRenderer.invoke("cue:captureBegin", input) as Promise<{
 			id: string;
 			files: { main: string; overlay?: string };
+			native: boolean;
 		}>,
+	/** Whether screens are recorded natively (ScreenCaptureKit) rather than by screen sharing. */
+	nativeCapture: () => ipcRenderer.invoke("cue:nativeCapture") as Promise<boolean>,
+	capturePause: (id: string, paused: boolean) =>
+		ipcRenderer.invoke("cue:capturePause", id, paused) as Promise<void>,
 	captureChunk: (id: string, part: "main" | "overlay", data: ArrayBuffer) =>
 		ipcRenderer.invoke("cue:captureChunk", id, part, data) as Promise<void>,
 	captureFinish: (

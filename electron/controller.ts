@@ -22,6 +22,7 @@ import {
 } from "./core/cursor";
 import type { TextRender } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
+import { ffmpeg } from "./core/media";
 import { reviewEdit } from "./core/notes";
 import { activeSequence, allSequences } from "./core/ops";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
@@ -36,6 +37,7 @@ import {
 	saveRecipes,
 } from "./core/recipes";
 import type { AiRuntime } from "./core/runtime";
+import { type NativeCapture, nativeMp4Args, startNativeCapture } from "./core/screenrec";
 import { parseSrt } from "./core/srt";
 import type { ProjectStore } from "./core/store";
 import { TITLE_TEMPLATES } from "./core/titles";
@@ -115,6 +117,8 @@ interface CaptureSession {
 	actor: Actor;
 	/** The pointer, recorded for the studio look. */
 	cursor?: { stop: () => Promise<CursorEvent[]>; region: Rect | null };
+	/** The screen, recorded without the pointer (the window then records only the microphone). */
+	native?: NativeCapture;
 }
 
 /** What a finished recording became, for agents. */
@@ -293,8 +297,10 @@ export class Controller extends EventEmitter {
 		camera: boolean;
 		requestId?: string;
 		/** Record the pointer too (for the studio look): the screen's bounds, or a window's id. */
-		cursor?: { region: Rect | null; windowId?: number };
-	}): Promise<{ id: string; files: { main: string; overlay?: string } }> {
+		cursor?: { region: Rect | null; windowId?: number; displayId?: number; pointer?: boolean };
+		/** Record the screen here (ScreenCaptureKit) instead of in the window; the pointer only if asked. */
+		native?: { showCursor: boolean };
+	}): Promise<{ id: string; files: { main: string; overlay?: string }; native: boolean }> {
 		if (!this.store.isOpen) throw new Error("Open a project first.");
 		if (this.capture) throw new Error("A recording is already running.");
 		const named = recordingFiles(this.store.projectDir, new Date(), input, existsSync);
@@ -317,9 +323,25 @@ export class Controller extends EventEmitter {
 			writing: Promise.resolve(),
 			actor: agentStart ? "agent" : "user",
 		};
-		if (input.cursor && input.screen) {
+		const session = this.capture;
+		if (input.native && input.screen && input.cursor) {
+			try {
+				session.native = await startNativeCapture(
+					{ ...input.cursor, showCursor: input.native.showCursor },
+					files.main.replace(/\.webm$/i, ".native.mov"),
+					this.store.current.canvas.fps,
+				);
+			} catch (error) {
+				// The window records the screen instead (screen sharing, with the pointer).
+				this.store.log(
+					"system",
+					`Recording without the pointer failed: ${(error as Error).message}`,
+				);
+			}
+		}
+		if (input.cursor?.pointer && input.screen) {
 			const recorder = recordCursor(input.cursor.windowId);
-			if (recorder) this.capture.cursor = { ...recorder, region: input.cursor.region };
+			if (recorder) session.cursor = { ...recorder, region: input.cursor.region };
 		}
 		this.lastCapture = null;
 		this.updateRecorder({ capturing: true });
@@ -327,7 +349,14 @@ export class Controller extends EventEmitter {
 			this.captureStart = null;
 			agentStart.resolve();
 		}
-		return { id: this.capture.id, files };
+		return { id: session.id, files, native: !!session.native };
+	}
+
+	/** Pauses or resumes the part of a recording made here (the screen without the pointer). */
+	pauseCapture(id: string, paused: boolean): void {
+		const native = this.capture?.id === id ? this.capture.native : undefined;
+		if (paused) native?.pause();
+		else native?.resume();
 	}
 
 	/** A piece of a recording from the window's MediaRecorder. */
@@ -362,6 +391,28 @@ export class Controller extends EventEmitter {
 			await session.handles.main.close();
 			await session.handles.overlay?.close();
 			const events = (await session.cursor?.stop()) ?? [];
+			let main = session.files.main;
+			if (session.native) {
+				// The movie and the microphone (if any) become the screen's MP4, starting when the window started.
+				await session.native.stop();
+				const mic = (await fs.stat(main).catch(() => null))?.size ? main : undefined;
+				const output = main.replace(/\.webm$/i, ".mp4");
+				const args = (hardware: boolean) =>
+					nativeMp4Args({
+						video: (session.native as NativeCapture).file,
+						audio: mic,
+						trimMs: input.clock
+							? input.clock.startedAt - (session.native as NativeCapture).startedAt
+							: 0,
+						output,
+						fps: this.store.current.canvas.fps,
+						hardware,
+					});
+				await ffmpeg(args(true)).catch(() => ffmpeg(args(false)));
+				await fs.rm(session.native.file, { force: true });
+				await fs.rm(main, { force: true });
+				main = output;
+			}
 			const dir = studioDir();
 			const choice = input.studio;
 			const pointer =
@@ -385,7 +436,7 @@ export class Controller extends EventEmitter {
 					: undefined;
 			const { assets, clipIds } = await this.job("Importing the recording", () =>
 				this.store.addScreenRecording(
-					{ ...session.files, atMs: input.atMs, bubble: input.bubble, studio },
+					{ ...session.files, main, atMs: input.atMs, bubble: input.bubble, studio },
 					session.actor,
 				),
 			);
@@ -454,6 +505,10 @@ export class Controller extends EventEmitter {
 		this.captureWaiters = [];
 		this.updateRecorder({ capturing: false });
 		void session.cursor?.stop();
+		if (session.native) {
+			session.native.kill();
+			await fs.rm(session.native.file, { force: true }).catch(() => {});
+		}
 		await session.writing.catch(() => {});
 		await session.handles.main.close().catch(() => {});
 		await session.handles.overlay?.close().catch(() => {});

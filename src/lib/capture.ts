@@ -85,6 +85,7 @@ class ScreenCapture {
 		hideCursor: false,
 	};
 	private pointer: Promise<boolean> | null = null;
+	private nativeOk: Promise<boolean> | null = null;
 	/** Wall-clock start and pauses, to line the pointer up with the picture. */
 	private clock = { startedAt: 0, pauses: [] as { from: number; to: number }[] };
 
@@ -218,24 +219,39 @@ class ScreenCapture {
 	private async begin(choice: CaptureChoice) {
 		const { screen, camera } = this.streams.get();
 		if (choice.sourceId && !screen?.active) throw new Error(SCREEN_ACCESS_HELP);
+		this.nativeOk ??= window.cue.nativeCapture().catch(() => false);
+		const native = !!screen && (await this.nativeOk);
 		const session = await window.cue.captureBegin({
 			screen: !!screen,
 			camera: !!camera,
 			requestId: this.requestId,
 			sourceId: choice.sourceId,
 			pointer: !!choice.studio && !!screen,
+			// Screens are recorded natively (like a dedicated recorder), not by screen sharing.
+			native: native ? { showCursor: !(await this.hidesCursor(choice)) } : undefined,
 		});
 		this.sessionId = session.id;
-		// The microphone goes with the main picture (the screen, or the camera alone).
+		// The microphone goes with the main picture (the screen, or the camera alone). When the
+		// screen is recorded natively, the window records only the microphone for it.
 		const mainVideo = (screen ?? camera) as MediaStream;
+		if (session.native && screen) {
+			stopAll(screen);
+			this.streams.set({ screen: null });
+			this.opened.sourceId = undefined;
+		}
 		const mainStream = new MediaStream([
-			...mainVideo.getVideoTracks(),
+			...(session.native ? [] : mainVideo.getVideoTracks()),
 			...(this.mic?.getAudioTracks() ?? []),
 		]);
-		const parts: [MediaStream, "main" | "overlay", number][] = [[mainStream, "main", 8_000_000]];
+		const parts: [MediaStream, "main" | "overlay", number][] = mainStream.getTracks().length
+			? [[mainStream, "main", 8_000_000]]
+			: [];
 		if (screen && camera) parts.push([camera, "overlay", 4_000_000]);
 		this.recorders = parts.map(([stream, part, bitrate]) => {
-			const mimeType = mimeFor(stream.getAudioTracks().length > 0);
+			// The microphone alone (the screen is recorded natively) is plain Opus.
+			const mimeType = stream.getVideoTracks().length
+				? mimeFor(stream.getAudioTracks().length > 0)
+				: "audio/webm;codecs=opus";
 			const recorder = new MediaRecorder(stream, {
 				mimeType: mimeType || undefined,
 				videoBitsPerSecond: bitrate,
@@ -262,7 +278,8 @@ class ScreenCapture {
 		this.pausedMs = 0;
 		this.status.set({ phase: "recording", maxSeconds: choice.maxSeconds ?? null });
 		// If the shared screen or window goes away (closed, or sharing stopped), finish.
-		mainVideo.getVideoTracks()[0]?.addEventListener("ended", () => void this.stop());
+		if (!session.native)
+			mainVideo.getVideoTracks()[0]?.addEventListener("ended", () => void this.stop());
 		this.timer = window.setInterval(() => {
 			const { phase } = this.status.get();
 			if (phase !== "recording") return;
@@ -277,6 +294,7 @@ class ScreenCapture {
 		for (const r of this.recorders) if (r.state === "recording") r.pause();
 		this.pausedAt = performance.now();
 		this.clock.pauses.push({ from: Date.now(), to: Number.POSITIVE_INFINITY });
+		if (this.sessionId) void window.cue.capturePause(this.sessionId, true);
 		this.status.set({ phase: "paused" });
 	}
 
@@ -286,6 +304,7 @@ class ScreenCapture {
 		this.pausedMs += performance.now() - this.pausedAt;
 		const pause = this.clock.pauses.at(-1);
 		if (pause) pause.to = Date.now();
+		if (this.sessionId) void window.cue.capturePause(this.sessionId, false);
 		this.status.set({ phase: "recording" });
 	}
 

@@ -796,9 +796,7 @@ class PlaybackEngine {
 		const z = zoomView(zoomAt(clip.zooms, local));
 		element.style.transformOrigin = "0 0";
 		element.style.transform =
-			z.scale !== 1
-				? `translate(${z.dx * 100}%, ${z.dy * 100}%) scale(${z.scale})`
-				: "none";
+			z.scale !== 1 ? `translate(${z.dx * 100}%, ${z.dy * 100}%) scale(${z.scale})` : "none";
 		// Effects are sized like the export's: in pixels of a 1080-line picture.
 		// "Compare" shows the pictures as they were shot: no grade, no effects.
 		const look = this.original ? undefined : clip;

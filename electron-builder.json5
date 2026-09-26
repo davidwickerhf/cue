@@ -55,7 +55,7 @@
       NSCameraUsageDescription: "Cue records video from your camera when you ask it to.",
     },
     extraResources: [
-      { from: "build/native", to: "native", filter: ["cue-vision", "cue-cursor"] },
+      { from: "build/native", to: "native", filter: ["cue-vision", "cue-cursor", "cue-capture"] },
     ],
     fileAssociations: [
       { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/icon.icns" },

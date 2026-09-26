@@ -14,8 +14,10 @@ if (process.platform !== "darwin") process.exit(0);
 const outDir = path.join(root, "build", "native");
 mkdirSync(outDir, { recursive: true });
 
-// cue-vision: faces, labels and text; cue-cursor: the pointer during screen recordings.
-for (const name of ["cue-vision", "cue-cursor"]) {
+// cue-vision: faces, labels and text; cue-cursor: the pointer during screen recordings;
+// cue-capture: screen recording without the pointer (for the studio look; ScreenCaptureKit
+// needs macOS 12.3, so it alone targets that).
+for (const name of ["cue-vision", "cue-cursor", "cue-capture"]) {
 	const source = path.join(root, "native", `${name}.swift`);
 	const output = path.join(outDir, name);
 	try {
@@ -23,9 +25,20 @@ for (const name of ["cue-vision", "cue-cursor"]) {
 		for (const arch of ["arm64", "x86_64"]) {
 			const slice = `${output}-${arch}`;
 			try {
-				execFileSync("swiftc", ["-O", "-target", `${arch}-apple-macos12`, source, "-o", slice], {
-					stdio: "inherit",
-				});
+				execFileSync(
+					"swiftc",
+					[
+						"-O",
+						"-target",
+						`${arch}-apple-macos${name === "cue-capture" ? "12.3" : "12"}`,
+						source,
+						"-o",
+						slice,
+					],
+					{
+						stdio: "inherit",
+					},
+				);
 				slices.push(slice);
 			} catch {
 				console.warn(`Could not build ${name} for ${arch}.`);

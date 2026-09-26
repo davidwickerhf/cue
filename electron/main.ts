@@ -44,6 +44,7 @@ import { ffmpeg } from "./core/media";
 import { resolveInProject } from "./core/paths";
 import { isProjectFile, PROJECT_EXTENSION } from "./core/project";
 import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtime";
+import { captureBinary } from "./core/screenrec";
 import { ProjectStore } from "./core/store";
 import type {
 	DenoiseMode,
@@ -221,9 +222,11 @@ async function captureSources(thumbnails = false): Promise<CaptureSources> {
  * What the pointer is measured against: a screen's bounds (in points, like the
  * pointer), or a window's id (its bounds come from cue-cursor as it moves).
  */
-async function pointerTarget(
-	sourceId: string,
-): Promise<{ region: { x: number; y: number; w: number; h: number } | null; windowId?: number }> {
+async function pointerTarget(sourceId: string): Promise<{
+	region: { x: number; y: number; w: number; h: number } | null;
+	windowId?: number;
+	displayId?: number;
+}> {
 	const window = /^window:(\d+):/.exec(sourceId);
 	if (window) return { region: null, windowId: Number(window[1]) };
 	let displayId: string | undefined;
@@ -236,7 +239,7 @@ async function pointerTarget(
 	const display =
 		screen.getAllDisplays().find((d) => String(d.id) === displayId) ?? screen.getPrimaryDisplay();
 	const b = display.bounds;
-	return { region: { x: b.x, y: b.y, w: b.width, h: b.height } };
+	return { region: { x: b.x, y: b.y, w: b.width, h: b.height }, displayId: display.id };
 }
 
 /** The screen or window the window's next getDisplayMedia() call records. */
@@ -1041,6 +1044,7 @@ function registerIpc() {
 		"cue:pointerAvailable",
 		() => cursorBinary() !== null && process.platform === "darwin",
 	);
+	ipcMain.handle("cue:nativeCapture", () => captureBinary() !== null);
 	ipcMain.handle(
 		"cue:captureBegin",
 		async (
@@ -1050,15 +1054,23 @@ function registerIpc() {
 				camera: boolean;
 				requestId?: string;
 				sourceId?: string | null;
+				/** Record the pointer separately (the studio look). */
 				pointer?: boolean;
+				/** Record the screen natively; with the pointer drawn in unless hidden. */
+				native?: { showCursor: boolean };
 			},
 		) => {
-			const { sourceId, pointer, ...rest } = input;
+			const { sourceId, pointer, native, ...rest } = input;
+			const target = sourceId ? await pointerTarget(sourceId) : undefined;
 			return controller.beginCapture({
 				...rest,
-				cursor: pointer && sourceId ? await pointerTarget(sourceId) : undefined,
+				native: native && captureBinary() ? native : undefined,
+				cursor: target && { ...target, pointer: !!pointer },
 			});
 		},
+	);
+	ipcMain.handle("cue:capturePause", (_event, id: string, paused: boolean) =>
+		controller.pauseCapture(id, paused),
 	);
 	ipcMain.handle("cue:captureChunk", (_event, id: string, part: "main" | "overlay", data) =>
 		controller.writeCapture(id, part, Buffer.from(data)),
