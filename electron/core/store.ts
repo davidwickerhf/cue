@@ -8,6 +8,7 @@ import {
 	type ExportReport,
 	exportAudioMix,
 	exportCaptions,
+	exportGif,
 	exportStems,
 	exportVideo,
 	exportVoiceover,
@@ -88,7 +89,14 @@ export interface CreateProjectOptions {
 	lines?: LineInput[];
 }
 
-export type ExportKind = "stems" | "voiceover" | "audio" | "video" | "captions" | InterchangeFormat;
+export type ExportKind =
+	| "stems"
+	| "voiceover"
+	| "audio"
+	| "video"
+	| "gif"
+	| "captions"
+	| InterchangeFormat;
 
 export interface StoreOptions {
 	/** Turns an absolute path into a URL the editor window can load. */
@@ -1765,7 +1773,7 @@ export class ProjectStore extends EventEmitter {
 		if (kind === "otio" || kind === "fcpxml" || kind === "mlt" || kind === "edl")
 			return this.exportTimeline(kind, out, actor);
 		// Nested sequences must be up to date before they are used in an export.
-		if (kind === "video" || kind === "audio") await this.renderNested(renderText);
+		if (kind === "video" || kind === "gif" || kind === "audio") await this.renderNested(renderText);
 		const ctx = { ...this.exportContext(renderText), range };
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
@@ -1777,7 +1785,13 @@ export class ProjectStore extends EventEmitter {
 						? await exportAudioMix(ctx, target ?? path.join(this.projectDir, "export", "mix.wav"))
 						: kind === "captions"
 							? await exportCaptions(ctx, target)
-							: await exportVideo(ctx, target);
+							: kind === "gif"
+								? await exportGif(
+										ctx,
+										target ??
+											path.join(this.projectDir, "export", `${slug(this.current.name)}.gif`),
+									)
+								: await exportVideo(ctx, target);
 		this.log(
 			actor,
 			`Exported ${kind} → ${report.outputs.map((f) => path.basename(f)).join(", ")}${report.missing.length ? ` (no take yet: ${report.missing.join(", ")})` : ""}`,

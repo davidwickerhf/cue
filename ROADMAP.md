@@ -57,7 +57,7 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [ ] Screen and camera recording
 - [ ] Media bins, tags and media info
 - [ ] Scene detection on import
-- [ ] GIF, MP3 and AAC export; one-click social formats
+- [x] GIF, MP3 and AAC export (social formats: see one-click variants)
 - [ ] Auto-update, notarisation, Windows and Linux builds
 
 ## 5. UX and UI

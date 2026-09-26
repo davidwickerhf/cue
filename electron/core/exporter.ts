@@ -42,7 +42,17 @@ export interface ExportContext {
 }
 
 export interface ExportReport {
-	kind: "stems" | "voiceover" | "audio" | "video" | "captions" | "otio" | "fcpxml" | "mlt" | "edl";
+	kind:
+		| "stems"
+		| "voiceover"
+		| "audio"
+		| "video"
+		| "gif"
+		| "captions"
+		| "otio"
+		| "fcpxml"
+		| "mlt"
+		| "edl";
 	outputs: string[];
 	missing: string[];
 	durationMs: number;
@@ -242,9 +252,54 @@ async function mixAudio(
 		"2",
 		"-ar",
 		"48000",
+		...audioCodec(out),
 		...rangeArgs(range, lengthMs),
 		out,
 	]);
+}
+
+/** Encoder for an audio file, chosen by its extension (WAV unless it says otherwise). */
+function audioCodec(file: string): string[] {
+	const ext = path.extname(file).toLowerCase();
+	if (ext === ".mp3") return ["-c:a", "libmp3lame", "-b:a", "256k"];
+	if (ext === ".m4a" || ext === ".aac") return ["-c:a", "aac", "-b:a", "256k"];
+	if (ext === ".flac") return ["-c:a", "flac"];
+	return ["-c:a", "pcm_s16le"];
+}
+
+/**
+ * An animated GIF: the video is rendered first, then reduced to 15 fps, at most
+ * 720 px wide, with one palette made for the whole clip (so colours stay clean).
+ */
+export async function exportGif(ctx: ExportContext, out: string): Promise<ExportReport> {
+	const tmp = path.join(os.tmpdir(), `cue-gif-${Date.now()}.mp4`);
+	try {
+		const video = await exportVideo(
+			{
+				...ctx,
+				data: {
+					...ctx.data,
+					export: { ...ctx.data.export, codec: "h264", videoQuality: "high", hardware: false },
+				},
+			},
+			tmp,
+		);
+		if (video.durationMs > 60000)
+			throw new Error("A GIF is for short clips: mark in and out points around at most a minute.");
+		await fs.mkdir(path.dirname(out), { recursive: true });
+		await ffmpeg([
+			"-i",
+			tmp,
+			"-filter_complex",
+			"fps=15,scale='min(720,iw)':-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a",
+			"-loop",
+			"0",
+			out,
+		]);
+		return { kind: "gif", outputs: [out], missing: [], durationMs: video.durationMs };
+	} finally {
+		await fs.rm(tmp, { force: true });
+	}
 }
 
 /**

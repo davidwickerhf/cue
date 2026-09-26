@@ -250,4 +250,46 @@ describe("compositing", () => {
 		);
 		expect((store.current.clips.find((c) => c.id === adj.id) as MediaClip).effects).toBeUndefined();
 	}, 90000);
+
+	it("exports a GIF and sound as MP3 and AAC", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-formats-"));
+		const src = path.join(dir, "src.mp4");
+		await ffmpeg([
+			"-f",
+			"lavfi",
+			"-i",
+			"testsrc=s=320x180:r=30:d=2",
+			"-f",
+			"lavfi",
+			"-i",
+			"sine=frequency=440:duration=2",
+			"-pix_fmt",
+			"yuv420p",
+			"-shortest",
+			src,
+		]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Formats" });
+		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180 } }, "user");
+		const [asset] = await store.importMedia([src], "user");
+		store.apply(
+			{
+				type: "addClips",
+				clips: [{ type: "media", trackId: "V1", assetId: asset.id, startMs: 0, durationMs: 2000 }],
+			},
+			"user",
+		);
+		const probe = async (file: string) =>
+			String((await run(ffmpegPath(), ["-hide_banner", "-i", file]).catch((e) => e)).stderr);
+		const gif = (await store.export("gif", "clip.gif", "user")).outputs[0];
+		expect(await probe(gif)).toContain("Video: gif");
+		const mp3 = (await store.export("audio", "mix.mp3", "user")).outputs[0];
+		expect(await probe(mp3)).toContain("Audio: mp3");
+		const m4a = (await store.export("audio", "mix.m4a", "user")).outputs[0];
+		expect(await probe(m4a)).toContain("Audio: aac");
+	}, 90000);
 });

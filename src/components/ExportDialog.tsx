@@ -14,7 +14,15 @@ type Patch = {
 	hardware: boolean;
 };
 
-const PRESETS: { id: string; label: string; sub: string; ext: string; patch: Patch }[] = [
+const PRESETS: {
+	id: string;
+	label: string;
+	sub: string;
+	ext: string;
+	patch: Patch;
+	/** What is exported (video unless set). */
+	kind?: "video" | "gif" | "audio";
+}[] = [
 	{
 		id: "web",
 		label: "Web & YouTube",
@@ -42,6 +50,22 @@ const PRESETS: { id: string; label: string; sub: string; ext: string; patch: Pat
 		sub: "ProRes · for further editing",
 		ext: "mov",
 		patch: { codec: "prores", videoQuality: "high", scale: 1, hardware: false },
+	},
+	{
+		id: "gif",
+		label: "Animated GIF",
+		sub: "15 fps · up to 720 px · short clips",
+		ext: "gif",
+		kind: "gif",
+		patch: { codec: "h264", videoQuality: "high", scale: 1, hardware: false },
+	},
+	{
+		id: "audio",
+		label: "Sound only",
+		sub: "AAC (.m4a) · the full mix",
+		ext: "m4a",
+		kind: "audio",
+		patch: { codec: "h264", videoQuality: "high", scale: 1, hardware: true },
 	},
 ];
 
@@ -76,19 +100,21 @@ export function ExportDialog() {
 		range === "inout" && hasRange ? (outPoint as number) - (inPoint as number) : project.durationMs;
 
 	const start = async () => {
+		const kind = chosen.kind ?? "video";
 		const out = await window.cue.chooseSave({
-			title: "Export video",
+			title: kind === "audio" ? "Export sound" : kind === "gif" ? "Export GIF" : "Export video",
 			defaultPath: `${project.dir}/export/${project.data.name}${range === "inout" ? " (range)" : ""}.${chosen.ext}`,
-			extensions: [chosen.ext],
+			// Sound can also be saved as MP3, WAV or FLAC by changing the extension.
+			extensions: kind === "audio" ? [chosen.ext, "mp3", "wav", "flac"] : [chosen.ext],
 		});
 		if (!out) return;
 		setBusy(true);
-		await run("update_export", { export: chosen.patch });
+		if (kind === "video") await run("update_export", { export: chosen.patch });
 		close();
 		setBusy(false);
 		notify("Exporting…");
 		const report = await run<{ outputs: string[] }>("export", {
-			kind: "video",
+			kind,
 			out,
 			range: range === "inout" && hasRange ? { startMs: inPoint, endMs: outPoint } : undefined,
 		});
@@ -105,12 +131,12 @@ export function ExportDialog() {
 		>
 			<div
 				role="dialog"
-				aria-label="Export video"
+				aria-label="Export"
 				onPointerDown={(e) => e.stopPropagation()}
 				className="m-auto flex w-[min(520px,92vw)] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl shadow-black/50"
 			>
 				<header className="flex h-12 items-center justify-between border-b border-separator px-5">
-					<h2 className="text-[14px] font-semibold">Export video</h2>
+					<h2 className="text-[14px] font-semibold">Export</h2>
 					<button
 						type="button"
 						onClick={close}
@@ -162,7 +188,11 @@ export function ExportDialog() {
 						))}
 					</div>
 					<p className="text-[12px] text-muted">
-						{w}×{h} · {project.data.canvas.fps} fps · {formatTime(length)} long
+						{chosen.kind === "audio"
+							? `Stereo · 48 kHz · ${formatTime(length)} long`
+							: chosen.kind === "gif"
+								? `${Math.min(720, w)} px wide · 15 fps · ${formatTime(length)} long`
+								: `${w}×${h} · ${project.data.canvas.fps} fps · ${formatTime(length)} long`}
 					</p>
 				</div>
 				<footer className="flex justify-end gap-2 border-t border-separator px-5 py-3">

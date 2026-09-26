@@ -40,6 +40,7 @@ const OUTPUT_TYPES: Record<string, string[]> = {
 	mlt: [".mlt"],
 	edl: [".edl"],
 	frame: [".png"],
+	gif: [".gif"],
 	project: [".cueproj"],
 };
 

@@ -681,13 +681,14 @@ export const contract = {
 	redo: { description: "Redo.", input: {} },
 	export: {
 		description:
-			"Export. stems: one WAV per script line + durations.json. voiceover: the voiceover track as one WAV. audio: full mix (with ducking). video: rendered video with every visible track and the mix (codec, hardware encoding and scale from export settings). captions: SRT + VTT from the caption clips. otio / fcpxml / mlt / edl: the timeline for another editor (OpenTimelineIO for Resolve, Premiere, Kdenlive; FCPXML for Final Cut Pro and Resolve; MLT for Shotcut; CMX3600 EDL for anything), linking the original media.",
+			"Export. stems: one WAV per script line + durations.json. voiceover: the voiceover track as one WAV. audio: full mix (with ducking); the file type follows out (.wav, .mp3, .m4a, .flac). gif: an animated GIF (up to 720 px wide, 15 fps), for short clips. video: rendered video with every visible track and the mix (codec, hardware encoding and scale from export settings). captions: SRT + VTT from the caption clips. otio / fcpxml / mlt / edl: the timeline for another editor (OpenTimelineIO for Resolve, Premiere, Kdenlive; FCPXML for Final Cut Pro and Resolve; MLT for Shotcut; CMX3600 EDL for anything), linking the original media.",
 		input: {
 			kind: z.enum([
 				"stems",
 				"voiceover",
 				"audio",
 				"video",
+				"gif",
 				"captions",
 				"otio",
 				"fcpxml",
@@ -698,7 +699,9 @@ export const contract = {
 			range: z
 				.object({ startMs: z.number().min(0), endMs: z.number().min(0) })
 				.optional()
-				.describe("video/audio only: export just this part, e.g. between the in and out points"),
+				.describe(
+					"video/gif/audio only: export just this part, e.g. between the in and out points",
+				),
 		},
 	},
 	export_frame: {
