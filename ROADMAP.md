@@ -71,6 +71,20 @@ From the product review of 26 September 2026 (Cue 0.1.1). Items are ticked as th
 - [ ] History panel appends instead of reloading
 - [ ] Consistent shortcut labels in the inspector
 
+## 5b. Real workspaces
+
+Today a workspace only resizes panels and switches the sidebar tab. Each one should change what the editor is for:
+
+- [ ] Editing: source monitor next to the viewer (two-up), media bins, full-height timeline tools
+- [ ] Audio: tall audio tracks with waveforms and volume lines, the mixer docked below the viewer with meters per track, EQ and compressor in the inspector, loudness (LUFS) readout, video tracks collapsed
+- [ ] Colour: scopes (waveform, vectorscope, histogram), before/after split view, a thumbnail strip of the clips on the timeline to grade shot by shot, colour tools as the whole inspector
+- [ ] Voiceover: script as a teleprompter beside the viewer, takes per line, record controls and input meter always visible, the voiceover track pinned at the top
+- [ ] Titles: title templates as a gallery, safe-area guides on the viewer, text tracks expanded, font preview
+- [ ] Agent: chat beside the viewer, the agent's proposed edits as a reviewable list, activity and history docked
+- [ ] Review: full-size viewer, markers and comments as a list, export presets
+- [ ] Workspaces set the track heights, which tracks are shown, the viewer overlays and inspector sections, not just panel sizes; saved workspaces keep all of that
+- [ ] Switch with ⌥1–⌥7 and from the agent (set_view)
+
 ## 6. AI and new ideas
 
 - [ ] Edit review: agent changes arrive as proposals to accept or reject
