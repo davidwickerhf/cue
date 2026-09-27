@@ -92,6 +92,8 @@ export function infographicTemplate(chart: Infographic & { durationMs?: number }
 						suffix,
 						label: shorten(suffix || !u ? i.label : `${i.label} (${u})`, 40),
 					})),
+					// The cards are opaque: the footage shows around them.
+					backdrop: "none",
 					...timing,
 				},
 			};
