@@ -719,14 +719,41 @@ function Shortcuts() {
 }
 
 function About() {
+	const [info, setInfo] = useState<Awaited<ReturnType<typeof window.cue.appInfo>> | null>(null);
+	useEffect(() => {
+		void window.cue.appInfo().then(setInfo);
+	}, []);
 	return (
 		<div className="flex flex-col gap-2 text-[13px]">
-			<p className="font-semibold">Cue</p>
+			<p className="flex items-baseline gap-2">
+				<span className="font-semibold">Cue</span>
+				{info && (
+					<span className="select-text text-muted tabular-nums">
+						Version {info.version}
+						{info.packaged ? "" : " (development build)"}
+					</span>
+				)}
+			</p>
 			<p className="text-muted">
 				A fast, AI-centred video editor. Projects are plain files you own; agents work through MCP
 				with every change attributed and undoable.
 			</p>
 			<p className="text-[12px] text-muted">Built with Electron, React, HeroUI and ffmpeg.</p>
+			{info && (
+				<p className="select-text text-[12px] text-muted tabular-nums">
+					Electron {info.electron} · Chromium {info.chrome} · {info.arch}
+				</p>
+			)}
+			<p className="text-[12px]">
+				<a
+					href="https://cue.wicker.life/changelog"
+					target="_blank"
+					rel="noreferrer"
+					className="text-accent hover:underline"
+				>
+					What&apos;s new
+				</a>
+			</p>
 		</div>
 	);
 }

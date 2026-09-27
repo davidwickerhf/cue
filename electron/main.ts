@@ -1364,6 +1364,13 @@ function registerIpc() {
 		const { execFile } = await import("node:child_process");
 		execFile("say", ["-v", voice, "This is how the voiceover will sound."]);
 	});
+	ipcMain.handle("cue:appInfo", () => ({
+		version: app.getVersion(),
+		electron: process.versions.electron,
+		chrome: process.versions.chrome,
+		arch: process.arch,
+		packaged: app.isPackaged,
+	}));
 	ipcMain.handle("cue:updateStatus", () => updater?.status ?? { state: "idle" });
 	ipcMain.handle("cue:checkForUpdates", () => updater?.check(true));
 	ipcMain.handle("cue:downloadUpdate", () => updater?.download());

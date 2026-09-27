@@ -239,6 +239,15 @@ const api = {
 		ipcRenderer.send("cue:titleBarColors", color, symbolColor),
 	/** Real path of a file dropped from Finder. */
 	pathForFile: (file: File) => webUtils.getPathForFile(file),
+	/** Cue's version and what it is built on (Settings → About). */
+	appInfo: () =>
+		ipcRenderer.invoke("cue:appInfo") as Promise<{
+			version: string;
+			electron: string;
+			chrome: string;
+			arch: string;
+			packaged: boolean;
+		}>,
 	platform: process.platform,
 };
 
