@@ -163,16 +163,23 @@ async function rpc(method: MethodName, params: unknown): Promise<unknown> {
 	return body.result;
 }
 
-function toolContent(name: MethodName, result: unknown) {
+/** Frames a result carries (render_frame, inspect_edit, or their result through wait_for). */
+function framesOf(result: unknown): { atMs?: number; png: string }[] {
+	if (!result || typeof result !== "object") return [];
+	const r = result as { png?: unknown; frames?: unknown; status?: unknown };
+	// Still running: there is nothing to show yet (wait_for brings the frames).
+	if (r.status === "running") return [];
+	if (typeof r.png === "string") return [{ png: r.png }];
+	if (Array.isArray(r.frames))
+		return r.frames.filter((f): f is { atMs?: number; png: string } => typeof f?.png === "string");
+	return [];
+}
+
+function toolContent(_name: MethodName, result: unknown) {
 	const text = { type: "text" as const, text: JSON.stringify(result, null, 2) };
-	if (name !== "render_frame" && name !== "inspect_edit") return [text];
-	const frames =
-		name === "render_frame"
-			? [{ ...(result as { png: string }), atMs: undefined }]
-			: (result as { frames: { atMs: number; png: string }[] }).frames;
 	return [
 		text,
-		...frames.flatMap((frame) => [
+		...framesOf(result).flatMap((frame) => [
 			{ type: "text" as const, text: `Viewer at ${frame.atMs ?? "requested time"} ms` },
 			{
 				type: "image" as const,

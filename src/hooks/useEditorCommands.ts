@@ -15,6 +15,19 @@ import { viewerZoom, zoomViewer } from "../lib/viewer";
 import { compareView, type Dock, layout, sequenceCompare, switchWorkspace } from "../lib/workspace";
 
 /** Carries out commands from the main process (and therefore from agents). */
+/** The next painted frame, or 100 ms if the window isn't painting (hidden or covered). */
+function nextFrame(): Promise<void> {
+	return new Promise((resolve) => {
+		const timer = setTimeout(resolve, 100);
+		requestAnimationFrame(() => {
+			clearTimeout(timer);
+			resolve();
+		});
+	});
+}
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export function useEditorCommands() {
 	useEffect(() => {
 		let capturing: { scale: number } | null = null;
@@ -189,11 +202,10 @@ export function useEditorCommands() {
 						await Promise.all(
 							[...document.querySelectorAll<HTMLImageElement>("[data-stage-frame] img")]
 								.filter((img) => img.src && img.style.display !== "none")
-								.map((img) => img.decode().catch(() => {})),
+								.map((img) => Promise.race([img.decode().catch(() => {}), wait(5000)])),
 						);
 						// Big pictures take a few frames to be drawn in full after decoding.
-						for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r));
-						await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+						for (let i = 0; i < 6; i++) await nextFrame();
 						const frame = document.querySelector<HTMLElement>("[data-stage-frame]");
 						if (!frame) throw new Error("The preview is not visible.");
 						const r = frame.getBoundingClientRect();

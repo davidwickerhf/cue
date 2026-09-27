@@ -49,8 +49,10 @@ import {
 	ffmpeg,
 	kindOf,
 	makeAudioProxy,
+	makeImageProxy,
 	makeVideoProxy,
 	PEAKS_PER_SECOND,
+	PREVIEW_IMAGE_MAX,
 	partFile,
 	probe,
 	toWav,
@@ -223,13 +225,15 @@ export class ProjectStore extends EventEmitter {
 			assetUrls: Object.fromEntries(
 				this.data.assets.map((a) => [a.id, this.options.mediaUrl(resolveInProject(dir, a.path))]),
 			),
-			proxyUrls: this.data.settings.useProxies
-				? Object.fromEntries(
-						this.data.assets
-							.filter((a) => this.proxies.has(this.cacheKey(a.id)))
-							.map((a) => [a.id, this.options.mediaUrl(this.proxyPath(a.id))]),
+			proxyUrls: Object.fromEntries(
+				this.data.assets
+					.filter(
+						(a) =>
+							(a.kind === "image" || this.data?.settings.useProxies) &&
+							this.proxies.has(this.cacheKey(a.id)),
 					)
-				: {},
+					.map((a) => [a.id, this.options.mediaUrl(this.proxyPath(a.id))]),
+			),
 			durationMs: projectDuration(this.data),
 			lines: deriveLines(this.data),
 			canUndo: this.past.length > 0,
@@ -1910,7 +1914,13 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	private proxyPath(assetId: string): string {
-		return path.join(this.projectDir, CACHE_DIR, "proxy", `${this.cacheKey(assetId)}.mp4`);
+		const image = this.data?.assets.find((a) => a.id === assetId)?.kind === "image";
+		return path.join(
+			this.projectDir,
+			CACHE_DIR,
+			"proxy",
+			`${this.cacheKey(assetId)}.${image ? "png" : "mp4"}`,
+		);
 	}
 
 	/**
@@ -1931,20 +1941,25 @@ export class ProjectStore extends EventEmitter {
 
 	/** Builds missing playback proxies in the background, one at a time. Returns how many were queued. */
 	buildProxies(): number {
-		if (!this.data?.settings.useProxies) return 0;
+		if (!this.data) return 0;
+		// Viewer copies of big pictures are always made; video proxies only with proxies on.
+		const videos = this.data.settings.useProxies;
 		const pending = this.data.assets.filter(
 			(a) =>
-				a.kind === "video" &&
 				!a.sequenceId &&
 				!this.proxies.has(this.cacheKey(a.id)) &&
-				(a.height > 720 || a.durationMs > 20000),
+				((videos && a.kind === "video" && (a.height > 720 || a.durationMs > 20000)) ||
+					(a.kind === "image" && Math.max(a.width, a.height) > PREVIEW_IMAGE_MAX)),
 		);
 		for (const asset of pending) {
 			this.proxyQueue = this.proxyQueue.then(async () => {
 				const key = this.cacheKey(asset.id);
 				if (!this.data?.assets.some((a) => a.id === asset.id) || this.proxies.has(key)) return;
 				try {
-					await makeVideoProxy(this.assetPath(asset.id), this.proxyPath(asset.id));
+					await (asset.kind === "image" ? makeImageProxy : makeVideoProxy)(
+						this.assetPath(asset.id),
+						this.proxyPath(asset.id),
+					);
 					this.proxies.add(key);
 					this.revision++;
 					this.emit("change");

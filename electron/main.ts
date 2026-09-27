@@ -179,21 +179,39 @@ async function renderText(
 }
 
 async function captureFrame(atMs: number): Promise<string> {
+	// A minimised or hidden window draws nothing to capture: bring it back without taking focus.
+	if (win && !win.isDestroyed() && (win.isMinimized() || !win.isVisible())) {
+		if (win.isMinimized()) win.restore();
+		win.showInactive();
+	}
 	const rect = await askWindow<{ x: number; y: number; width: number; height: number }>(
 		(requestId) => ({ type: "captureFrame", requestId, atMs }),
 	);
 	if (!win) throw new Error("The Cue window is not open.");
-	const image = await win.webContents
-		.capturePage({
-			x: Math.round(rect.x),
-			y: Math.round(rect.y),
-			width: Math.round(rect.width),
-			height: Math.round(rect.height),
-		})
-		.finally(() => {
-			// The window put its guides and zoom away for the capture; they come back now.
-			if (win && !win.isDestroyed()) win.webContents.send("cue:command", { type: "captureDone" });
-		});
+	const view = win;
+	const area = {
+		x: Math.round(rect.x),
+		y: Math.round(rect.y),
+		width: Math.round(rect.width),
+		height: Math.round(rect.height),
+	};
+	// A big picture shown for the first time is painted in tiles after it decodes: capture
+	// until two captures a moment apart agree (moving grain can keep them apart; 4 at most).
+	const settled = async () => {
+		let image = await view.webContents.capturePage(area);
+		for (let i = 0; i < 3; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 120));
+			const next = await view.webContents.capturePage(area);
+			const same = next.toBitmap().equals(image.toBitmap());
+			image = next;
+			if (same) break;
+		}
+		return image;
+	};
+	const image = await settled().finally(() => {
+		// The window put its guides and zoom away for the capture; they come back now.
+		if (win && !win.isDestroyed()) win.webContents.send("cue:command", { type: "captureDone" });
+	});
 	const dir = path.join(store.cacheDir(), "frames");
 	await fs.mkdir(dir, { recursive: true });
 	const file = path.join(dir, `frame-${Math.round(atMs)}.png`);
@@ -666,7 +684,10 @@ function createWindow() {
 			preload: path.join(__dirname, "preload.cjs"),
 			contextIsolation: true,
 			sandbox: true,
-			...(recordFrames ? { offscreen: true, backgroundThrottling: false } : {}),
+			// Agents render frames and export while Cue is behind other windows or hidden:
+			// the page must keep drawing then (throttled, it stops painting and captures hang).
+			backgroundThrottling: false,
+			...(recordFrames ? { offscreen: true } : {}),
 		},
 	});
 	if (recordFrames) {

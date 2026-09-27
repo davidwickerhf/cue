@@ -574,7 +574,15 @@ class PlaybackEngine {
 			}
 		}
 		await Promise.all(waits);
-		await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+		// Two painted frames, or a moment if the window isn't painting (hidden or covered).
+		for (let i = 0; i < 2; i++)
+			await new Promise<void>((resolve) => {
+				const timer = setTimeout(resolve, 100);
+				requestAnimationFrame(() => {
+					clearTimeout(timer);
+					resolve();
+				});
+			});
 	}
 
 	previewAsset(url: string) {
@@ -824,7 +832,12 @@ class PlaybackEngine {
 		if (slot.frame.style.backdropFilter) slot.frame.style.backdropFilter = "";
 		const isImage = asset?.kind === "image";
 		const isMotion = asset?.kind === "lottie";
-		const url = isImage || isMotion ? project.assetUrls[clip.assetId] : this.videoUrl(clip.assetId);
+		// Big pictures show their smaller viewer copy once it is made (exports use the original).
+		const url = isMotion
+			? project.assetUrls[clip.assetId]
+			: isImage
+				? (project.proxyUrls[clip.assetId] ?? project.assetUrls[clip.assetId])
+				: this.videoUrl(clip.assetId);
 		const local = ms - clip.startMs;
 		const t = clip.transform;
 		const kf = clip.keyframes;

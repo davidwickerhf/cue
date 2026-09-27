@@ -407,6 +407,32 @@ export async function makeVideoProxy(input: string, output: string): Promise<voi
 	await fs.rename(tmp, output);
 }
 
+/** Longest side of a picture in the viewer; bigger stills get a smaller copy. */
+export const PREVIEW_IMAGE_MAX = 2048;
+
+/**
+ * Viewer copy of a large picture (a 3000-pixel cut-out takes long to decode and
+ * paint, and a frame captured meanwhile misses parts of it): at most
+ * PREVIEW_IMAGE_MAX on its longest side, PNG so transparency stays.
+ */
+export async function makeImageProxy(input: string, output: string): Promise<void> {
+	await fs.mkdir(path.dirname(output), { recursive: true });
+	const tmp = partFile(output, "png");
+	await ffmpeg([
+		"-i",
+		input,
+		"-vf",
+		`scale='min(${PREVIEW_IMAGE_MAX},iw)':'min(${PREVIEW_IMAGE_MAX},ih)':force_original_aspect_ratio=decrease:flags=lanczos`,
+		"-frames:v",
+		"1",
+		tmp,
+	]).catch(async (error) => {
+		await fs.rm(tmp, { force: true });
+		throw error;
+	});
+	await fs.rename(tmp, output);
+}
+
 /**
  * Audio for playback: extracted from videos (so the editor never downloads a
  * whole movie to decode its sound) and, for sped-up clips, time-stretched with

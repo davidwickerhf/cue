@@ -334,3 +334,31 @@ describe("project file type", () => {
 		expect(recent[0].path).toBe(renamed);
 	});
 });
+
+describe("viewer copies of big pictures", () => {
+	it("makes a smaller copy of a large still for the viewer, keeping transparency", async () => {
+		const { dir, store } = await newStore("imgproxy");
+		const { ffmpeg } = await import("../electron/core/media");
+		const big = path.join(dir, "big.png");
+		const small = path.join(dir, "small.png");
+		await ffmpeg([
+			"-f",
+			"lavfi",
+			"-i",
+			"color=c=red@0.5:s=3000x1800,format=rgba",
+			"-frames:v",
+			"1",
+			big,
+		]);
+		await ffmpeg(["-f", "lavfi", "-i", "color=c=blue:s=640x360", "-frames:v", "1", small]);
+		const [a, b] = await store.importMedia([big, small], "user");
+		expect(store.buildProxies()).toBe(1);
+		await (store as unknown as { proxyQueue: Promise<void> }).proxyQueue;
+		const urls = store.snapshot()?.proxyUrls ?? {};
+		expect(urls[a.id]).toMatch(/\.png$/);
+		expect(urls[b.id]).toBeUndefined();
+		const { probe } = await import("../electron/core/media");
+		const info = await probe(String(urls[a.id]));
+		expect(Math.max(info.width, info.height)).toBe(2048);
+	});
+});
