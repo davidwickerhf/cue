@@ -771,6 +771,22 @@ async function openProjectDialog() {
 		await controller.call("open_project", { path: result.filePaths[0] }, "user");
 }
 
+async function packageDialog() {
+	if (!win || !store.isOpen) return;
+	const result = await dialog.showSaveDialog(win, {
+		title: "Package the project and its media",
+		defaultPath: path.join(app.getPath("desktop"), `${store.current.name}.zip`),
+		filters: [{ name: "Zip archive", extensions: ["zip"] }],
+	});
+	if (result.canceled || !result.filePath) return;
+	const report = (await controller.call(
+		"package_project",
+		{ out: result.filePath, trim: true },
+		"user",
+	)) as { path?: string };
+	if (report?.path) shell.showItemInFolder(report.path);
+}
+
 async function saveAsDialog() {
 	if (!win || !store.isOpen) return;
 	const result = await dialog.showSaveDialog(win, {
@@ -939,6 +955,7 @@ function buildMenu() {
 					{ type: "separator" },
 					{ label: "Save", accelerator: "CmdOrCtrl+S", click: guard(() => store.flush()) },
 					{ label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", click: guard(saveAsDialog) },
+					{ label: "Package Project…", click: guard(packageDialog) },
 					{
 						label: "Export Timeline",
 						submenu: (Object.keys(TIMELINE_FORMATS) as (keyof typeof TIMELINE_FORMATS)[]).map(

@@ -165,6 +165,15 @@ export const contract = {
 			"Save a copy of the project (.cueproj) at a new path and switch to it. Media stays where it is.",
 		input: { path: z.string() },
 	},
+	package_project: {
+		description:
+			"Package the project and every media file it uses into one .zip to share or archive (like Premiere's Project Manager): media outside the project folder is copied in, caches and history are left out, and the zip opens anywhere. trim (default true) cuts long video and audio down to the parts the edit uses plus 1 s handles, so footage from a long film stays small. readme adds a README.txt (credits, sources, how it was made). out defaults to the project's export folder. Long: may reply with a callId for wait_for.",
+		input: {
+			out: z.string().optional(),
+			trim: z.boolean().default(true),
+			readme: z.string().max(20000).optional(),
+		},
+	},
 	relink_media: {
 		description:
 			"Point offline media (moved, renamed or on a disconnected drive; see offlineMedia in get_state) at its new file. Other offline media in the same folder is relinked too.",

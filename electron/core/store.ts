@@ -68,6 +68,7 @@ import {
 	templateRegions,
 } from "./motionTemplates";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
+import { type PackageReport, packageProject } from "./packager";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
 	DEFAULT_TEXT_STYLE,
@@ -2053,6 +2054,34 @@ export class ProjectStore extends EventEmitter {
 		await fs.writeFile(file, `${JSON.stringify(data, null, "\t")}\n`);
 		await this.open(file, actor);
 		return file;
+	}
+
+	/**
+	 * Packages the project with all its media into one zip to share or archive;
+	 * `trim` cuts long video and audio down to what the edit uses (with handles).
+	 */
+	async packageProject(
+		out: string,
+		options: { trim?: boolean; extras?: Record<string, string> },
+		actor: Actor,
+		onProgress?: (fraction: number) => void,
+	): Promise<PackageReport> {
+		if (!this.file) throw new Error("No project is open.");
+		await this.flush();
+		const target = path.resolve(this.projectDir, out.endsWith(".zip") ? out : `${out}.zip`);
+		const report = await packageProject({
+			projectFile: this.file,
+			data: this.current,
+			out: target,
+			trim: options.trim,
+			extras: options.extras,
+			onProgress,
+		});
+		this.log(
+			actor,
+			`Packaged the project with ${report.media} media file(s)${report.trimmed.length ? `, ${report.trimmed.length} trimmed` : ""} → ${path.basename(target)} (${(report.bytes / 1e6).toFixed(1)} MB)`,
+		);
+		return report;
 	}
 
 	/** Brings in a timeline from another editor (OpenTimelineIO) as new tracks. */

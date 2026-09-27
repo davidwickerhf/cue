@@ -88,6 +88,7 @@ const OUTPUT_TYPES: Record<string, string[]> = {
 	frame: [".png"],
 	gif: [".gif"],
 	project: [".cueproj"],
+	package: [".zip"],
 };
 
 /**
@@ -607,6 +608,25 @@ export class Controller extends EventEmitter {
 				const file = await this.store.saveAs(target, actor);
 				await this.afterOpen();
 				return { path: file };
+			}
+			case "package_project": {
+				const { out, trim, readme } = parseInput("package_project", params);
+				const name = path
+					.basename(this.store.filePath ?? "project")
+					.replace(/\.cueproj$|\.cue\.json$/, "");
+				const target = path.resolve(
+					this.store.projectDir,
+					out ?? path.join("export", `${name}.zip`),
+				);
+				if (actor === "agent") await checkAgentOutput(target, this.store.projectDir, "package");
+				return this.job("Packaging the project", (progress) =>
+					this.store.packageProject(
+						target,
+						{ trim, ...(readme ? { extras: { "README.txt": readme } } : {}) },
+						actor,
+						progress,
+					),
+				);
 			}
 			case "relink_media": {
 				const { assetId, file } = parseInput("relink_media", params);
