@@ -13,7 +13,7 @@ export const softwareApplication = {
 	url: SITE_URL,
 	applicationCategory: "MultimediaApplication",
 	applicationSubCategory: "Video editor",
-	operatingSystem: "macOS (Apple Silicon)",
+	operatingSystem: "macOS, Windows, Linux",
 	softwareVersion: APP_VERSION,
 	downloadUrl: DOWNLOAD,
 	installUrl: DOWNLOAD,

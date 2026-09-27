@@ -2,7 +2,8 @@ import { AppleLogo, GithubLogo } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
 import { Reveal } from "@/components/Reveal";
-import { KOFI, AUTHOR, DOWNLOAD, REPO, USE_CASES } from "@/lib/site";
+import { DownloadButton } from "@/components/DownloadButton";
+import { KOFI, AUTHOR, REPO, USE_CASES } from "@/lib/site";
 
 /** Star count for the GitHub button (refreshed hourly, hidden while it is zero). */
 async function stars(): Promise<number> {
@@ -24,24 +25,9 @@ export function Logo({ size = 28, eager = false }: { size?: number; eager?: bool
 	);
 }
 
-/** The blue "Download for Mac" button with its small print. */
+/** The blue download button for the visitor's system (see DownloadButton). */
 export function DownloadCta({ className = "" }: { className?: string }) {
-	return (
-		<div className={`flex flex-col items-center gap-3 ${className}`}>
-			<a
-				href={DOWNLOAD}
-				className="flex items-center gap-2.5 rounded-xl bg-accent px-6 py-3.5 text-[17px] font-semibold text-white shadow-[0_8px_30px_-8px_rgba(10,108,255,0.7)] transition duration-300 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_14px_40px_-8px_rgba(10,108,255,0.85)] active:translate-y-0"
-			>
-				<AppleLogo size={20} weight="fill" /> Download for Mac
-			</a>
-			<p className="text-[13px] text-muted">
-				Free and open source · Apple Silicon ·{" "}
-				<a href={REPO} className="underline underline-offset-4 hover:text-white">
-					View the source
-				</a>
-			</p>
-		</div>
-	);
+	return <DownloadButton className={className} />;
 }
 
 /** Site header. On the home page the section links are in-page anchors. */
@@ -128,9 +114,9 @@ export function Footer({ home = false }: { home?: boolean }) {
 						<Link href="/changelog" className="text-muted hover:text-white">
 							Changelog
 						</Link>
-						<a href={DOWNLOAD} className="text-muted hover:text-white">
+						<Link href="/download" className="text-muted hover:text-white">
 							Download
-						</a>
+						</Link>
 					</div>
 					<div className="flex flex-col gap-3">
 						<p className="font-medium">Use cases</p>

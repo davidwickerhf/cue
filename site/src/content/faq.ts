@@ -20,7 +20,7 @@ export const FAQ: FaqItem[] = [
 	},
 	{
 		q: "What platforms does Cue support?",
-		a: "macOS on Apple Silicon for now. Cue is built on Electron, so Windows and Linux builds are possible later.",
+		a: "macOS 12 or later (Apple Silicon and Intel), Windows 10 and 11 (64-bit) and Linux (64-bit, as an AppImage or a .deb). Everything works everywhere except a few features that use macOS frameworks: cutting out subjects, searching shots by what they show, and pointer effects on screen recordings.",
 	},
 	{
 		q: "Why does macOS warn me the first time I open it?",

@@ -2,7 +2,6 @@ import { A, C, DocPage, H2, H3, Kbd, Note, Ol, Table, Ul } from "@/components/do
 import appData from "@/content/app-data.json";
 import { doc } from "@/content/docs";
 import { pageMetadata } from "@/lib/metadata";
-import { DOWNLOAD } from "@/lib/site";
 
 const PAGE = doc("/docs/getting-started");
 
@@ -50,17 +49,20 @@ export default function Page() {
 			<H2 id="install">Install</H2>
 			<Ol>
 				<li>
-					Download <A href={DOWNLOAD}>Cue-mac-arm64.zip</A> from the latest release.
+					Download Cue for your computer from the <A href="/download">download page</A>: a disk image for Mac (Apple Silicon or Intel), an
+					installer for Windows, an AppImage or .deb for Linux.
 				</li>
 				<li>
-					Unzip it and move <strong className="text-white">Cue</strong> to <strong className="text-white">Applications</strong>.
+					On a Mac, drag <strong className="text-white">Cue</strong> to <strong className="text-white">Applications</strong>. On Windows, run the
+					installer; on Linux, make the AppImage executable and run it, or install the .deb.
 				</li>
 				<li>
-					Open it. Cue is signed with a Developer ID and notarised by Apple (from 0.2.2), so it opens like any other app.
+					Open it. The Mac app is signed and notarised by Apple, so it opens like any other app. The Windows installer isn't signed yet: if
+					Windows says it protected your PC, choose More info, then Run anyway.
 				</li>
 			</Ol>
 			<p>
-				Cue needs macOS on Apple Silicon. ffmpeg is bundled, and editing needs no account or API key. From 0.2.2 Cue updates itself:
+				Cue runs on macOS 12 or later, Windows 10 and 11, and 64-bit Linux. ffmpeg is bundled, and editing needs no account or API key. From 0.2.2 Cue updates itself:
 				it checks for new versions and asks before downloading one (or does it for you, in{" "}
 				<strong className="text-white">Settings → General → Updates</strong>). Older copies need 0.2.2 downloaded once by hand.
 			</p>
