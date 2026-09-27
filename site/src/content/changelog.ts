@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.1",
+		date: "2026-09-27",
+		summary: "Connect any agent, not only Claude Code.",
+		changes: [
+			"Connect an agent… in the projects overview opens a dialog to pick Claude Code, Codex, Gemini CLI, VS Code, Cursor, Claude Desktop or any MCP client and copy its command or config; Settings → Agent and the Agent panel have the same choice.",
+			"Release builds for Mac no longer fail when there is no signing certificate.",
+		],
+	},
+	{
 		version: "0.2.0",
 		date: "2026-09-27",
 		summary:
