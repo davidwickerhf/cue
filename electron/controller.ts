@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { isAttachment } from "./agents/chats";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
 import { MOTION_GUIDE } from "./control/motionGuide";
@@ -88,7 +89,7 @@ const foundMedia = new Map<string, FoundMedia>();
 
 /** Calls that only read, so they never wait for a transaction. */
 const READ_ONLY =
-	/^(get_|list_|render_frame$|inspect_edit$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
+	/^(get_|list_|render_frame$|view_attachment$|inspect_edit$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
 
 /** File types each kind of output may have, for paths chosen by an agent. */
 const OUTPUT_TYPES: Record<string, string[]> = {
@@ -585,6 +586,13 @@ export class Controller extends EventEmitter {
 							(toMs === undefined || c.startMs < toMs),
 					)
 					.sort((a, b) => a.startMs - b.startMs);
+			}
+			case "view_attachment": {
+				const { path: file } = parseInput("view_attachment", params);
+				const dir = this.store.snapshot()?.dir;
+				if (!dir || !isAttachment(dir, file))
+					throw new Error("That isn't a picture attached in this project's chat.");
+				return { png: file };
 			}
 			case "render_frame": {
 				const { atMs } = parseInput("render_frame", params);

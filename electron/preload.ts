@@ -127,9 +127,32 @@ const api = {
 			prompt: string;
 			sessionId?: string;
 			model?: string;
+			images?: string[];
+			uuid?: string;
 		},
 	) => ipcRenderer.invoke("cue:chatSend", chatId, input) as Promise<void>,
 	chatStop: (chatId: string) => ipcRenderer.invoke("cue:chatStop", chatId) as Promise<void>,
+	/** Another message while the agent works; false when it can't take one now. */
+	chatSteer: (chatId: string, input: { prompt: string; images?: string[]; uuid: string }) =>
+		ipcRenderer.invoke("cue:chatSteer", chatId, input) as Promise<boolean>,
+	/** The open project's conversations (null data when there are none yet). */
+	chatLoad: () =>
+		ipcRenderer.invoke("cue:chatLoad") as Promise<{ dir: string; data: unknown } | null>,
+	chatSave: (dir: string, data: unknown) =>
+		ipcRenderer.invoke("cue:chatSave", dir, data) as Promise<void>,
+	/** Keeps a picture for a message (resized for agents); its PNG path and size. */
+	chatAttach: (bytes: ArrayBuffer) =>
+		ipcRenderer.invoke("cue:chatAttach", bytes) as Promise<{
+			path: string;
+			width: number;
+			height: number;
+		}>,
+	chatAttachFrame: (atMs: number) =>
+		ipcRenderer.invoke("cue:chatAttachFrame", atMs) as Promise<{
+			path: string;
+			width: number;
+			height: number;
+		}>,
 	/** What was said in a short recording (voice commands). */
 	transcribeSpeech: (audio: ArrayBuffer) =>
 		ipcRenderer.invoke("cue:transcribeSpeech", audio) as Promise<string>,

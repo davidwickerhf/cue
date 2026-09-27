@@ -1,4 +1,5 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -37,6 +38,8 @@ export type ChatEvent =
 			status: "running" | "done" | "error";
 			detail?: string;
 	  }
+	/** A message sent while the agent was working has been taken in (Claude only). */
+	| { kind: "ack"; uuid: string }
 	| { kind: "done"; error?: string; costUsd?: number };
 
 export interface Bridge {
@@ -79,6 +82,8 @@ const HARNESSES: Omit<HarnessInfo, "installed" | "path" | "version">[] = [
 export const SYSTEM_PROMPT = `You are the editing assistant built into Cue: a professional video editor and motion designer working with the user. The user is looking at the editor while you work, and each message starts with what they see (playhead, selection, in/out). Act on ordinary edit requests without asking permission, since everything can be undone; confirm before deleting large parts of the edit or overwriting exported files.
 
 How you work: a one-step request, just do it and say what changed. Anything bigger: (1) look first (the timeline, transcripts, detect_activity for screen recordings), (2) choose the techniques the moment needs from "When to use what" and the 'editing-techniques' playbook, (3) tell the user the plan in two to four short lines, (4) build it, (5) check it (render_frame, inspect_edit, review_edit, loudness) and report what you did and what they might adjust. Get missing assets yourself (library, generate, find) instead of asking for them. Write replies in short markdown: a sentence, then bullets with times as m:ss.
+
+What comes with a message: clips the user pinned ("this", "these" mean them, with their ids, tracks and times: act on those ids, not on the selection), and screenshots they attached (look at them; they show what the user means). A new message can arrive while you are working: it adds to or changes the request, so read it and adjust course instead of finishing the old plan first.
 
 ${AGENT_GUIDE}`;
 
@@ -190,6 +195,10 @@ export async function detectHarnesses(): Promise<HarnessInfo[]> {
 export interface RunOptions {
 	harness: HarnessId;
 	prompt: string;
+	/** PNG screenshots attached to the message. */
+	images?: string[];
+	/** Identifies the message, so its "ack" can be matched (Claude). */
+	uuid?: string;
 	/** Continue an earlier conversation with this harness. */
 	sessionId?: string;
 	model?: string;
@@ -198,7 +207,26 @@ export interface RunOptions {
 	workDir: string;
 }
 
-/** Starts one turn. Events stream to `onEvent`; `stop()` cancels it. */
+/** A user message for Claude's streamed input: the text, then any screenshots. */
+async function claudeMessage(text: string, images: string[] = [], uuid?: string) {
+	const content: Record<string, unknown>[] = [{ type: "text", text }];
+	for (const file of images)
+		content.push({
+			type: "image",
+			source: {
+				type: "base64",
+				media_type: "image/png",
+				data: (await fs.readFile(file)).toString("base64"),
+			},
+		});
+	return `${JSON.stringify({ type: "user", ...(uuid ? { uuid } : {}), message: { role: "user", content } })}\n`;
+}
+
+/**
+ * Starts one turn. Events stream to `onEvent`; `stop()` cancels it. With Claude,
+ * `steer()` hands it another message while it works: it reads it at its next step.
+ * Other agents can't take messages mid-turn, so `steer` is null for them.
+ */
 export async function runHarness(options: RunOptions, onEvent: (event: ChatEvent) => void) {
 	const bin = await which(options.harness);
 	if (!bin) throw new Error(`${options.harness} is not installed.`);
@@ -206,12 +234,27 @@ export async function runHarness(options: RunOptions, onEvent: (event: ChatEvent
 	const work = options.workDir;
 	await fs.mkdir(work, { recursive: true });
 	const { args, parse, cwd } = await prepare(options, work);
+	const streamed = options.harness === "claude";
 	const child: ChildProcess = spawn(bin.command, [...bin.args, ...args], {
 		cwd,
 		env: { ...env, ...bin.env },
-		stdio: ["ignore", "pipe", "pipe"],
+		stdio: [streamed ? "pipe" : "ignore", "pipe", "pipe"],
 		windowsHide: true,
 	});
+	// Claude reads messages from its input until it is closed: close it once the
+	// turn ends with every message taken in (a message sent late starts another turn).
+	const unread = new Set<string>();
+	let open = streamed;
+	const write = (line: string) => {
+		if (!open || !child.stdin) throw new Error("The agent has finished this turn.");
+		child.stdin.write(line);
+	};
+	if (streamed) {
+		child.stdin?.on("error", () => {});
+		const first = options.uuid ?? crypto.randomUUID();
+		unread.add(first);
+		write(await claudeMessage(options.prompt, options.images, first));
+	}
 	let buffer = "";
 	let stderr = "";
 	let finished = false;
@@ -230,8 +273,18 @@ export async function runHarness(options: RunOptions, onEvent: (event: ChatEvent
 			if (!line.startsWith("{")) continue;
 			try {
 				for (const event of parse(JSON.parse(line))) {
-					if (event.kind === "done") finish(event);
-					else onEvent(event);
+					if (event.kind === "ack") {
+						unread.delete(event.uuid);
+						onEvent(event);
+					} else if (event.kind === "done") {
+						// Messages sent at the very end: Claude answers them in another turn.
+						if (open && unread.size > 0 && !event.error) continue;
+						if (open) {
+							open = false;
+							child.stdin?.end();
+						}
+						finish(event);
+					} else onEvent(event);
 				}
 			} catch {}
 		}
@@ -241,6 +294,7 @@ export async function runHarness(options: RunOptions, onEvent: (event: ChatEvent
 	});
 	child.on("error", (error) => finish({ kind: "done", error: error.message }));
 	child.on("close", (code, signal) => {
+		open = false;
 		if (signal) finish({ kind: "done", error: "Stopped" });
 		else if (code) finish({ kind: "done", error: lastLine(stderr) || `Exited with code ${code}` });
 		else finish({ kind: "done" });
@@ -249,6 +303,18 @@ export async function runHarness(options: RunOptions, onEvent: (event: ChatEvent
 		stop() {
 			child.kill("SIGTERM");
 		},
+		steer: streamed
+			? async (text: string, images: string[] = [], uuid: string = crypto.randomUUID()) => {
+					const line = await claudeMessage(text, images, uuid);
+					unread.add(uuid);
+					try {
+						write(line);
+					} catch (error) {
+						unread.delete(uuid);
+						throw error;
+					}
+				}
+			: null,
 	};
 }
 
@@ -265,15 +331,18 @@ function lastLine(text: string) {
 type Parser = (event: Record<string, unknown>) => ChatEvent[];
 
 async function prepare(
-	{ harness, prompt, sessionId, model, bridge }: RunOptions,
+	{ harness, prompt, sessionId, model, bridge, images = [] }: RunOptions,
 	work: string,
 ): Promise<{ args: string[]; parse: Parser; cwd: string }> {
 	if (harness === "claude") {
 		const config = path.join(work, "mcp.json");
 		await fs.writeFile(config, JSON.stringify({ mcpServers: { cue: bridge } }));
+		// The message itself (with any screenshots) goes in on stdin, where more can follow.
 		const args = [
 			"-p",
-			prompt,
+			"--input-format",
+			"stream-json",
+			"--replay-user-messages",
 			"--output-format",
 			"stream-json",
 			"--verbose",
@@ -343,6 +412,7 @@ async function prepare(
 			"-c",
 			`developer_instructions=${toml(SYSTEM_PROMPT)}`,
 			...(model ? ["-m", model] : []),
+			...images.flatMap((file) => ["-i", file]),
 		];
 		const args = sessionId
 			? ["exec", "resume", ...common, sessionId, prompt]
@@ -371,14 +441,11 @@ async function prepare(
 		}),
 	);
 	await fs.writeFile(path.join(work, "GEMINI.md"), SYSTEM_PROMPT);
-	const args = [
-		"-p",
-		prompt,
-		"--output-format",
-		"stream-json",
-		"--allowed-mcp-server-names",
-		"cue",
-	];
+	// Gemini can't take pictures on the command line (and has no file tools here): it looks with view_attachment.
+	const seen = images.length
+		? `${prompt}\n\n[${images.length} screenshot${images.length === 1 ? "" : "s"} attached. Look at ${images.length === 1 ? "it" : "each"} with view_attachment: ${images.map((f) => JSON.stringify(f)).join(", ")}]`
+		: prompt;
+	const args = ["-p", seen, "--output-format", "stream-json", "--allowed-mcp-server-names", "cue"];
 	if (model) args.push("--model", model);
 	if (sessionId) args.push("--resume", sessionId);
 	return { args, parse: parseGemini, cwd: work };
@@ -408,7 +475,10 @@ const parseClaude: Parser = (e) => {
 					detail: short(c.input),
 				});
 		}
-	if (e.type === "user")
+	// Our own messages come back once Claude has read them.
+	if (e.type === "user" && e.isReplay === true && typeof e.uuid === "string")
+		out.push({ kind: "ack", uuid: e.uuid });
+	if (e.type === "user" && Array.isArray(message?.content))
 		for (const c of message?.content ?? [])
 			if (c.type === "tool_result")
 				out.push({

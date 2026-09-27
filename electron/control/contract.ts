@@ -141,6 +141,11 @@ export const contract = {
 			trackId: z.string().optional(),
 		},
 	},
+	view_attachment: {
+		description:
+			"Look at a screenshot the user attached to a chat message (its path is given in the message). Returns the picture.",
+		input: { path: z.string() },
+	},
 	render_frame: {
 		description:
 			"Show the actual viewer image at a moment, with its PNG path. Use it to inspect framing, text and captions.",

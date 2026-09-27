@@ -18,6 +18,7 @@ import {
 	shell,
 	systemPreferences,
 } from "electron";
+import { loadChats, saveAttachment, saveChats } from "./agents/chats";
 import {
 	type ChatEvent,
 	detectHarnesses,
@@ -524,7 +525,13 @@ store.on("error", (error: Error) => store.log("system", `Autosave failed: ${erro
 // In-app agent chat through the user's own CLIs (Claude Code, Codex, Gemini)
 // ---------------------------------------------------------------------------
 
-const chats = new Map<string, { stop: () => void }>();
+const chats = new Map<
+	string,
+	{
+		stop: () => void;
+		steer: ((text: string, images: string[], uuid: string) => Promise<void>) | null;
+	}
+>();
 let harnessCache: { at: number; list: Promise<HarnessInfo[]> } | null = null;
 
 function listHarnesses(force = false) {
@@ -535,20 +542,29 @@ function listHarnesses(force = false) {
 
 async function sendChat(
 	chatId: string,
-	input: { harness: HarnessId; prompt: string; sessionId?: string; model?: string },
+	input: {
+		harness: HarnessId;
+		prompt: string;
+		sessionId?: string;
+		model?: string;
+		images?: string[];
+		uuid?: string;
+	},
 ) {
 	if (!appSettings.agent.enabled)
 		throw new Error("Agent access is turned off in Settings → Agent.");
 	chats.get(chatId)?.stop();
 	// Each turn has its own entry. Events from a turn that was replaced are dropped,
 	// and a stop that arrives while the harness is still starting is applied once it runs.
-	let handle: { stop: () => void } | null = null;
+	let handle: Awaited<ReturnType<typeof runHarness>> | null = null;
 	let stopped = false;
 	const entry = {
 		stop: () => {
 			stopped = true;
 			handle?.stop();
 		},
+		// Until the harness has started, a steer can't be delivered: the renderer queues it instead.
+		steer: null as ((text: string, images: string[], uuid: string) => Promise<void>) | null,
 	};
 	chats.set(chatId, entry);
 	const current = () => chats.get(chatId) === entry;
@@ -575,7 +591,15 @@ async function sendChat(
 		if (current()) chats.delete(chatId);
 		throw error;
 	}
+	entry.steer = handle.steer;
 	if (stopped) handle.stop();
+}
+
+/** The folder of the open project: where its conversations and attachments live. */
+function chatDir() {
+	const dir = store.snapshot()?.dir;
+	if (!dir) throw new Error("Open a project first.");
+	return dir;
 }
 
 /**
@@ -1257,6 +1281,35 @@ function registerIpc() {
 	ipcMain.handle("cue:harnesses", (_event, force?: boolean) => listHarnesses(force));
 	ipcMain.handle("cue:chatSend", (_event, chatId: string, input) => sendChat(chatId, input));
 	ipcMain.handle("cue:chatStop", (_event, chatId: string) => chats.get(chatId)?.stop());
+	// Another message while the agent works: false when it can't take one now (the renderer queues it).
+	ipcMain.handle(
+		"cue:chatSteer",
+		async (_event, chatId: string, input: { prompt: string; images?: string[]; uuid: string }) => {
+			const steer = chats.get(chatId)?.steer;
+			if (!steer) return false;
+			try {
+				await steer(input.prompt, input.images ?? [], input.uuid);
+				return true;
+			} catch {
+				return false;
+			}
+		},
+	);
+	ipcMain.handle("cue:chatLoad", async () => {
+		const dir = store.snapshot()?.dir;
+		return dir ? { dir, data: await loadChats(dir) } : null;
+	});
+	ipcMain.handle("cue:chatSave", async (_event, dir: string, data: unknown) => {
+		// Only into the folder of a project (the renderer saves the one it loaded).
+		if (!existsSync(dir) || !readdirSync(dir).some((entry) => isProjectFile(entry))) return;
+		await saveChats(dir, data);
+	});
+	ipcMain.handle("cue:chatAttach", (_event, bytes: ArrayBuffer) =>
+		saveAttachment(chatDir(), new Uint8Array(bytes)),
+	);
+	ipcMain.handle("cue:chatAttachFrame", async (_event, atMs: number) =>
+		saveAttachment(chatDir(), await fs.readFile(await captureFrame(atMs))),
+	);
 	// Voice commands: what was said, with the transcription provider from Settings.
 	ipcMain.handle("cue:transcribeSpeech", async (_event, audio: ArrayBuffer) => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-voice-"));

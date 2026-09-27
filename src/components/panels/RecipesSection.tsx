@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { Recipe } from "../../../electron/core/recipes";
 import { notify, run } from "../../lib/api";
 import { librarySelection } from "../../lib/assetLibrary";
-import { agentDraft } from "../../lib/chat";
+import { draftMessage } from "../../lib/chat";
 import { editor } from "../../lib/state";
 import { styleSelection } from "../../lib/styleLibrary";
 import { stylePreview } from "../../lib/stylePreviews";
@@ -63,10 +63,9 @@ export function RecipesSection({ busy }: { busy: boolean }) {
 			);
 	};
 	const ask = (r: Recipe) => {
-		agentDraft.set({
-			text: `Follow the Cue style guide "${r.name}" (${r.id}) on this project. Call show_style to read its full guide. Check the available footage and use list_library_assets and import_library_asset for useful supporting media. Adapt the structure to this project and review the result before finishing.`,
-		});
-		editor.set({ panel: "agent" });
+		draftMessage(
+			`Follow the Cue style guide "${r.name}" (${r.id}) on this project. Call show_style to read its full guide. Check the available footage and use list_library_assets and import_library_asset for useful supporting media. Adapt the structure to this project and review the result before finishing.`,
+		);
 	};
 	const styles = recipes.filter((r) => r.format === "style" || !!r.guide);
 	const quick = recipes.filter((r) => r.steps.length > 0 && r.format !== "style");

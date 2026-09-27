@@ -2,26 +2,45 @@ import { Button, Spinner } from "@heroui/react";
 import {
 	ArrowClockwise,
 	ArrowUp,
+	Camera,
 	CheckCircle,
+	ClockCounterClockwise,
+	FilmStrip,
 	Microphone,
 	NotePencil,
+	Paperclip,
 	Robot,
 	Stop,
+	Trash,
 	User,
 	WarningCircle,
+	X,
 } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HarnessInfo } from "../../../electron/agents/harness";
 import { notify } from "../../lib/api";
 import {
-	agentDraft,
+	type Attachment,
+	activeChat,
+	attachFiles,
+	attachFrame,
+	attachmentUrl,
+	type Chat,
 	type ChatItem,
-	chat,
+	type ClipRef,
+	chats,
+	composer,
+	deleteChat,
 	newChat,
+	openChat,
+	removeAttachment,
+	removeRef,
 	send,
+	sendNow,
 	setHarness,
 	stop,
 	switchProjectChat,
+	unqueue,
 } from "../../lib/chat";
 import { appSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
@@ -58,23 +77,35 @@ export function AgentPanel() {
 	);
 }
 
+const guard = (work: Promise<unknown>) =>
+	void work.catch((error: Error) =>
+		notify(
+			error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""),
+			"danger",
+		),
+	);
+
 function ChatView() {
 	const project = useProject();
 	const projectPath = project?.path ?? null;
-	useEffect(() => switchProjectChat(projectPath), [projectPath]);
-	const current = chat.use((s) => s.chat);
+	useEffect(() => void switchProjectChat(projectPath), [projectPath]);
+	const current = chats.use((s) => activeChat(s));
 	const [harnesses, setHarnesses] = useState<HarnessInfo[] | null>(null);
-	const [draft, setDraft] = useState("");
+	const [history, setHistory] = useState(false);
+	const [dragging, setDragging] = useState(false);
+	const draft = composer.use((s) => s.text);
+	const attachments = composer.use((s) => s.attachments);
+	const refs = composer.use((s) => s.refs);
+	const focus = composer.use((s) => s.focus);
 	const list = useRef<HTMLDivElement>(null);
 	const input = useRef<HTMLTextAreaElement>(null);
-	// "Ask the agent about this…" from the clip menu starts a message here.
-	const pending = agentDraft.use((s) => s.text);
+	const picker = useRef<HTMLInputElement>(null);
+	// "Ask the agent about this…" and styles put something in the message box: go there.
 	useEffect(() => {
-		if (pending === null) return;
-		setDraft(pending);
-		agentDraft.set({ text: null });
+		if (!focus) return;
+		setHistory(false);
 		requestAnimationFrame(() => input.current?.focus());
-	}, [pending]);
+	}, [focus]);
 
 	const refresh = (force = false) => void window.cue.harnesses(force).then(setHarnesses);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: load once
@@ -89,21 +120,43 @@ function ChatView() {
 	useLayoutEffect(() => {
 		const el = list.current;
 		if (el) el.scrollTop = el.scrollHeight;
-	}, [current.items.length, current.items.at(-1)]);
+	}, [current.id, current.items.length, current.items.at(-1)]);
 
 	const installed = harnesses?.filter((h) => h.installed) ?? [];
 	const active = harnesses?.find((h) => h.id === current.harness);
 	if (harnesses && installed.length === 0)
 		return <NoHarness harnesses={harnesses} onRefresh={() => refresh(true)} />;
 
-	const submit = (text = draft) => {
-		if (!text.trim() || current.running) return;
-		setDraft("");
-		void send(text);
+	const canSend = !!draft.trim() || attachments.length > 0;
+	const submit = (text?: string) => {
+		if (text !== undefined) composer.set({ text });
+		guard(send());
 	};
+	const images = (items: DataTransferItemList | FileList | null) =>
+		[...(items ?? [])]
+			.map((i) => (i instanceof File ? i : i.kind === "file" ? i.getAsFile() : null))
+			.filter((f): f is File => !!f && f.type.startsWith("image/"));
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
+		// biome-ignore lint/a11y/noStaticElementInteractions: the whole panel takes dropped screenshots; the paperclip button does the same
+		<div
+			className="relative flex min-h-0 flex-1 flex-col"
+			onDragOver={(e) => {
+				if (![...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) return;
+				e.preventDefault();
+				setDragging(true);
+			}}
+			onDragLeave={(e) => {
+				if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+			}}
+			onDrop={(e) => {
+				const files = images(e.dataTransfer.files);
+				setDragging(false);
+				if (!files.length) return;
+				e.preventDefault();
+				guard(attachFiles(files));
+			}}
+		>
 			<div className="flex items-center gap-1.5 border-b border-separator px-3 py-2">
 				<select
 					value={current.harness}
@@ -130,95 +183,153 @@ function ChatView() {
 						</option>
 					))}
 				</select>
-				<button
-					type="button"
-					onClick={newChat}
-					title="New conversation"
-					aria-label="New conversation"
-					className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+				<IconButton
+					label="Conversations in this project"
+					active={history}
+					onClick={() => setHistory((h) => !h)}
+				>
+					<ClockCounterClockwise className="size-4" />
+				</IconButton>
+				<IconButton
+					label="New conversation"
+					onClick={() => {
+						newChat();
+						setHistory(false);
+						input.current?.focus();
+					}}
 				>
 					<NotePencil className="size-4" />
-				</button>
+				</IconButton>
 			</div>
 
-			<div ref={list} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3">
-				{current.items.length === 0 ? (
-					<div className="flex flex-col gap-3">
-						<p className="text-[12px] leading-relaxed text-muted">
-							{active?.name ?? "The agent"} edits this project with Cue's tools only: no shell,
-							files or web. It sees the playhead and your selection, and every change can be undone.
-						</p>
-						<div className="flex flex-col gap-1">
-							{SUGGESTIONS.map((s) => (
-								<button
-									key={s}
-									type="button"
-									onClick={() => submit(s)}
-									className="rounded-md border border-border px-2.5 py-1.5 text-left text-[12px] leading-snug text-foreground/85 hover:border-foreground/30 hover:bg-default/50"
-								>
-									{s}
-								</button>
-							))}
+			{history ? (
+				<History harnesses={harnesses ?? []} onPick={() => setHistory(false)} />
+			) : (
+				<div ref={list} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3">
+					{current.items.length === 0 ? (
+						<div className="flex flex-col gap-3">
+							<p className="text-[12px] leading-relaxed text-muted">
+								{active?.name ?? "The agent"} edits this project with Cue's tools only: no shell,
+								files or web. It sees the playhead and your selection, and every change can be
+								undone. Paste or drop screenshots to show it what you mean, and keep writing while
+								it works to steer it.
+							</p>
+							<div className="flex flex-col gap-1">
+								{SUGGESTIONS.map((s) => (
+									<button
+										key={s}
+										type="button"
+										onClick={() => submit(s)}
+										className="rounded-md border border-border px-2.5 py-1.5 text-left text-[12px] leading-snug text-foreground/85 hover:border-foreground/30 hover:bg-default/50"
+									>
+										{s}
+									</button>
+								))}
+							</div>
 						</div>
-					</div>
-				) : (
-					<div className="flex flex-col gap-2.5">
-						{current.items.map((item, i) => (
-							// biome-ignore lint/suspicious/noArrayIndexKey: the transcript only ever grows
-							<Message key={i} item={item} />
-						))}
-						{current.running && current.items.at(-1)?.role !== "tool" && (
-							<span className="flex items-center gap-2 text-[11px] text-muted">
-								<Spinner size="sm" /> Working…
-							</span>
-						)}
-					</div>
-				)}
-			</div>
+					) : (
+						<div className="flex flex-col gap-2.5">
+							{current.items.map((item, i) => (
+								// biome-ignore lint/suspicious/noArrayIndexKey: the transcript only grows (queued messages leave from the end)
+								<Message key={i} item={item} chat={current} />
+							))}
+							{current.running && current.items.at(-1)?.role !== "tool" && (
+								<span className="flex items-center gap-2 text-[11px] text-muted">
+									<Spinner size="sm" /> Working…
+								</span>
+							)}
+						</div>
+					)}
+				</div>
+			)}
 
 			<div className="border-t border-separator p-2.5">
-				<div className="flex items-end gap-1.5 rounded-lg border border-border bg-field p-1.5 focus-within:border-accent">
+				<div className="flex flex-col gap-1.5 rounded-lg border border-border bg-field p-1.5 focus-within:border-accent">
+					{(refs.length > 0 || attachments.length > 0) && (
+						<div className="flex flex-wrap gap-1 px-0.5 pt-0.5">
+							{refs.map((r) => (
+								<RefChip key={r.id} item={r} onRemove={() => removeRef(r.id)} />
+							))}
+							{attachments.map((a) => (
+								<Thumb key={a.path} item={a} onRemove={() => removeAttachment(a.path)} />
+							))}
+						</div>
+					)}
 					<textarea
 						ref={input}
 						value={draft}
-						onChange={(e) => setDraft(e.target.value)}
+						onChange={(e) => composer.set({ text: e.target.value })}
+						onPaste={(e) => {
+							const files = images(e.clipboardData.items);
+							if (!files.length) return;
+							e.preventDefault();
+							guard(attachFiles(files));
+						}}
 						onKeyDown={(e) => {
 							e.stopPropagation();
 							// Enter while composing (Japanese, Chinese…) confirms the text, it doesn't send.
 							if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
 								e.preventDefault();
-								submit();
+								if (canSend) submit();
 							}
 						}}
 						rows={Math.min(6, Math.max(1, draft.split("\n").length))}
-						placeholder={`Ask ${active?.name ?? "the agent"} to edit…`}
-						className="max-h-40 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-[12px] leading-snug outline-none"
+						placeholder={
+							current.running
+								? "Add to it or change course…"
+								: `Ask ${active?.name ?? "the agent"} to edit…`
+						}
+						className="max-h-40 min-w-0 resize-none bg-transparent px-1 py-1 text-[12px] leading-snug outline-none"
 					/>
-					{current.running ? (
-						<button
-							type="button"
-							onClick={stop}
-							aria-label="Stop"
-							title="Stop"
-							className="flex size-7 shrink-0 items-center justify-center rounded-md bg-default text-foreground hover:bg-default/70"
+					<div className="flex items-center gap-1">
+						<input
+							ref={picker}
+							type="file"
+							accept="image/png,image/jpeg,image/webp,image/gif"
+							multiple
+							hidden
+							onChange={(e) => {
+								guard(attachFiles(images(e.target.files)));
+								e.target.value = "";
+							}}
+						/>
+						<IconButton
+							label="Attach screenshots (or paste / drop them)"
+							onClick={() => picker.current?.click()}
 						>
-							<Stop weight="fill" className="size-3.5" />
-						</button>
-					) : (
-						<>
-							<VoiceButton onText={(text) => submit(text)} />
+							<Paperclip className="size-3.5" />
+						</IconButton>
+						<IconButton
+							label="Attach the frame at the playhead"
+							onClick={() => guard(attachFrame())}
+						>
+							<Camera className="size-3.5" />
+						</IconButton>
+						<span className="flex-1" />
+						{current.running ? (
 							<button
 								type="button"
-								onClick={() => submit()}
-								disabled={!draft.trim()}
-								aria-label="Send"
-								title="Send (Enter)"
-								className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground disabled:opacity-30"
+								onClick={() => stop(current.id)}
+								aria-label="Stop"
+								title="Stop"
+								className="flex size-7 shrink-0 items-center justify-center rounded-md bg-default text-foreground hover:bg-default/70"
 							>
-								<ArrowUp weight="bold" className="size-3.5" />
+								<Stop weight="fill" className="size-3.5" />
 							</button>
-						</>
-					)}
+						) : (
+							<VoiceButton onText={(text) => submit(text)} />
+						)}
+						<button
+							type="button"
+							onClick={() => submit()}
+							disabled={!canSend}
+							aria-label="Send"
+							title={current.running ? "Send while it works (Enter)" : "Send (Enter)"}
+							className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground disabled:opacity-30"
+						>
+							<ArrowUp weight="bold" className="size-3.5" />
+						</button>
+					</div>
 				</div>
 				<p className="mt-1.5 flex items-center justify-between gap-2 px-0.5 text-[10px] text-muted">
 					<span>{active?.version ? `${active.name} ${active.version}` : ""}</span>
@@ -226,7 +337,155 @@ function ChatView() {
 					{current.costUsd > 0 && <span>${current.costUsd.toFixed(3)} this chat</span>}
 				</p>
 			</div>
+			{dragging && (
+				<div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-background/80 text-[12px] text-foreground">
+					Drop screenshots to attach them
+				</div>
+			)}
 		</div>
+	);
+}
+
+function IconButton({
+	label,
+	onClick,
+	active,
+	children,
+}: {
+	label: string;
+	onClick: () => void;
+	active?: boolean;
+	children: React.ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			title={label}
+			aria-label={label}
+			aria-pressed={active}
+			className={cn(
+				"flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground",
+				active && "bg-default text-foreground",
+			)}
+		>
+			{children}
+		</button>
+	);
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+const ago = (iso: string) => {
+	const s = (Date.now() - Date.parse(iso)) / 1000;
+	if (s < 60) return "just now";
+	if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+	if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+	return new Date(iso).toLocaleDateString([], { day: "numeric", month: "short" });
+};
+
+/** This project's conversations, newest first. */
+function History({ harnesses, onPick }: { harnesses: HarnessInfo[]; onPick: () => void }) {
+	const list = chats.use((s) => s.list);
+	const activeId = chats.use((s) => s.activeId);
+	const shown = [...list]
+		.filter((c) => c.items.length > 0 || c.id === activeId)
+		.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+	return (
+		<div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
+			<p className="px-1.5 pb-1.5 text-[11px] text-muted">Conversations in this project</p>
+			<ul className="flex flex-col gap-0.5">
+				{shown.map((c) => (
+					<li key={c.id} className="group relative">
+						<button
+							type="button"
+							onClick={() => {
+								openChat(c.id);
+								onPick();
+							}}
+							className={cn(
+								"flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 pr-8 text-left hover:bg-default/60",
+								c.id === activeId && "bg-default",
+							)}
+						>
+							<span className="flex items-center gap-1.5 text-[12px] leading-snug">
+								{c.running && <Spinner size="sm" className="scale-75" />}
+								<span className="truncate">{c.title || "New conversation"}</span>
+							</span>
+							<span className="text-[10px] text-muted">
+								{harnesses.find((h) => h.id === c.harness)?.name ?? c.harness} ·{" "}
+								{plural(c.items.filter((i) => i.role === "user").length, "message")} ·{" "}
+								{ago(c.updatedAt)}
+							</span>
+						</button>
+						{c.items.length > 0 && (
+							<button
+								type="button"
+								onClick={() => deleteChat(c.id)}
+								title="Delete conversation"
+								aria-label="Delete conversation"
+								className="absolute top-1.5 right-1.5 hidden size-6 items-center justify-center rounded-md text-muted group-hover:flex hover:bg-danger/15 hover:text-danger"
+							>
+								<Trash className="size-3.5" />
+							</button>
+						)}
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
+
+function RefChip({ item, onRemove }: { item: ClipRef; onRemove?: () => void }) {
+	return (
+		<span
+			title={item.detail}
+			className="flex max-w-full items-center gap-1 rounded-md border border-accent/40 bg-accent/10 py-0.5 pr-1 pl-1.5 text-[11px] text-foreground"
+		>
+			<FilmStrip className="size-3 shrink-0 text-accent" />
+			<span className="truncate">{item.label}</span>
+			{onRemove && (
+				<button
+					type="button"
+					onClick={onRemove}
+					aria-label={`Remove ${item.label}`}
+					className="flex size-4 items-center justify-center rounded text-muted hover:text-foreground"
+				>
+					<X className="size-3" />
+				</button>
+			)}
+		</span>
+	);
+}
+
+function Thumb({
+	item,
+	onRemove,
+	large,
+}: {
+	item: Attachment;
+	onRemove?: () => void;
+	large?: boolean;
+}) {
+	return (
+		<span className="group relative block overflow-hidden rounded-md border border-border bg-black">
+			<img
+				src={attachmentUrl(item.path)}
+				alt="Attached screenshot"
+				title={`${item.width}×${item.height}`}
+				className={cn("block object-cover", large ? "max-h-40 max-w-full" : "h-12 w-16")}
+			/>
+			{onRemove && (
+				<button
+					type="button"
+					onClick={onRemove}
+					aria-label="Remove screenshot"
+					className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded bg-black/70 text-white opacity-0 group-hover:opacity-100"
+				>
+					<X className="size-3" />
+				</button>
+			)}
+		</span>
 	);
 }
 
@@ -324,12 +583,53 @@ function ReviewToggle() {
 	);
 }
 
-function Message({ item }: { item: ChatItem }) {
+function Message({ item, chat }: { item: ChatItem; chat: Chat }) {
 	if (item.role === "user")
 		return (
-			<p className="ml-6 self-end rounded-lg bg-default px-2.5 py-1.5 text-[12px] leading-snug whitespace-pre-wrap select-text">
-				{item.text}
-			</p>
+			<div className="ml-6 flex flex-col items-end gap-1 self-end">
+				{(item.refs?.length || item.attachments?.length) && (
+					<div className="flex flex-wrap justify-end gap-1">
+						{item.refs?.map((r) => (
+							<RefChip key={r.id} item={r} />
+						))}
+						{item.attachments?.map((a) => (
+							<Thumb key={a.path} item={a} large={item.attachments?.length === 1} />
+						))}
+					</div>
+				)}
+				{item.text && (
+					<p
+						className={cn(
+							"rounded-lg bg-default px-2.5 py-1.5 text-[12px] leading-snug whitespace-pre-wrap select-text",
+							item.pending && "opacity-70",
+						)}
+					>
+						{item.text}
+					</p>
+				)}
+				{item.pending === "steering" && (
+					<span className="text-[10px] text-muted">Sent while it works…</span>
+				)}
+				{item.pending === "queued" && (
+					<span className="flex items-center gap-2 text-[10px] text-muted">
+						Queued: sends when it finishes
+						<button
+							type="button"
+							className="text-accent hover:underline"
+							onClick={() => sendNow(chat.id)}
+						>
+							Send now
+						</button>
+						<button
+							type="button"
+							className="hover:text-foreground hover:underline"
+							onClick={() => item.uuid && unqueue(chat.id, item.uuid)}
+						>
+							Edit
+						</button>
+					</span>
+				)}
+			</div>
 		);
 	if (item.role === "assistant")
 		return (

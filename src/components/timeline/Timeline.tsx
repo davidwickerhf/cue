@@ -56,7 +56,7 @@ import type {
 	Track,
 } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
-import { agentDraft } from "../../lib/chat";
+import { askAbout } from "../../lib/chat";
 import { clearKeySelection, keyframeLanes, toggleLanes } from "../../lib/keyframes";
 import { notes } from "../../lib/notes";
 import { keyLabel } from "../../lib/platform";
@@ -2440,12 +2440,10 @@ function nestedSequence(project: ProjectSnapshot, clip: Clip): string | undefine
 }
 
 /** Opens the agent chat with the selected clips as the subject. */
+/** Pins the clips to the agent's message box, with their details, then opens it. */
 function askAgentAbout(ids: string[]) {
 	window.cue.selectClips(ids);
-	editor.set({ panel: "agent" });
-	agentDraft.set({
-		text: ids.length > 1 ? "About the selected clips: " : "About the selected clip: ",
-	});
+	askAbout(ids);
 }
 
 function ClipMenu({

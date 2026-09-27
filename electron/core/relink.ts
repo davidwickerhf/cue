@@ -11,7 +11,7 @@ import type { Asset } from "./types";
  * is still where it was.
  */
 
-const SKIP = new Set(["node_modules", ".git", ".cue-cache", "Library", ".Trash"]);
+const SKIP = new Set(["node_modules", ".git", ".cue-cache", ".cue-chat", "Library", ".Trash"]);
 const MAX_ENTRIES = 25000;
 
 export function isOffline(dir: string, asset: Asset): boolean {

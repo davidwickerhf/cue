@@ -43,7 +43,7 @@ const HANDLE_MS = 1000;
 /** Only trim when it saves at least this share of a file. */
 const TRIM_IF_UNDER = 0.7;
 /** Folders in the project that are made again on open and never go in a package. */
-const SKIP = new Set([".cue-cache", ".cue-history", "export", "exports"]);
+const SKIP = new Set([".cue-cache", ".cue-history", ".cue-chat", "export", "exports"]);
 
 /** Every media clip in the project, in every sequence. */
 function allClips(data: ProjectData): Clip[] {
