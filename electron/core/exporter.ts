@@ -549,7 +549,6 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	const { width: W, height: H, fps, background } = data.canvas;
 	const lengthMs = projectDuration(data);
 	if (lengthMs <= 0) throw new Error("The timeline is empty.");
-	await prepareVignettes(data);
 	let out = outFile ?? resolveInProject(ctx.dir, fileName(data, data.export.videoFile));
 	if (data.export.codec === "prores") out = out.replace(/\.mp4$/i, ".mov");
 	await fs.mkdir(path.dirname(out), { recursive: true });
@@ -611,6 +610,13 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		inputs.push(...args);
 		return n++;
 	};
+	/** A looped vignette mask at a picture's size, as an input stream label. */
+	const vignetteInput = async (amount: number | undefined, w: number, h: number, ms: number) => {
+		if (!amount || amount <= 0) return undefined;
+		const file = await vignetteMask(amount, w, h);
+		const index = addInput(["-loop", "1", "-framerate", String(fps), "-t", s(ms), "-i", file]);
+		return `${index}:v`;
+	};
 
 	for (const clip of layers) {
 		const start = s(clip.startMs);
@@ -663,14 +669,16 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 					maskFile,
 				]);
 				chains.push(`[${current}]split[${out}a][${out}b]`);
-				chains.push(`[${out}b]null${filterPiece(filters, out)},format=yuva420p[${out}g]`);
+				const vin = await vignetteInput(clip.effects?.vignette, W, H, lengthMs + 1000);
+				chains.push(`[${out}b]null${filterPiece(filters, out, "", vin)},format=yuva420p[${out}g]`);
 				chains.push(`[${m}:v]format=gray,scale=${W}:${H}[${out}m]`);
 				chains.push(`[${out}g][${out}m]alphamerge[${out}k]`);
 				chains.push(
 					`[${out}a][${out}k]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass,format=yuva420p[${out}]`,
 				);
 			} else {
-				const timed = filterPiece(filters, out, `:enable='between(t,${start},${end})'`);
+				const vin = await vignetteInput(clip.effects?.vignette, W, H, lengthMs + 1000);
+				const timed = filterPiece(filters, out, `:enable='between(t,${start},${end})'`, vin);
 				chains.push(`[${current}]null${timed},format=yuva420p[${out}]`);
 			}
 			current = out;
@@ -714,7 +722,12 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			gradeFilters(clip.color)
 				.map((f) => `,${f}`)
 				.join("") +
-			effectChain(clip.effects, sh, label) +
+			effectChain(
+				clip.effects,
+				sh,
+				label,
+				await vignetteInput(clip.effects?.vignette, sw, sh, clip.durationMs + 1000),
+			) +
 			// Blur transition: a blurred copy dissolves into the sharp picture.
 			(tr?.kind === "blur"
 				? `,split[tbA${label}][tbB${label}];[tbB${label}]gblur=sigma=${((BLUR_FROM * sh) / 1080).toFixed(2)}:enable='lt(t,${s(tr.durationMs)})'[tbC${label}];` +
@@ -1000,7 +1013,7 @@ function effectFilters(effects: Effects | undefined, height: number): string[] {
 		effects.blur > 0 ? `gblur=sigma=${(effects.blur * 24 * px).toFixed(2)}` : "",
 		effects.sharpen > 0 ? `unsharp=5:5:${(effects.sharpen * 2).toFixed(3)}:5:5:0` : "",
 		// Drawn with the preview's own gradient (see vignetteMask), so both look the same.
-		effects.vignette > 0 ? `vignette:${vignetteKey(effects.vignette)}` : "",
+		effects.vignette > 0 ? "vignette:" : "",
 		effects.glow > 0
 			? `glow:${(10 * px + effects.glow * 20 * px).toFixed(2)}:${(effects.glow * 0.8).toFixed(3)}`
 			: "",
@@ -1012,8 +1025,13 @@ function effectFilters(effects: Effects | undefined, height: number): string[] {
 }
 
 /** Effects as a piece of a clip's filter chain (starting with a comma). */
-function effectChain(effects: Effects | undefined, height: number, label: string): string {
-	return filterPiece(effectFilters(effects, height), label);
+function effectChain(
+	effects: Effects | undefined,
+	height: number,
+	label: string,
+	vignette?: string,
+): string {
+	return filterPiece(effectFilters(effects, height), label, "", vignette);
 }
 
 /**
@@ -1021,19 +1039,18 @@ function effectChain(effects: Effects | undefined, height: number, label: string
  * small graphs of their own; `enable` (e.g. ":enable='between(t,1,2)'") limits
  * every filter to a time range.
  */
-function filterPiece(filters: string[], label: string, enable = ""): string {
+function filterPiece(filters: string[], label: string, enable = "", vignette?: string): string {
 	let chain = "";
 	let k = 0;
 	for (const f of filters) {
 		const id = `${label}_${k++}`;
 		if (f.startsWith("vignette:")) {
-			// The picture's colours times a grey mask; its alpha stays as it was.
-			const file = VIGNETTES.get(f.slice("vignette:".length));
-			if (!file) throw new Error("Vignette mask missing (prepareVignettes wasn't called).");
+			// The picture's colours times a grey mask of its own size (an input, see
+			// vignetteMask); its alpha stays as it was.
+			if (!vignette) throw new Error("Vignette mask input missing.");
 			chain +=
-				`,format=gbrap[vA${id}];movie=${file.replace(/([\\:'])/g, "\\$1")},format=gbrap[vM${id}];` +
-				`[vM${id}][vA${id}]scale2ref[vN${id}][vB${id}];` +
-				`[vB${id}][vN${id}]blend=all_mode=multiply:c3_opacity=0${enable}`;
+				`,format=gbrap[vA${id}];[${vignette}]format=gbrap[vM${id}];` +
+				`[vA${id}][vM${id}]blend=all_mode=multiply:c3_opacity=0${enable}`;
 			continue;
 		}
 		if (!f.startsWith("glow:")) {
@@ -1050,30 +1067,28 @@ function filterPiece(filters: string[], label: string, enable = ""): string {
 	return chain;
 }
 
-const vignetteKey = (amount: number) => amount.toFixed(3);
-/** Vignette masks by amount, made before a graph that uses them is built. */
-const VIGNETTES = new Map<string, string>();
-
 /**
- * The preview's vignette as a grey mask (white where the picture is untouched):
- * CSS radial-gradient(ellipse at center, transparent inner%, rgba(0,0,0,A) 100%),
- * the ellipse reaching the corners. Normalised, so it scales to any picture.
+ * The preview's vignette as a grey mask `width` × `height` (white where the
+ * picture is untouched): CSS radial-gradient(ellipse at center, transparent
+ * inner%, rgba(0,0,0,A) 100%), the ellipse reaching the corners. Made once per
+ * amount and size.
  */
-async function vignetteMask(amount: number): Promise<string> {
-	const key = vignetteKey(amount);
-	const file = path.join(os.tmpdir(), `cue-vignette-${key}.png`);
+async function vignetteMask(amount: number, width: number, height: number): Promise<string> {
+	const w = Math.max(2, Math.round(width));
+	const h = Math.max(2, Math.round(height));
+	const file = path.join(os.tmpdir(), `cue-vignette-${amount.toFixed(3)}-${w}x${h}.png`);
 	const inner = Math.round(70 - amount * 45) / 100;
 	const dark = 0.35 + amount * 0.55;
 	try {
 		await fs.access(file);
 	} catch {
 		const tmp = `${file}.${process.pid}-${Date.now()}.png`;
-		const d = "sqrt(pow((X-255.5)/256,2)+pow((Y-255.5)/256,2))/sqrt(2)";
+		const d = "sqrt(pow((X-W/2)/(W/2),2)+pow((Y-H/2)/(H/2),2))/sqrt(2)";
 		await ffmpeg([
 			"-f",
 			"lavfi",
 			"-i",
-			"color=c=white:s=512x512",
+			`color=c=white:s=${w}x${h}`,
 			"-vf",
 			`format=gray,geq=lum='255*(1-${dark.toFixed(4)}*clip((${d}-${inner})/${(1 - inner).toFixed(4)},0,1))'`,
 			"-frames:v",
@@ -1082,18 +1097,7 @@ async function vignetteMask(amount: number): Promise<string> {
 		]);
 		await fs.rename(tmp, file);
 	}
-	VIGNETTES.set(key, file);
 	return file;
-}
-
-/** Makes the vignette masks a project's clips need. */
-async function prepareVignettes(data: ProjectData): Promise<void> {
-	const amounts = new Set(
-		data.clips.flatMap((c) =>
-			c.type === "media" && (c.effects?.vignette ?? 0) > 0 ? [c.effects?.vignette as number] : [],
-		),
-	);
-	for (const a of amounts) await vignetteMask(a);
 }
 
 /**
