@@ -1045,12 +1045,14 @@ function filterPiece(filters: string[], label: string, enable = "", vignette?: s
 	for (const f of filters) {
 		const id = `${label}_${k++}`;
 		if (f.startsWith("vignette:")) {
-			// The picture's colours times a grey mask of its own size (an input, see
-			// vignetteMask); its alpha stays as it was.
+			// A black mask of the picture's size (an input, see vignetteMask) laid over
+			// it, then the picture's own alpha put back so see-through parts stay clear.
 			if (!vignette) throw new Error("Vignette mask input missing.");
 			chain +=
-				`,format=gbrap[vA${id}];[${vignette}]format=gbrap[vM${id}];` +
-				`[vA${id}][vM${id}]blend=all_mode=multiply:c3_opacity=0${enable}`;
+				`,format=rgba,split[vA${id}][vB${id}];[vB${id}]alphaextract[vX${id}];` +
+				`[${vignette}]format=rgba[vM${id}];` +
+				`[vA${id}][vM${id}]overlay=x=0:y=0:format=auto${enable}[vO${id}];` +
+				`[vO${id}][vX${id}]alphamerge`;
 			continue;
 		}
 		if (!f.startsWith("glow:")) {
@@ -1068,15 +1070,15 @@ function filterPiece(filters: string[], label: string, enable = "", vignette?: s
 }
 
 /**
- * The preview's vignette as a grey mask `width` × `height` (white where the
- * picture is untouched): CSS radial-gradient(ellipse at center, transparent
- * inner%, rgba(0,0,0,A) 100%), the ellipse reaching the corners. Made once per
- * amount and size.
+ * The preview's vignette as a black mask `width` × `height` whose alpha is the
+ * darkening: CSS radial-gradient(ellipse at center, transparent inner%,
+ * rgba(0,0,0,A) 100%), the ellipse reaching the corners. Made once per amount
+ * and size.
  */
 async function vignetteMask(amount: number, width: number, height: number): Promise<string> {
 	const w = Math.max(2, Math.round(width));
 	const h = Math.max(2, Math.round(height));
-	const file = path.join(os.tmpdir(), `cue-vignette-${amount.toFixed(3)}-${w}x${h}.png`);
+	const file = path.join(os.tmpdir(), `cue-vignette-a-${amount.toFixed(3)}-${w}x${h}.png`);
 	const inner = Math.round(70 - amount * 45) / 100;
 	const dark = 0.35 + amount * 0.55;
 	try {
@@ -1088,9 +1090,9 @@ async function vignetteMask(amount: number, width: number, height: number): Prom
 			"-f",
 			"lavfi",
 			"-i",
-			`color=c=white:s=${w}x${h}`,
+			`color=c=black:s=${w}x${h}`,
 			"-vf",
-			`format=gray,geq=lum='255*(1-${dark.toFixed(4)}*clip((${d}-${inner})/${(1 - inner).toFixed(4)},0,1))'`,
+			`format=rgba,geq=r=0:g=0:b=0:a='255*${dark.toFixed(4)}*clip((${d}-${inner})/${(1 - inner).toFixed(4)},0,1)'`,
 			"-frames:v",
 			"1",
 			tmp,
