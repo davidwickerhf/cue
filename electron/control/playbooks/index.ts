@@ -1,5 +1,7 @@
 import { AGENT_WORKFLOW } from "./agentWorkflow";
 import { EDITING_CRAFT } from "./editingCraft";
+import { EXAMPLE_OK } from "./exampleOk";
+import { MATCH_REFERENCE } from "./matchReference";
 import { MOTION_DESIGN } from "./motionDesign";
 import { OTHER_STYLES } from "./styles";
 import { VOX_EXPLAINER } from "./voxExplainer";
@@ -7,14 +9,14 @@ import { VOX_EXPLAINER } from "./voxExplainer";
 /**
  * Playbooks: what Cue's agents know about making videos, so they don't have to
  * work it out each time. A playbook is a markdown document: how to work in Cue,
- * editing craft, motion design, and recognisable styles taken apart into
- * techniques with Cue's own tools and numbers. Agents read them with
+ * editing craft, motion design, recognisable styles taken apart into
+ * techniques with Cue's own tools and numbers, and worked examples. Agents read them with
  * list_playbooks and get_playbook.
  */
 export interface Playbook {
 	id: string;
 	name: string;
-	category: "workflow" | "craft" | "style";
+	category: "workflow" | "craft" | "style" | "example";
 	/** One line: what it covers. */
 	summary: string;
 	/** When an agent should read it. */
@@ -24,10 +26,12 @@ export interface Playbook {
 
 export const PLAYBOOKS: Playbook[] = [
 	AGENT_WORKFLOW,
+	MATCH_REFERENCE,
 	EDITING_CRAFT,
 	MOTION_DESIGN,
 	VOX_EXPLAINER,
 	...OTHER_STYLES,
+	EXAMPLE_OK,
 ];
 
 export function playbook(id: string): Playbook {

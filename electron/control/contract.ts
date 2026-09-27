@@ -46,8 +46,8 @@ export const contract = {
 	},
 	list_playbooks: {
 		description:
-			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first), editing craft, premium motion design, and recognisable styles (Vox explainer, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
-		input: { category: z.enum(["workflow", "craft", "style"]).optional() },
+			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first), how to match a reference video ('match-a-reference', with analyze_reference), a complete worked example ('example-why-we-say-ok'), editing craft, premium motion design, and recognisable styles (Vox explainer, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
+		input: { category: z.enum(["workflow", "craft", "style", "example"]).optional() },
 	},
 	get_playbook: {
 		description: "A playbook's full text (markdown), by id from list_playbooks.",
@@ -164,6 +164,11 @@ export const contract = {
 		description:
 			"Save a copy of the project (.cueproj) at a new path and switch to it. Media stays where it is.",
 		input: { path: z.string() },
+	},
+	analyze_reference: {
+		description:
+			"Measure a reference video you are asked to match (a style, a creator, an ad): where its cuts are, shot lengths (median, mean, range), cuts per minute and per 10 s (where it speeds up or breathes), brightness, colourfulness and how much is black and white, its dominant colours, loudness, and a contact sheet with one frame per shot (returned as an image). Give a file path or the assetId of imported media. Use the numbers to set your pacing, grade and palette, then read the matching playbook (list_playbooks) and the 'match-a-reference' playbook. Long: may reply with a callId for wait_for.",
+		input: { file: z.string().optional(), assetId: z.string().optional() },
 	},
 	package_project: {
 		description:

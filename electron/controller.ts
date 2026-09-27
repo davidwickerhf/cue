@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
@@ -42,6 +43,7 @@ import {
 } from "./core/motionTemplates";
 import { reviewEdit } from "./core/notes";
 import { activeSequence, allSequences } from "./core/ops";
+import { resolveInProject } from "./core/paths";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
 import {
 	BUILT_IN_RECIPES,
@@ -53,6 +55,7 @@ import {
 	resolveRecipe,
 	saveRecipes,
 } from "./core/recipes";
+import { analyzeReference } from "./core/reference";
 import type { AiRuntime } from "./core/runtime";
 import { type NativeCapture, nativeMp4Args, startNativeCapture } from "./core/screenrec";
 import { parseSrt } from "./core/srt";
@@ -608,6 +611,23 @@ export class Controller extends EventEmitter {
 				const file = await this.store.saveAs(target, actor);
 				await this.afterOpen();
 				return { path: file };
+			}
+			case "analyze_reference": {
+				const { file, assetId } = parseInput("analyze_reference", params);
+				const asset = assetId ? this.store.current.assets.find((a) => a.id === assetId) : undefined;
+				if (assetId && !asset) throw new Error(`No media "${assetId}".`);
+				const source = asset
+					? resolveInProject(this.store.projectDir, asset.path)
+					: file
+						? path.resolve(file)
+						: null;
+				if (!source) throw new Error("Give the file to analyse, or the assetId of imported media.");
+				const cache = this.store.isOpen
+					? this.store.cacheDir()
+					: path.join(os.tmpdir(), "cue-reference");
+				return this.job(`Analysing ${path.basename(source)}`, () =>
+					analyzeReference(source, cache),
+				);
 			}
 			case "package_project": {
 				const { out, trim, readme } = parseInput("package_project", params);
