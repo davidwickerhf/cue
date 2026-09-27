@@ -1754,6 +1754,131 @@ export class ProjectStore extends EventEmitter {
 		return rendered;
 	}
 
+	/**
+	 * Places another project (or one of its sequences) in this one as media, like
+	 * a pre-composition shared between projects: it is rendered to a video in this
+	 * project's cache and made again whenever that project changes (refreshProjectMedia).
+	 */
+	async addProjectMedia(
+		file: string,
+		options: { sequenceId?: string; place?: { trackId: string; startMs: number } },
+		actor: Actor,
+		renderText?: TextRenderer,
+	): Promise<Asset> {
+		const source = path.resolve(file);
+		if (!isProjectFile(source)) throw new Error("Choose a Cue project (.cueproj).");
+		if (source === this.file) throw new Error("A project cannot contain itself.");
+		const other = parseProject(JSON.parse(await fs.readFile(source, "utf8")));
+		const sequence = pickSequence(other, options.sequenceId);
+		const render = await this.renderProjectMedia(source, sequence.id, renderText);
+		const asset: Asset = {
+			id: newId("a"),
+			kind: "video",
+			name: sequence.id === "main" ? other.name : `${other.name} · ${sequence.name}`,
+			path: render.path,
+			relPath: render.path,
+			durationMs: render.durationMs,
+			width: other.canvas.width,
+			height: other.canvas.height,
+			hasAudio: render.hasAudio,
+			origin: "import",
+			createdAt: new Date().toISOString(),
+			actor,
+			projectSource: { path: source, sequenceId: sequence.id, modifiedMs: render.modifiedMs },
+		};
+		this.apply({ type: "addAsset", asset, placeOn: options.place }, actor);
+		return asset;
+	}
+
+	/**
+	 * Renders again every project placed as media whose file changed since its
+	 * render. Returns how many were updated. A missing source keeps its last render.
+	 */
+	async refreshProjectMedia(renderText?: TextRenderer): Promise<number> {
+		let updated = 0;
+		for (const asset of this.current.assets.filter((a) => a.projectSource)) {
+			const src = asset.projectSource as NonNullable<Asset["projectSource"]>;
+			const stat = await fs.stat(src.path).catch(() => null);
+			if (!stat || Math.round(stat.mtimeMs) <= src.modifiedMs) continue;
+			const render = await this.renderProjectMedia(src.path, src.sequenceId, renderText);
+			// Pointing at a new render is housekeeping, not an edit: no undo step.
+			let next = applyOp(this.current, {
+				type: "updateAsset",
+				id: asset.id,
+				patch: {
+					path: render.path,
+					relPath: render.path,
+					durationMs: render.durationMs,
+					hasAudio: render.hasAudio,
+					projectSource: { ...src, modifiedMs: render.modifiedMs },
+				},
+			}).data;
+			if (asset.durationMs !== render.durationMs && asset.durationMs > 0)
+				next = applyOp(next, {
+					type: "fitNested",
+					assetId: asset.id,
+					fromMs: asset.durationMs,
+					toMs: render.durationMs,
+				}).data;
+			this.data = next;
+			this.touch();
+			this.log("system", `Updated "${asset.name}" from its project`);
+			updated++;
+		}
+		return updated;
+	}
+
+	/** Renders a project file (one sequence of it) into this project's cache. */
+	private async renderProjectMedia(
+		source: string,
+		sequenceId: string | undefined,
+		renderText?: TextRenderer,
+	): Promise<{ path: string; durationMs: number; hasAudio: boolean; modifiedMs: number }> {
+		const stat = await fs.stat(source);
+		const other = parseProject(JSON.parse(await fs.readFile(source, "utf8")));
+		const sequence = pickSequence(other, sequenceId);
+		const data: ProjectData = {
+			...other,
+			tracks: sequence.tracks,
+			clips: sequence.clips,
+			markers: sequence.markers,
+		};
+		const durationMs = projectDuration(data);
+		if (durationMs <= 0) throw new Error(`"${other.name}" has nothing on its timeline yet.`);
+		const modifiedMs = Math.round(stat.mtimeMs);
+		let hash = 0;
+		const key = `${source}|${sequence.id}`;
+		for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+		const file = path.join(
+			this.projectDir,
+			CACHE_DIR,
+			"projects",
+			`${(hash >>> 0).toString(36)}-${modifiedMs.toString(36)}.mp4`,
+		);
+		if (!existsSync(file)) {
+			await fs.mkdir(path.dirname(file), { recursive: true });
+			const tmp = partFile(file, "mp4");
+			await exportVideo(
+				{
+					dir: path.dirname(source),
+					data: {
+						...data,
+						export: { ...data.export, codec: "h264", videoQuality: "high", scale: 1 },
+					},
+					renderText,
+				},
+				tmp,
+			);
+			await fs.rename(tmp, file);
+		}
+		const hasAudio = sequence.clips.some((c) => {
+			if (c.type !== "media" || c.disabled) return false;
+			const a = other.assets.find((x) => x.id === c.assetId);
+			return !!a?.hasAudio && c.volume > 0;
+		});
+		return { path: relativeToProject(this.projectDir, file), durationMs, hasAudio, modifiedMs };
+	}
+
 	/** Searches for offline media (near the project and in `folders`) and relinks what it finds. */
 	async findOffline(
 		folders: string[],
@@ -3703,7 +3828,10 @@ export class ProjectStore extends EventEmitter {
 		if (kind === "otio" || kind === "fcpxml" || kind === "mlt" || kind === "edl")
 			return this.exportTimeline(kind, out, actor);
 		// Nested sequences must be up to date before they are used in an export.
-		if (kind === "video" || kind === "gif" || kind === "audio") await this.renderNested(renderText);
+		if (kind === "video" || kind === "gif" || kind === "audio") {
+			await this.refreshProjectMedia(renderText);
+			await this.renderNested(renderText);
+		}
 		const ctx = { ...this.exportContext(renderText), range, onProgress };
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
@@ -3847,4 +3975,15 @@ export interface StudioLook {
 	/** The pointer, in recording time and shares of the recorded area. */
 	path: CursorPoint[];
 	clicks: CursorPoint[];
+}
+
+/** The sequence of a project to use: the one asked for, else its main timeline. */
+function pickSequence(data: ProjectData, id?: string) {
+	const all = allSequences(data);
+	const found = id ? all.find((q) => q.id === id) : (all.find((q) => q.id === "main") ?? all[0]);
+	if (!found)
+		throw new Error(
+			`No sequence "${id}" in "${data.name}". Sequences: ${all.map((q) => `${q.id} (${q.name})`).join(", ")}.`,
+		);
+	return found;
 }

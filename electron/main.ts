@@ -47,6 +47,7 @@ import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtim
 import { captureBinary } from "./core/screenrec";
 import { ProjectStore } from "./core/store";
 import type {
+	Asset,
 	DenoiseMode,
 	EditorCommand,
 	MediaClip,
@@ -123,8 +124,31 @@ async function renderText(
 	canvas?: { width: number; height: number },
 	sizes?: Record<string, { width: number; height: number }>,
 	onProgress?: (done: number, total: number) => void,
+	source?: { dir: string; assets: Asset[] },
 ): Promise<Record<string, TextRender>> {
 	const fps = store.current.canvas.fps;
+	// Clips from another project (placed as media) bring their motion graphics with them:
+	// the window gets their data and may read their files for this render.
+	const foreign = source && (!store.isOpen || path.resolve(source.dir) !== store.projectDir);
+	const assets = foreign
+		? Object.fromEntries(
+				source.assets
+					.filter(
+						(a) =>
+							a.kind === "lottie" &&
+							a.motion &&
+							clips.some((c) => c.type === "media" && c.assetId === a.id),
+					)
+					.map((a) => {
+						const file = resolveInProject(source.dir, a.path);
+						extraServable.add(path.resolve(file));
+						return [
+							a.id,
+							{ motion: a.motion as NonNullable<Asset["motion"]>, url: mediaUrl(file) },
+						];
+					}),
+			)
+		: undefined;
 	const root = path.join(store.cacheDir(), "text");
 	const out: Record<string, TextRender> = {};
 	// Text is quick and goes in one request; each motion graphic gets its own, with
@@ -151,6 +175,7 @@ async function renderText(
 				fps,
 				...canvas,
 				...(sizes ? { sizes } : {}),
+				...(assets ? { assets } : {}),
 			}),
 			60000 + frames * 250,
 		);
@@ -563,8 +588,12 @@ function mcpScriptPath(): string {
 }
 
 /** Only the open project's folder and its media may be streamed to the window. */
+/** Files of another project the window may read while that project is rendered as media. */
+const extraServable = new Set<string>();
+
 function mayServe(file: string): boolean {
 	const resolved = path.resolve(file);
+	if (extraServable.has(resolved)) return true;
 	// Poster frames for the projects overview, only next to a Cue project file.
 	if (
 		path.basename(resolved) === "poster.jpg" &&
@@ -691,6 +720,8 @@ function createWindow() {
 			...(recordFrames ? { offscreen: true } : {}),
 		},
 	});
+	// Projects placed as media are rendered again when their files changed while Cue was in the background.
+	win.on("focus", () => void controller.refreshProjectMedia());
 	if (recordFrames) {
 		// Frames are written while <dir>/on exists, named by the time they were painted.
 		const flag = path.join(recordFrames, "on");

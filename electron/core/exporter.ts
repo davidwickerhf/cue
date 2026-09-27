@@ -45,6 +45,8 @@ export type Rasteriser = (
 	sizes?: Record<string, { width: number; height: number }>,
 	/** Called as clips are drawn: how many of them are done. */
 	onProgress?: (done: number, total: number) => void,
+	/** The project the clips come from (another one when a project is placed as media). */
+	source?: { dir: string; assets: Asset[] },
 ) => Promise<Record<string, TextRender>>;
 
 export interface ExportContext {
@@ -587,9 +589,13 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	);
 	const drawn = [...textClips, ...motionClips];
 	const rendered = drawn.length
-		? await (ctx.renderText?.(drawn, { width: W, height: H }, motionSizes, (done, total) =>
+		? await (ctx.renderText?.(
+				drawn,
+				{ width: W, height: H },
+				motionSizes,
 				// Drawing text and graphics is the first half of the work; encoding the second.
-				ctx.onProgress?.((done / total) * 0.5),
+				(done, total) => ctx.onProgress?.((done / total) * 0.5),
+				{ dir: ctx.dir, assets: data.assets },
 			) ?? Promise.reject(new Error("Open the Cue window to render text and graphics.")))
 		: {};
 

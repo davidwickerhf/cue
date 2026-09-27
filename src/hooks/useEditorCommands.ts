@@ -159,8 +159,10 @@ export function useEditorCommands() {
 								command.clips?.find((c) => c.id === id) ??
 								project.data.clips.find((c): c is TextClip => c.id === id && c.type === "text");
 							if (clip?.type === "media") {
-								const asset = project.data.assets.find((a) => a.id === clip.assetId);
-								const url = project.assetUrls[clip.assetId];
+								// Graphics of another project (placed as media) come with the request.
+								const foreign = command.assets?.[clip.assetId];
+								const asset = foreign ?? project.data.assets.find((a) => a.id === clip.assetId);
+								const url = foreign?.url ?? project.assetUrls[clip.assetId];
 								const size = command.sizes?.[id];
 								if (asset?.motion && url && size) {
 									const count = Math.max(1, Math.ceil((clip.durationMs / 1000) * command.fps));

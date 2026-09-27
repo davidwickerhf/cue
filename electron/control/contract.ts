@@ -189,6 +189,21 @@ export const contract = {
 			"Save a copy of the project (.cueproj) at a new path and switch to it. Media stays where it is.",
 		input: { path: z.string() },
 	},
+	add_project_media: {
+		description:
+			"Place another Cue project (or one of its sequences) in this one as media, like a pre-composition shared between projects: it is rendered to a video (text and graphics included) and rendered again whenever that project file changes (on opening this project, when Cue comes to the front, before export, or with refresh_project_media). With trackId it is also put on the timeline at startMs. Its media item has projectSource with the file. Long: may reply with a callId for wait_for.",
+		input: {
+			path: z.string(),
+			sequenceId: z.string().optional(),
+			trackId: z.string().optional(),
+			startMs: z.number().min(0).optional(),
+		},
+	},
+	refresh_project_media: {
+		description:
+			"Render again the projects placed as media (add_project_media) whose files changed. Returns how many were updated.",
+		input: {},
+	},
 	analyze_reference: {
 		description:
 			"Measure a reference video you are asked to match (a style, a creator, an ad): where its cuts are, shot lengths (median, mean, range), cuts per minute and per 10 s (where it speeds up or breathes), brightness, colourfulness and how much is black and white, its dominant colours, loudness, and a contact sheet with one frame per shot (returned as an image). Give a file path or the assetId of imported media. Use the numbers to set your pacing, grade and palette, then read the matching playbook (list_playbooks) and the 'match-a-reference' playbook. Long: may reply with a callId for wait_for.",

@@ -29,7 +29,7 @@ import {
 	usedAssetIds,
 } from "../../../electron/core/bins";
 import type { Asset, Bin, ProjectSnapshot } from "../../../electron/core/types";
-import { run } from "../../lib/api";
+import { notify, run } from "../../lib/api";
 import { motionPoster } from "../../lib/motion";
 import { playback } from "../../lib/playback";
 import { openSource } from "../../lib/source";
@@ -268,6 +268,14 @@ export function MediaPanel() {
 					}
 				>
 					New adjustment layer at the playhead
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-7 w-full gap-1.5 text-[12px]"
+					onPress={() => void addProject()}
+				>
+					<FilmSlate className="size-3.5" /> Add another project as media…
 				</Button>
 				<label className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-field px-2 focus-within:border-accent">
 					<MagnifyingGlass className="size-3.5 shrink-0 text-muted" />
@@ -641,6 +649,19 @@ function AssetCard({ asset, project, used, selected, onSelect, onDragStart }: It
 						<LinkBreak className="size-4" /> Offline · Locate…
 					</button>
 				)}
+				{asset.projectSource ? (
+					<button
+						type="button"
+						onClick={(e) => {
+							e.stopPropagation();
+							void openSourceProject(asset);
+						}}
+						title={`A render of ${asset.projectSource.path}. It updates when that project changes. Click to open it.`}
+						className="absolute top-1 left-1 flex items-center gap-1 rounded-md bg-sky-600/85 px-1.5 py-0.5 text-[10px] font-medium text-white hover:bg-sky-500"
+					>
+						<FilmSlate weight="fill" className="size-2.5" /> Project
+					</button>
+				) : null}
 				{asset.origin === "generated" || asset.origin === "tts" ? (
 					<span className="absolute top-1 left-1 flex items-center gap-1 rounded-md bg-violet-600/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
 						<Sparkle weight="fill" className="size-2.5" /> AI
@@ -672,6 +693,23 @@ function AssetCard({ asset, project, used, selected, onSelect, onDragStart }: It
 			</div>
 		</div>
 	);
+}
+
+/** Pick a Cue project and place it in this one as media (rendered, and kept up to date). */
+async function addProject() {
+	const file = await window.cue.chooseFile({
+		title: "Choose a project to place in this one",
+		extensions: ["cueproj"],
+	});
+	if (!file) return;
+	const asset = await run<{ name: string }>("add_project_media", { path: file });
+	if (asset) notify(`Added "${asset.name}". It updates when that project changes.`, "success");
+}
+
+/** Opens the project a project-media item is rendered from (this project is saved first). */
+async function openSourceProject(asset: Asset) {
+	if (!asset.projectSource) return;
+	await run("open_project", { path: asset.projectSource.path });
 }
 
 function AssetRow({ asset, project, used, selected, onSelect, onDragStart }: ItemProps) {

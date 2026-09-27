@@ -43,6 +43,11 @@ export interface Asset {
 	generation?: { provider: string; model: string; prompt: string; voice?: string };
 	/** Set for nested sequences: this media is a render of that sequence. */
 	sequenceId?: string;
+	/**
+	 * Set for another project placed as media: this is a render of that project
+	 * (or one of its sequences), made again when the project file changes.
+	 */
+	projectSource?: { path: string; sequenceId?: string; modifiedMs: number };
 	/** Word-level transcript of the speech in this media (source time). */
 	transcript?: Transcript;
 	/** The bin (folder) this media is filed in; none means the top level. */
@@ -732,6 +737,8 @@ export type EditorCommand =
 			/** Frame size to draw at (a variant's may differ from the open project's). */
 			width?: number;
 			height?: number;
+			/** Motion graphics of another project (placed as media), by asset id. */
+			assets?: Record<string, { motion: import("./motion").MotionInfo; url: string }>;
 	  }
 	| { type: "captureFrame"; requestId: string; atMs: number }
 	| { type: "captureDone" }

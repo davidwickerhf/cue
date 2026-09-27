@@ -208,6 +208,7 @@ export class Controller extends EventEmitter {
 	/** Groups of projects in the projects overview. */
 	readonly collections: CollectionStore;
 	private collectionsVersion = 0;
+	private projectMediaBusy = false;
 	/** After a collection changes: the projects overview reloads. */
 	private collectionsChanged(): void {
 		this.collectionsVersion++;
@@ -659,6 +660,24 @@ export class Controller extends EventEmitter {
 				await this.afterOpen();
 				return { path: file };
 			}
+			case "add_project_media": {
+				const { path: file, sequenceId, trackId, startMs } = parseInput("add_project_media", params);
+				return this.job(`Rendering ${path.basename(file)}`, () =>
+					this.store.addProjectMedia(
+						file,
+						{
+							sequenceId,
+							place: trackId ? { trackId, startMs: startMs ?? 0 } : undefined,
+						},
+						actor,
+						this.hooks.renderText,
+					),
+				);
+			}
+			case "refresh_project_media":
+				return this.job("Updating projects placed as media", async () => ({
+					updated: await this.store.refreshProjectMedia(this.hooks.renderText),
+				}));
 			case "analyze_reference": {
 				const { file, assetId } = parseInput("analyze_reference", params);
 				const asset = assetId ? this.store.current.assets.find((a) => a.id === assetId) : undefined;
@@ -1855,7 +1874,24 @@ export class Controller extends EventEmitter {
 		this.selectedLineId = this.store.snapshot()?.lines[0]?.id ?? null;
 		this.selectedClipIds = [];
 		void this.refreshRecent();
+		void this.refreshProjectMedia();
 		return this.describeState();
+	}
+
+	/** Renders again projects placed as media whose files changed (on open, on focus). */
+	async refreshProjectMedia(): Promise<void> {
+		if (!this.store.isOpen || !this.store.current.assets.some((a) => a.projectSource)) return;
+		if (this.projectMediaBusy) return;
+		this.projectMediaBusy = true;
+		try {
+			await this.job("Updating projects placed as media", () =>
+				this.store.refreshProjectMedia(this.hooks.renderText),
+			);
+		} catch {
+			// Reported by the job; the last render stays in use.
+		} finally {
+			this.projectMediaBusy = false;
+		}
 	}
 
 	private lines(): LineView[] {

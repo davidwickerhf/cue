@@ -360,6 +360,13 @@ const assetSchema = z.object({
 	note: z.string().max(4000).optional(),
 	info: mediaInfoSchema.optional(),
 	motion: motionInfoSchema.optional(),
+	projectSource: z
+		.object({
+			path: z.string(),
+			sequenceId: z.string().optional(),
+			modifiedMs: z.number(),
+		})
+		.optional(),
 	motionSource: z
 		.object({
 			template: z.string().optional(),
