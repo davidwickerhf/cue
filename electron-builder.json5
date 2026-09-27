@@ -18,7 +18,10 @@
     { from: "resources/rnnoise", to: "rnnoise" },
     // Wallpapers and the cursor for the studio look of screen recordings.
     { from: "resources/studio", to: "studio" },
+    // The asset library's bundled files (graphics, textures, sounds) share one folder.
     { from: "resources/assets/original", to: "library-assets" },
+    { from: "resources/assets/textures", to: "library-assets" },
+    { from: "resources/assets/sounds", to: "library-assets" },
   ],
   // ffmpeg-static only installs the host's ffmpeg: these put the target's in place
   // for each pack (e.g. the Intel Mac build on Apple Silicon) and restore it after.

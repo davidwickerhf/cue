@@ -3,6 +3,7 @@ import { WALLPAPERS } from "../core/capture";
 import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
+	BLEND_MODES,
 	curveSchema,
 	exportSchema,
 	KEYFRAME_PROPS,
@@ -18,6 +19,12 @@ import { TRANSITION_KINDS } from "../core/transitions";
  * and a method on the app's local control server; the editor window calls the
  * same methods as the user. Descriptions are written for the calling model.
  */
+/** Clips to fit into a device frame's see-through regions (by name, or in order). */
+const fitInput = z
+	.array(z.object({ clipId: z.string(), region: z.string().optional() }))
+	.max(8)
+	.optional();
+
 const line = lineInputSchema.describe(
 	"Script line: id, text, startMs on the timeline, optional targetMs and maxMs.",
 );
@@ -58,7 +65,7 @@ export const contract = {
 	},
 	list_motion_templates: {
 		description:
-			"Cue's motion graphic templates (lower thirds, titles, kinetic words, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, a subscribe reminder, a chapter progress bar, a route map, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
+			"Cue's motion graphic templates (lower thirds, titles, kinetic words, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, a subscribe reminder, a chapter progress bar, a route map, editorial annotations, device frames with see-through screens for footage (retro TV, laptop, phone, polaroid, film strip, taped photo), and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
 		input: {
 			category: z
 				.enum([
@@ -73,13 +80,14 @@ export const contract = {
 					"map",
 					"transition",
 					"annotation",
+					"frame",
 				])
 				.optional(),
 		},
 	},
 	create_motion_graphic: {
 		description:
-			"Make a motion graphic (a Lottie animation, played like video) from a template with params, or from a spec you write (see get_guide {topic: 'motion'}). It is added to the media; with trackId, startMs or atCutMs it is also placed on the timeline (on the top picture track when free there, else a new Graphics track). atCutMs centres a transition on a cut. Text and data are editable later with update_motion_graphic; look at it with render_frame.",
+			'Make a motion graphic (a Lottie animation, played like video) from a template with params, or from a spec you write (see get_guide {topic: \'motion\'}). It is added to the media; with trackId, startMs or atCutMs it is also placed on the timeline (on the top picture track when free there, else a new Graphics track). atCutMs centres a transition on a cut. Text and data are editable later with update_motion_graphic; look at it with render_frame. Device frames (category frame: frame-crt, frame-laptop, frame-phone, frame-polaroid, frame-film-strip, frame-photo-card) have see-through screens: the reply\'s regions give each screen\'s {name, x, y, width, height} (shares of the frame) and fit {"16:9", "4:3", "9:16"}: the {x, y, scale, crop} transform that makes a clip of that shape fill it. Put the frame on an upper track and the footage on a track below it; fit: [{clipId, region?}] applies the fit to those clips (by their media\'s shape) for you.',
 		input: {
 			template: z.string().optional(),
 			params: z.record(z.string(), z.unknown()).optional(),
@@ -89,16 +97,18 @@ export const contract = {
 			startMs: z.number().min(0).optional(),
 			durationMs: z.number().min(1).optional(),
 			atCutMs: z.number().min(0).optional(),
+			fit: fitInput,
 		},
 	},
 	update_motion_graphic: {
 		description:
-			"Rebuild a motion graphic made in Cue: params merge with its current ones (change a title, the data, the theme, colors); spec replaces it entirely; template switches to another template. Clips using it update; one undo step.",
+			"Rebuild a motion graphic made in Cue: params merge with its current ones (change a title, the data, the theme, colors); spec replaces it entirely; template switches to another template. Clips using it update; one undo step. Device frames reply with their regions again; pass fit [{clipId, region?}] to refit the footage after moving or resizing the frame.",
 		input: {
 			assetId: z.string(),
 			params: z.record(z.string(), z.unknown()).optional(),
 			spec: z.record(z.string(), z.unknown()).optional(),
 			template: z.string().optional(),
+			fit: fitInput,
 		},
 	},
 	get_motion_graphic: {
@@ -203,7 +213,7 @@ export const contract = {
 	// --- Media and tracks -----------------------------------------------------------
 	list_library_assets: {
 		description:
-			"Browse Cue's curated stock footage and original graphics. Returns ids, descriptions, tags, preview paths, source and license. Use import_library_asset to add one to the project.",
+			'Browse Cue\'s curated library: stock footage, original graphics, Textures (paper, kraft, cardboard, newsprint and construction-paper boards; film dust, light leak, halftone and vignette overlays) and Sound effects (whooshes, paper slaps and rustles, pop, tick, camera shutter, typewriter, riser, impacts, a title chime, room tone). category narrows it (e.g. "Textures", "Sound effects"); query searches names, descriptions and tags. Each result has its kind (video, image, audio), duration for sounds and loops, source, credit and license, and `use`: how to use it (blend, opacity, track: bottom for boards, top for overlays, audio; volume; loop; syncMs, the moment in a sound to line up with the event; and a note). Add one with import_library_asset.',
 		input: { query: z.string().optional(), category: z.string().optional() },
 	},
 	show_library_asset: {
@@ -213,11 +223,16 @@ export const contract = {
 	},
 	import_library_asset: {
 		description:
-			"Download or copy a curated asset into the open project and import it as media. Stock footage is downloaded from its credited source; the user must check the source license before publishing.",
+			'Copy (or, for stock footage, download) a curated asset into the open project and import it as media. Give trackId, startMs or atMs to also place it, following its `use`: without trackId, sounds go on a free "SFX" audio track (made when needed), paper boards on a new bottom picture track (under everything: put graphics and cut-outs above it), and overlays (dust, light leak, halftone, vignette) on a new top track, with the suggested blend mode (multiply for paper over footage, screen for dust and light leaks) and opacity. atMs lines the sound\'s sync point up with an event (a whoosh\'s peak on the cut): startMs = atMs - use.syncMs. durationMs sets the length (stills default to 5 s; loops repeat back to back to fill it). blend, opacity and volume override the suggestions. To lay paper over footage instead, pass a trackId above the footage and blend "multiply". Stock footage comes from its credited source; check the license before publishing.',
 		input: {
 			id: z.string(),
 			trackId: z.string().optional(),
-			startMs: z.number().min(0).default(0),
+			startMs: z.number().min(0).optional(),
+			atMs: z.number().min(0).optional(),
+			durationMs: z.number().min(1).optional(),
+			blend: z.enum(BLEND_MODES).optional(),
+			opacity: z.number().min(0).max(1).optional(),
+			volume: z.number().min(0).max(2).optional(),
 		},
 	},
 	import_media: {

@@ -574,5 +574,669 @@
       "earth",
       "dark"
     ]
+  },
+  {
+    "id": "paper-off-white",
+    "name": "Off-white paper",
+    "category": "Textures",
+    "description": "Warm off-white paper with fine fibre, the classic collage board for explainers.",
+    "file": "paper-off-white.jpg",
+    "localPath": "resources/assets/textures/paper-off-white.jpg",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://ambientcg.com/view?id=Paper001",
+    "sourceFile": "https://ambientcg.com/get?file=Paper001_2K-JPG.zip",
+    "credit": "ambientCG, Paper001 (colour map, resized to 1920×1080)",
+    "tags": [
+      "paper",
+      "board",
+      "collage",
+      "explainer",
+      "off-white"
+    ],
+    "use": {
+      "blend": "normal",
+      "track": "bottom",
+      "note": "Full-frame board: put it on the bottom picture track under graphics and cut-outs at scale 1.05 with a slow drift (scale keyframes 1.05 → 1.08) so it never sits still. Or multiply it over footage at 50–80 % for a printed-on-paper look."
+    }
+  },
+  {
+    "id": "paper-crumpled",
+    "name": "Crumpled paper",
+    "category": "Textures",
+    "description": "Creased white paper; its folds show through whatever it is multiplied over.",
+    "file": "paper-crumpled.jpg",
+    "localPath": "resources/assets/textures/paper-crumpled.jpg",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://ambientcg.com/view?id=Paper003",
+    "sourceFile": "https://ambientcg.com/get?file=Paper003_2K-JPG.zip",
+    "credit": "ambientCG, Paper003 (colour map, resized to 1920×1080)",
+    "tags": [
+      "paper",
+      "creased",
+      "crumpled",
+      "overlay",
+      "collage"
+    ],
+    "use": {
+      "blend": "multiply",
+      "opacity": 0.8,
+      "track": "top",
+      "note": "Multiply over footage, photos or graphics (top track) so creases run across them; or use it as a board on the bottom track."
+    }
+  },
+  {
+    "id": "paper-kraft",
+    "name": "Kraft paper",
+    "category": "Textures",
+    "description": "Brown kraft paper for warm, handmade backgrounds and cut-out stacks.",
+    "file": "paper-kraft.jpg",
+    "localPath": "resources/assets/textures/paper-kraft.jpg",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://ambientcg.com/view?id=Paper006",
+    "sourceFile": "https://ambientcg.com/get?file=Paper006_2K-JPG.zip",
+    "credit": "ambientCG, Paper006 (colour map, resized to 1920×1080)",
+    "tags": [
+      "paper",
+      "kraft",
+      "brown",
+      "board",
+      "collage"
+    ],
+    "use": {
+      "blend": "normal",
+      "track": "bottom",
+      "note": "Full-frame board: put it on the bottom picture track under graphics and cut-outs at scale 1.05 with a slow drift (scale keyframes 1.05 → 1.08) so it never sits still."
+    }
+  },
+  {
+    "id": "cardboard-ribbed",
+    "name": "Ribbed cardboard",
+    "category": "Textures",
+    "description": "Orange-brown cardboard with fine horizontal ribs, for a crafty, packaging look.",
+    "file": "cardboard-ribbed.jpg",
+    "localPath": "resources/assets/textures/cardboard-ribbed.jpg",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://ambientcg.com/view?id=Paper004",
+    "sourceFile": "https://ambientcg.com/get?file=Paper004_2K-JPG.zip",
+    "credit": "ambientCG, Paper004 (colour map, resized to 1920×1080)",
+    "tags": [
+      "cardboard",
+      "paper",
+      "brown",
+      "board",
+      "packaging"
+    ],
+    "use": {
+      "blend": "normal",
+      "track": "bottom",
+      "note": "Full-frame board: put it on the bottom picture track under graphics and cut-outs at scale 1.05 with a slow drift (scale keyframes 1.05 → 1.08) so it never sits still."
+    }
+  },
+  {
+    "id": "paper-newsprint",
+    "name": "Newsprint",
+    "category": "Textures",
+    "description": "Grey-beige recycled paper with flecks, like the back of a newspaper page.",
+    "file": "paper-newsprint.jpg",
+    "localPath": "resources/assets/textures/paper-newsprint.jpg",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://ambientcg.com/view?id=Paper002",
+    "sourceFile": "https://ambientcg.com/get?file=Paper002_2K-JPG.zip",
+    "credit": "ambientCG, Paper002 (colour map, resized to 1920×1080)",
+    "tags": [
+      "paper",
+      "newsprint",
+      "newspaper",
+      "archive",
+      "board"
+    ],
+    "use": {
+      "blend": "normal",
+      "track": "bottom",
+      "note": "Full-frame board: put it on the bottom picture track under graphics and cut-outs at scale 1.05 with a slow drift (scale keyframes 1.05 → 1.08) so it never sits still. Multiply it over black-and-white archive photos for a printed feel."
+    }
+  },
+  {
+    "id": "paper-construction-yellow",
+    "name": "Yellow construction paper",
+    "category": "Textures",
+    "description": "Bright yellow construction paper (the explainer accent colour) with visible fibre. Grade its hue or saturation to get other accent colours.",
+    "file": "paper-construction-yellow.jpg",
+    "localPath": "resources/assets/textures/paper-construction-yellow.jpg",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://ambientcg.com/view?id=Paper001",
+    "sourceFile": "https://ambientcg.com/get?file=Paper001_2K-JPG.zip",
+    "credit": "ambientCG, Paper001 (colour map, recoloured to yellow and resized to 1920×1080)",
+    "tags": [
+      "paper",
+      "construction",
+      "yellow",
+      "accent",
+      "board"
+    ],
+    "use": {
+      "blend": "normal",
+      "track": "bottom",
+      "note": "Full-frame board: put it on the bottom picture track under graphics and cut-outs at scale 1.05 with a slow drift (scale keyframes 1.05 → 1.08) so it never sits still. A colour grade (temperature, saturation) shifts it towards other accents."
+    }
+  },
+  {
+    "id": "film-dust",
+    "name": "Film dust and scratches",
+    "category": "Textures",
+    "description": "A 6 s loop of dust specks, hairs and vertical scratches on black, changing every frame like projected film. Screen blend makes the black vanish.",
+    "file": "film-dust.mp4",
+    "localPath": "resources/assets/textures/film-dust.mp4",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Made by Cue with scripts/build-textures.mjs",
+    "durationMs": 6000,
+    "tags": [
+      "film",
+      "dust",
+      "scratches",
+      "archive",
+      "overlay",
+      "loop",
+      "retro"
+    ],
+    "use": {
+      "blend": "screen",
+      "opacity": 0.6,
+      "track": "top",
+      "loop": true,
+      "note": "Top track over archive footage, screen blend at 30–70 %. Import with durationMs to repeat the loop over a longer scene. Pair with the clip's own grain effect."
+    }
+  },
+  {
+    "id": "light-leak",
+    "name": "Light leak",
+    "category": "Textures",
+    "description": "An 8 s loop of warm orange, gold and magenta glows drifting across black. Screen blend adds the light to the picture.",
+    "file": "light-leak.mp4",
+    "localPath": "resources/assets/textures/light-leak.mp4",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Made by Cue with scripts/build-textures.mjs",
+    "durationMs": 8000,
+    "tags": [
+      "light leak",
+      "glow",
+      "warm",
+      "overlay",
+      "loop",
+      "transition",
+      "retro"
+    ],
+    "use": {
+      "blend": "screen",
+      "opacity": 0.8,
+      "track": "top",
+      "loop": true,
+      "note": "Top track, screen blend. As a transition put 1–2 s of it over a cut with fades in and out; as an ambient pass run it at 30–50 %."
+    }
+  },
+  {
+    "id": "halftone-screen",
+    "name": "Halftone screen",
+    "category": "Textures",
+    "description": "A transparent 45° dot screen whose dots grow toward the bottom right, for a printed newspaper look.",
+    "file": "halftone-screen.png",
+    "localPath": "resources/assets/textures/halftone-screen.png",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Made by Cue with scripts/build-textures.mjs",
+    "tags": [
+      "halftone",
+      "print",
+      "dots",
+      "newspaper",
+      "overlay"
+    ],
+    "use": {
+      "blend": "multiply",
+      "opacity": 0.35,
+      "track": "top",
+      "note": "Top track over photos or graphics at 20–50 % (multiply or normal). Scale it up (1.5–2) for bigger dots."
+    }
+  },
+  {
+    "id": "vignette",
+    "name": "Vignette",
+    "category": "Textures",
+    "description": "Transparent centre with soft black edges, to darken the corners of anything under it.",
+    "file": "vignette.png",
+    "localPath": "resources/assets/textures/vignette.png",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Made by Cue with scripts/build-textures.mjs",
+    "tags": [
+      "vignette",
+      "edges",
+      "dark",
+      "overlay",
+      "focus"
+    ],
+    "use": {
+      "blend": "normal",
+      "opacity": 0.8,
+      "track": "top",
+      "note": "Top track over the whole scene (paper boards especially) at 50–90 %. For a single clip, its vignette effect does the same."
+    }
+  },
+  {
+    "id": "sfx-whoosh-soft",
+    "name": "Whoosh (soft)",
+    "category": "Sound effects",
+    "description": "A soft airy whoosh that swells and pans left to right.",
+    "file": "sfx-whoosh-soft.wav",
+    "localPath": "resources/assets/sounds/sfx-whoosh-soft.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 679,
+    "tags": [
+      "whoosh",
+      "swish",
+      "transition",
+      "push",
+      "air"
+    ],
+    "use": {
+      "track": "audio",
+      "syncMs": 350,
+      "note": "Peaks about 350 ms in: start it that long before a cut or the middle of a push so the swell lands on it."
+    }
+  },
+  {
+    "id": "sfx-whoosh-fast",
+    "name": "Whoosh (fast)",
+    "category": "Sound effects",
+    "description": "A quick bright swish for whip pans and fast slides.",
+    "file": "sfx-whoosh-fast.wav",
+    "localPath": "resources/assets/sounds/sfx-whoosh-fast.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 409,
+    "tags": [
+      "whoosh",
+      "swish",
+      "whip",
+      "fast",
+      "transition"
+    ],
+    "use": {
+      "track": "audio",
+      "syncMs": 175,
+      "note": "Peaks about 175 ms in: start it that long before the cut of a whip or slide."
+    }
+  },
+  {
+    "id": "sfx-whoosh-deep",
+    "name": "Whoosh (deep)",
+    "category": "Sound effects",
+    "description": "A slower, darker whoosh with a low swell, for big pushes and scene changes.",
+    "file": "sfx-whoosh-deep.wav",
+    "localPath": "resources/assets/sounds/sfx-whoosh-deep.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 1047,
+    "tags": [
+      "whoosh",
+      "deep",
+      "transition",
+      "zoom",
+      "scene"
+    ],
+    "use": {
+      "track": "audio",
+      "syncMs": 610,
+      "note": "Peaks about 610 ms in: start it that long before the cut or the peak of a zoom."
+    }
+  },
+  {
+    "id": "sfx-paper-slap",
+    "name": "Paper slap",
+    "category": "Sound effects",
+    "description": "A sheet of paper landed flat on a table.",
+    "file": "sfx-paper-slap.wav",
+    "localPath": "resources/assets/sounds/sfx-paper-slap.wav",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://kenney.nl/assets/rpg-audio",
+    "sourceFile": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+    "credit": "Kenney, RPG Audio (bookPlace1.ogg), trimmed and loudness-matched",
+    "durationMs": 277,
+    "tags": [
+      "paper",
+      "slap",
+      "land",
+      "collage",
+      "cut-out"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "Start it on the frame the element lands. Vary it with the soft slap so repeats don't sound mechanical."
+    }
+  },
+  {
+    "id": "sfx-paper-slap-soft",
+    "name": "Paper slap (soft)",
+    "category": "Sound effects",
+    "description": "A lighter paper landing, for smaller pieces and second hits.",
+    "file": "sfx-paper-slap-soft.wav",
+    "localPath": "resources/assets/sounds/sfx-paper-slap-soft.wav",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://kenney.nl/assets/rpg-audio",
+    "sourceFile": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+    "credit": "Kenney, RPG Audio (bookPlace2.ogg), trimmed and loudness-matched",
+    "durationMs": 354,
+    "tags": [
+      "paper",
+      "slap",
+      "land",
+      "soft",
+      "collage"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "Start it on the frame the element lands."
+    }
+  },
+  {
+    "id": "sfx-paper-rustle",
+    "name": "Paper rustle",
+    "category": "Sound effects",
+    "description": "Pages rustling as they are turned or shuffled.",
+    "file": "sfx-paper-rustle.wav",
+    "localPath": "resources/assets/sounds/sfx-paper-rustle.wav",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://kenney.nl/assets/rpg-audio",
+    "sourceFile": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+    "credit": "Kenney, RPG Audio (bookFlip1.ogg), trimmed and loudness-matched",
+    "durationMs": 697,
+    "tags": [
+      "paper",
+      "rustle",
+      "page",
+      "shuffle",
+      "collage"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "Under a paper element sliding in or a page turn; start it with the movement."
+    }
+  },
+  {
+    "id": "sfx-paper-flick",
+    "name": "Paper flick",
+    "category": "Sound effects",
+    "description": "A short flick of a page.",
+    "file": "sfx-paper-flick.wav",
+    "localPath": "resources/assets/sounds/sfx-paper-flick.wav",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://kenney.nl/assets/rpg-audio",
+    "sourceFile": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+    "credit": "Kenney, RPG Audio (bookFlip3.ogg), trimmed and loudness-matched",
+    "durationMs": 231,
+    "tags": [
+      "paper",
+      "flick",
+      "page",
+      "quick"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "For quick cut-in pieces and page reveals; start it with the movement."
+    }
+  },
+  {
+    "id": "sfx-pop",
+    "name": "Pop",
+    "category": "Sound effects",
+    "description": "A soft, rounded pop for icons, pins and labels appearing.",
+    "file": "sfx-pop.wav",
+    "localPath": "resources/assets/sounds/sfx-pop.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 160,
+    "tags": [
+      "pop",
+      "ui",
+      "appear",
+      "icon",
+      "pin"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "On the frame the item pops in."
+    }
+  },
+  {
+    "id": "sfx-tick",
+    "name": "Tick",
+    "category": "Sound effects",
+    "description": "A tiny tick for counters, list items and small UI beats.",
+    "file": "sfx-tick.wav",
+    "localPath": "resources/assets/sounds/sfx-tick.wav",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://kenney.nl/assets/interface-sounds",
+    "sourceFile": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+    "credit": "Kenney, Interface Sounds (tick_002.ogg), trimmed and loudness-matched",
+    "durationMs": 20,
+    "tags": [
+      "tick",
+      "click",
+      "ui",
+      "counter",
+      "list"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "One per item or number step; keep it quiet (volume 0.5–0.8) when repeated."
+    }
+  },
+  {
+    "id": "sfx-camera-shutter",
+    "name": "Camera shutter",
+    "category": "Sound effects",
+    "description": "A mechanical camera shutter: click, whirr, click.",
+    "file": "sfx-camera-shutter.wav",
+    "localPath": "resources/assets/sounds/sfx-camera-shutter.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 318,
+    "tags": [
+      "camera",
+      "shutter",
+      "photo",
+      "snapshot",
+      "cut"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "On a hard cut to a still photo, or a freeze frame; start it on the cut."
+    }
+  },
+  {
+    "id": "sfx-typewriter-key",
+    "name": "Typewriter key",
+    "category": "Sound effects",
+    "description": "One typewriter keystroke.",
+    "file": "sfx-typewriter-key.wav",
+    "localPath": "resources/assets/sounds/sfx-typewriter-key.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 138,
+    "tags": [
+      "typewriter",
+      "key",
+      "type",
+      "text",
+      "document"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "One per character burst of typed-on text."
+    }
+  },
+  {
+    "id": "sfx-typewriter-burst",
+    "name": "Typewriter burst",
+    "category": "Sound effects",
+    "description": "Twelve irregular typewriter keystrokes, about 1.5 s of typing.",
+    "file": "sfx-typewriter-burst.wav",
+    "localPath": "resources/assets/sounds/sfx-typewriter-burst.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 1458,
+    "tags": [
+      "typewriter",
+      "typing",
+      "text",
+      "document",
+      "burst"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "Under a typewriter text reveal; trim it to the text's typing time."
+    }
+  },
+  {
+    "id": "sfx-riser",
+    "name": "Riser",
+    "category": "Sound effects",
+    "description": "A 1.6 s swell of noise and a rising tone that builds into a hit.",
+    "file": "sfx-riser.wav",
+    "localPath": "resources/assets/sounds/sfx-riser.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 1600,
+    "tags": [
+      "riser",
+      "build",
+      "tension",
+      "transition",
+      "swell"
+    ],
+    "use": {
+      "track": "audio",
+      "syncMs": 1580,
+      "note": "End it on the cut or reveal it builds to (start it 1.6 s before); follow with an impact."
+    }
+  },
+  {
+    "id": "sfx-impact-thud",
+    "name": "Impact (thud)",
+    "category": "Sound effects",
+    "description": "A soft, heavy thud for weighty landings and title slams.",
+    "file": "sfx-impact-thud.wav",
+    "localPath": "resources/assets/sounds/sfx-impact-thud.wav",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://kenney.nl/assets/impact-sounds",
+    "sourceFile": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+    "credit": "Kenney, Impact Sounds (impactSoft_heavy_000.ogg), trimmed and loudness-matched",
+    "durationMs": 527,
+    "tags": [
+      "impact",
+      "thud",
+      "hit",
+      "land",
+      "heavy"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "Start it on the frame the element lands."
+    }
+  },
+  {
+    "id": "sfx-impact-hit",
+    "name": "Impact (punch)",
+    "category": "Sound effects",
+    "description": "A punchy hit for slams, reveals and the end of a riser.",
+    "file": "sfx-impact-hit.wav",
+    "localPath": "resources/assets/sounds/sfx-impact-hit.wav",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sourcePage": "https://kenney.nl/assets/impact-sounds",
+    "sourceFile": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+    "credit": "Kenney, Impact Sounds (impactPunch_heavy_000.ogg), trimmed and loudness-matched",
+    "durationMs": 649,
+    "tags": [
+      "impact",
+      "hit",
+      "punch",
+      "slam",
+      "reveal"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "Start it on the frame the element lands."
+    }
+  },
+  {
+    "id": "sfx-chime",
+    "name": "Title chime",
+    "category": "Sound effects",
+    "description": "A soft two-note bell chime for title cards and chapter headings.",
+    "file": "sfx-chime.wav",
+    "localPath": "resources/assets/sounds/sfx-chime.wav",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 2797,
+    "tags": [
+      "chime",
+      "sting",
+      "bell",
+      "title",
+      "chapter"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "On the frame a title card appears; duck it under the voiceover if they overlap."
+    }
+  },
+  {
+    "id": "sfx-room-tone",
+    "name": "Room tone",
+    "category": "Sound effects",
+    "description": "10 s of quiet, dark room air that loops seamlessly, to fill gaps so silence does not sound dead.",
+    "file": "sfx-room-tone.m4a",
+    "localPath": "resources/assets/sounds/sfx-room-tone.m4a",
+    "license": "Cue original asset",
+    "licenseUrl": "https://github.com/davidwickerhf/cue/blob/main/LICENSE",
+    "credit": "Synthesised by Cue with scripts/build-sfx.mjs",
+    "durationMs": 10000,
+    "tags": [
+      "room tone",
+      "ambience",
+      "bed",
+      "air",
+      "silence"
+    ],
+    "use": {
+      "track": "audio",
+      "note": "Bed under the whole edit on its own audio track (very quiet by design, -40 LUFS). Import with durationMs to repeat the loop.",
+      "loop": true
+    }
   }
 ]

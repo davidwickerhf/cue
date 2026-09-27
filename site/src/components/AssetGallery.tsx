@@ -29,7 +29,7 @@ export function AssetGallery() {
 			<div className="mt-6 grid gap-x-6 gap-y-11 sm:grid-cols-2 lg:grid-cols-3">
 				{visible.map((asset) => <article id={asset.id} key={asset.id} className="min-w-0 scroll-mt-8">
 					{"downloadUrl" in asset ? <video src={asset.downloadUrl} poster={`/assets/${asset.id}.jpg`} controls muted playsInline preload="none" className="aspect-video w-full rounded-xl bg-black object-cover" aria-label={`${asset.name} footage preview`} /> : <Image src={`/assets/${asset.id}.jpg`} alt="" width={640} height={360} className="aspect-video w-full rounded-xl object-cover" />}
-					<div className="mt-4 flex items-start justify-between gap-4"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent">{asset.category}</p><h2 className="mt-1 text-[22px] font-semibold tracking-[-0.02em]">{asset.name}</h2></div><span className="rounded-full border border-line px-2 py-1 text-[11px] text-muted">{"downloadUrl" in asset ? "Video" : "Graphic"}</span></div>
+					<div className="mt-4 flex items-start justify-between gap-4"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent">{asset.category}</p><h2 className="mt-1 text-[22px] font-semibold tracking-[-0.02em]">{asset.name}</h2></div><span className="rounded-full border border-line px-2 py-1 text-[11px] text-muted">{asset.category === "Sound effects" ? "Sound" : asset.category === "Textures" ? "Texture" : "downloadUrl" in asset ? "Video" : "Graphic"}</span></div>
 				<p className="mt-2 text-[14px] leading-relaxed text-neutral-300">{asset.description}</p>
 				<p className="mt-3 text-[12px] text-muted">{asset.tags.join(" · ")}</p>
 				<div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-4 text-[12px]">

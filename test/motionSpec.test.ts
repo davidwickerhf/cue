@@ -323,10 +323,12 @@ describe("motion templates", () => {
 				expect(json.w).toBe(size.width);
 				const info = motionInfo(json);
 				if (t.category === "transition") expect(info.markers.map((m) => m.name)).toContain("cut");
-				else if (t.category !== "annotation")
+				else if (t.category !== "annotation" && t.category !== "frame")
 					expect(info.markers.map((m) => m.name)).toContain("outro");
 			}
-			if (t.category !== "annotation") expect(Object.keys(describeParams(t))).toContain("theme");
+			// Annotations and device frames have their own colours rather than a theme.
+			if (t.category !== "annotation" && t.category !== "frame")
+				expect(Object.keys(describeParams(t))).toContain("theme");
 		},
 	);
 

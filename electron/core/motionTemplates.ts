@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { ANNOTATION_TEMPLATES } from "./motionAnnotations";
+import {
+	FRAME_TEMPLATES,
+	fitToRegion,
+	type MotionRegion,
+	pushedFit,
+	type RegionFit,
+} from "./motionFrames";
 import { type Ease, type MotionLayer, type MotionSpec, textWidth } from "./motionSpec";
 
 /**
@@ -239,7 +246,8 @@ export interface MotionTemplate<P extends z.ZodRawShape = z.ZodRawShape> {
 		| "overlay"
 		| "map"
 		| "transition"
-		| "annotation";
+		| "annotation"
+		| "frame";
 	description: string;
 	/** Full frame, or drawn over the video (transparent). */
 	overlay: boolean;
@@ -250,6 +258,11 @@ export interface MotionTemplate<P extends z.ZodRawShape = z.ZodRawShape> {
 		p: z.output<z.ZodObject<P>>,
 		canvas: { width: number; height: number; fps: number },
 	) => MotionSpec;
+	/** See-through areas (device frames' screens), in shares of the frame. */
+	regions?: (
+		p: z.output<z.ZodObject<P>>,
+		canvas: { width: number; height: number; fps: number },
+	) => MotionRegion[];
 }
 
 function template<P extends z.ZodRawShape>(t: MotionTemplate<P>): MotionTemplate {
@@ -3115,6 +3128,7 @@ const progressBar = template({
 
 export const MOTION_TEMPLATES: MotionTemplate[] = [
 	...ANNOTATION_TEMPLATES,
+	...FRAME_TEMPLATES,
 	lowerThird,
 	titleCard,
 	barChart,
@@ -3158,6 +3172,44 @@ export function buildTemplate(
 		throw new Error(`${t.name}: ${issue.path.join(".") || "params"}: ${issue.message}`);
 	}
 	return { name: t.name, ...t.build(parsed.data as never, canvas) };
+}
+
+/** A region with the clip transforms that fill it, for common picture shapes. */
+export interface FittedRegion extends MotionRegion {
+	fit: Record<"16:9" | "4:3" | "9:16", RegionFit>;
+	/** Where a fitted 16:9 clip goes when the frame graphic is scaled to 1.06 (push-in end keyframes). */
+	pushed: { frameScale: number; clip: Pick<RegionFit, "x" | "y" | "scale"> };
+}
+
+/**
+ * The see-through regions of a template-made graphic (device frames), each with the
+ * transform that makes a 16:9, 4:3 or 9:16 clip on a lower track fill it. Undefined
+ * for templates without regions.
+ */
+export function templateRegions(
+	source: { template?: string; params?: Record<string, unknown> } | undefined,
+	canvas: { width: number; height: number; fps: number },
+): FittedRegion[] | undefined {
+	const t = source?.template ? MOTION_TEMPLATES.find((x) => x.id === source.template) : undefined;
+	if (!t?.regions) return undefined;
+	const parsed = t.params.safeParse(source?.params ?? {});
+	if (!parsed.success) return undefined;
+	return t.regions(parsed.data as never, canvas).map((r) => {
+		const round = (v: number) => Math.round(v * 10000) / 10000;
+		const region = {
+			...r,
+			x: round(r.x),
+			y: round(r.y),
+			width: round(r.width),
+			height: round(r.height),
+		};
+		const fit = {
+			"16:9": fitToRegion(r, 16 / 9, canvas),
+			"4:3": fitToRegion(r, 4 / 3, canvas),
+			"9:16": fitToRegion(r, 9 / 16, canvas),
+		};
+		return { ...region, fit, pushed: { frameScale: 1.06, clip: pushedFit(fit["16:9"], 1.06) } };
+	});
 }
 
 /** A short description of a template's parameters, for agents. */
