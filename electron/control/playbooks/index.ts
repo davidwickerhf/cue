@@ -5,6 +5,7 @@ import { EXAMPLE_RED_CARS } from "./exampleRedCars";
 import { FIRST_PASS } from "./firstPass";
 import { MATCH_REFERENCE } from "./matchReference";
 import { MOTION_DESIGN } from "./motionDesign";
+import { SCREEN_DEMO } from "./screenDemo";
 import { OTHER_STYLES } from "./styles";
 import { VOX_EXPLAINER } from "./voxExplainer";
 
@@ -33,6 +34,7 @@ export const PLAYBOOKS: Playbook[] = [
 	EDITING_CRAFT,
 	MOTION_DESIGN,
 	VOX_EXPLAINER,
+	SCREEN_DEMO,
 	...OTHER_STYLES,
 	EXAMPLE_OK,
 	EXAMPLE_RED_CARS,

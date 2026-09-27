@@ -7,6 +7,7 @@ import { type MethodInput, type MethodName, parseInput } from "./control/contrac
 import { AGENT_GUIDE } from "./control/guide";
 import { MOTION_GUIDE } from "./control/motionGuide";
 import { PLAYBOOKS, playbook } from "./control/playbooks";
+import { ACTIVITY_SUGGESTIONS, detectActivity } from "./core/activity";
 import {
 	findLibraryAsset,
 	LIBRARY_ASSETS,
@@ -1242,6 +1243,82 @@ export class Controller extends EventEmitter {
 					{ type: "shiftLines", ...parseInput("shift_lines", params), withClips: true },
 					actor,
 				);
+			case "detect_activity": {
+				const input = parseInput("detect_activity", params);
+				const clip = input.clipId
+					? this.store.current.clips.find((c) => c.id === input.clipId)
+					: undefined;
+				if (input.clipId && (!clip || clip.type !== "media"))
+					throw new Error(`No media clip "${input.clipId}".`);
+				const assetId = clip?.type === "media" ? clip.assetId : input.assetId;
+				if (!assetId)
+					throw new Error("Give a clipId (timeline times) or an assetId (source times).");
+				const asset = this.store.current.assets.find((a) => a.id === assetId);
+				if (!asset || asset.kind !== "video") throw new Error("detect_activity needs a video.");
+				// On the timeline: only the part of the source the clip plays, mapped to timeline time.
+				const media = clip?.type === "media" ? clip : undefined;
+				const span = media ? media.durationMs * media.speed : undefined;
+				const fromMs = media ? media.inMs : input.fromMs;
+				const toMs = media && span !== undefined ? media.inMs + span : input.toMs;
+				const events = await this.job(`Reading what happens in ${asset.name}`, () =>
+					detectActivity(this.store.assetPath(assetId), { fromMs, toMs, idleMs: input.idleMs }),
+				);
+				const toTimeline = (t: number) =>
+					media ? Math.round(media.startMs + (t - media.inMs) / media.speed) : t;
+				const wanted = events
+					.filter((e) => !input.kinds || input.kinds.includes(e.kind))
+					.map((e) => ({
+						kind: e.kind,
+						atMs: toTimeline(e.atMs),
+						endMs: toTimeline(e.endMs),
+						...(e.region
+							? {
+									region: Object.fromEntries(
+										Object.entries(e.region).map(([k, v]) => [k, Math.round(v * 1000) / 1000]),
+									),
+								}
+							: {}),
+						...(e.scroll !== undefined ? { scroll: Math.round(e.scroll * 1000) / 1000 } : {}),
+					}))
+					.filter((e) => input.fromMs === undefined || !media || e.atMs >= input.fromMs)
+					.filter((e) => input.toMs === undefined || !media || e.atMs <= input.toMs);
+				if (input.markers) {
+					const color = {
+						"screen-change": "accent",
+						"ui-change": "success",
+						scroll: "warning",
+						typing: "warning",
+						idle: "danger",
+						pointer: "accent",
+					} as const;
+					const marks = wanted.filter((e) => e.kind !== "pointer");
+					await this.store.transaction(actor, `Marked ${marks.length} on-screen events`, () => {
+						for (const e of marks)
+							this.store.apply(
+								{ type: "addMarker", atMs: e.atMs, label: e.kind, color: color[e.kind] },
+								actor,
+							);
+					});
+				}
+				const counts = Object.fromEntries(
+					[...new Set(wanted.map((e) => e.kind))].map((k) => [
+						k,
+						wanted.filter((e) => e.kind === k).length,
+					]),
+				);
+				return {
+					timeline: !!media,
+					counts,
+					events: wanted.slice(0, 400),
+					...(wanted.length > 400 ? { truncated: wanted.length - 400 } : {}),
+					whatToDo: Object.fromEntries(
+						Object.keys(counts).map((k) => [
+							k,
+							ACTIVITY_SUGGESTIONS[k as keyof typeof ACTIVITY_SUGGESTIONS],
+						]),
+					),
+				};
+			}
 			case "level_take": {
 				const { assetId } = parseInput("level_take", params);
 				const { asset, gainDb } = await this.job("Levelling the take", () =>

@@ -46,7 +46,7 @@ export const contract = {
 	},
 	list_playbooks: {
 		description:
-			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first, then 'before-your-first-pass': the mistakes earlier builds made), how to match a reference video ('match-a-reference', with analyze_reference), complete worked examples ('example-why-we-say-ok', 'example-the-red-cars'), editing craft, premium motion design, and recognisable styles (Vox explainer, archive history documentary, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
+			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first, then 'before-your-first-pass': the mistakes earlier builds made), how to match a reference video ('match-a-reference', with analyze_reference), complete worked examples ('example-why-we-say-ok', 'example-the-red-cars'), editing craft, premium motion design, and recognisable styles (Vox explainer, archive history documentary, screen-recording demo, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
 		input: { category: z.enum(["workflow", "craft", "style", "example"]).optional() },
 	},
 	get_playbook: {
@@ -847,6 +847,21 @@ export const contract = {
 	shift_lines: {
 		description: "Move lines starting at or after fromMs by deltaMs, with their clips.",
 		input: { fromMs: z.number(), deltaMs: z.number() },
+	},
+	detect_activity: {
+		description:
+			"What happens on screen in a video (screen recordings, app demos, tutorials), found without looking at frames: each change between frames is sorted into screen-change (a new page or view), ui-change (a small area changes: usually a click's result, with its region), scroll (with how far), typing, pointer (the cursor moving) and idle (nothing happens for idleMs). Give clipId for events in timeline time within what the clip plays (or assetId for source time). Each kind comes with what editors usually do there (click sounds, zooms to the region, whooshes, cutting or speeding up idle stretches). markers true adds a timeline marker per event (not pointer). Use it instead of stepping through frames with render_frame; check a few moments with render_frame afterwards.",
+		input: {
+			clipId: z.string().optional(),
+			assetId: z.string().optional(),
+			fromMs: z.number().min(0).optional(),
+			toMs: z.number().min(0).optional(),
+			kinds: z
+				.array(z.enum(["screen-change", "ui-change", "scroll", "typing", "pointer", "idle"]))
+				.optional(),
+			idleMs: z.number().min(300).default(1500),
+			markers: z.boolean().default(false),
+		},
 	},
 	level_take: {
 		description:
