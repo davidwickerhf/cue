@@ -101,8 +101,9 @@
 	}
 	/* Headers that double as the title bar: room for the macOS traffic lights, or
 	   for the window buttons Windows draws over the right end (titleBarOverlay). */
+	/* macOS: the window buttons end about 70px in; leave a clear gap after them. */
 	.titlebar {
-		padding-left: 84px;
+		padding-left: 96px;
 		padding-right: 12px;
 	}
 	:root:not([data-platform="darwin"]) .titlebar {
