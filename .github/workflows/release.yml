@@ -90,6 +90,8 @@ jobs:
           npm run build:native
           if [ -z "$CSC_LINK" ]; then
             echo "::warning::No MAC_CERTIFICATE_P12 secret: the Mac build is unsigned and not notarised."
+            # An empty CSC_LINK is read as a path (the working folder), so it must not be set at all.
+            unset CSC_LINK CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
           if [ -n "$APPLE_API_KEY_P8" ]; then
@@ -113,7 +115,10 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CERTIFICATE_P12 }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERTIFICATE_PASSWORD }}
         run: |
-          [ -n "$WIN_CSC_LINK" ] || echo "::warning::No WIN_CERTIFICATE_P12 secret: the installer is unsigned (SmartScreen warns)."
+          if [ -z "$WIN_CSC_LINK" ]; then
+            echo "::warning::No WIN_CERTIFICATE_P12 secret: the installer is unsigned (SmartScreen warns)."
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          fi
           npx electron-builder --win --publish "$PUBLISH"
 
       - name: Build (Linux)
