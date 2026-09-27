@@ -57,7 +57,7 @@ import {
 import { type MontageSource, planMontage } from "./montage";
 import { type LottieJson, motionDurationMs, motionInfo } from "./motion";
 import { readMotionFile } from "./motionFile";
-import { compileMotion } from "./motionSpec";
+import { compileMotion, type TextBox, textBoxes } from "./motionSpec";
 import { buildTemplate, motionTemplate } from "./motionTemplates";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
@@ -2726,10 +2726,15 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/** A motion graphic's source: its template and parameters, or its spec (built in full for templates). */
-	motionGraphicSource(assetId: string): { source: MotionSource; spec: unknown } {
+	motionGraphicSource(assetId: string): {
+		source: MotionSource;
+		spec: unknown;
+		textBoxes: TextBox[];
+	} {
 		const a = this.current.assets.find((x) => x.id === assetId);
 		if (!a?.motionSource) throw new Error(`"${assetId}" is not a motion graphic made in Cue.`);
-		return { source: a.motionSource, spec: this.motionSpecOf(a.motionSource) };
+		const spec = this.motionSpecOf(a.motionSource);
+		return { source: a.motionSource, spec, textBoxes: textBoxes(spec) };
 	}
 
 	/** Turns a finished microphone recording into a take for a line. */
