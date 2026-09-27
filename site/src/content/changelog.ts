@@ -9,6 +9,18 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.4",
+		date: "2026-09-27",
+		summary: "An agent that edits like a pro, reads screen recordings in seconds, and levels quiet voiceovers.",
+		changes: [
+			"Voiceover takes recorded on a laptop mic are raised to voice level when saved (the original is kept); quiet takes already recorded get a 'Raise to voice level' button.",
+			"detect_activity reads a screen recording without looking at its frames: page changes, click results and where they are, scrolls, typing and idle stretches, in seconds, with what editors do at each.",
+			"Agents know the craft: an 'editing-techniques' library (about 45 techniques, when and how to use each in Cue), 'finding-assets', 'screen-recording-demo', and guidance on what to do first for each kind of request.",
+			"find_media brings in openly licensed pictures and footage (Openverse, Wikimedia Commons) with their credits.",
+			"The in-app agent works like an editor: it looks at the material, plans in techniques, tells you the plan, builds, checks and reports.",
+		],
+	},
+	{
 		version: "0.2.3",
 		date: "2026-09-27",
 		summary: "Music found or made, a proper review of every voiceover take, big projects that stay light and export reliably, and a second worked example.",
