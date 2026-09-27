@@ -442,7 +442,10 @@ describe("compositing", () => {
 		const across = await Promise.all(
 			[108, 112, 116, 120, 124, 128, 132].map(async (x) => (await pixel(out, 1.5, x, 90, 320))[0]),
 		);
-		expect(across.filter((v) => v > 40 && v < 215).length).toBeGreaterThan(1);
+		expect(
+			across.filter((v) => v > 40 && v < 215).length,
+			`pixels across the square's edge: ${across.join(", ")}`,
+		).toBeGreaterThan(1);
 		// The vignette darkens the corners of the white frame.
 		const [corner] = await pixel(out, 1.5, 2, 2, 320);
 		const [middle] = await pixel(out, 1.5, 60, 90, 320);
