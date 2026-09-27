@@ -9,21 +9,22 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
-		version: "Unreleased",
-		summary: "New effects and export formats, a faster timeline, and fixes from a full product review.",
+		version: "0.2.0",
+		date: "2026-09-27",
+		summary:
+			"Pages for each job, a Motion page and motion graphics made by agents, Lottie from After Effects, collections, packaging, and everything learnt from remaking a Vox explainer.",
 		changes: [
-			"Effects: blur, sharpen, vignette, glow and stabilisation, previewed live and exported at matching strengths. Adjustment layers can blur, sharpen and vignette everything below them.",
-			"Split a clip at its shot changes, from the clip menu or the split_at_scenes tool, in one undoable step.",
-			"Export animated GIFs, and sound only as MP3, AAC or FLAC.",
-			"Marquee selection, resizable tracks, draggable volume lines on audio clips, and Esc to cancel a drag or trim.",
-			"The timeline draws only what is on screen (about 60% fewer DOM nodes at 500 clips), and video clips show their sound as a waveform strip.",
-			"Hardware export uses constant quality: files are 5 to 7 times smaller at the same quality.",
-			"Exported keyframes animate over time again, and adjustment layers no longer break exports with sound.",
-			"Smoother playback: no blank frames at cuts or crossfades, sound decoded around the playhead, drift corrected smoothly.",
-			"Saves never overlap or drop an edit, and quitting waits for them. Agents cannot write files outside the export folder.",
-			"The History panel fetches only new steps after an edit.",
-			"Edits send the window only what changed (a few KB instead of the whole project at 500 clips).",
-			"Voice noise removal with RNNoise: Reduce background noise is now Off, Light or Voice (ML), and the preview plays the cleaned sound.",
+			"Pages: a bar along the bottom of the editor for Edit, Motion, Titles, Colour, Audio, Voice, Review, Deliver and Agent (⌥1–⌥9).",
+			"The Motion page designs one motion graphic at a time: its layers, a large preview to click and drag on, text, colours, position, entrances and exits.",
+			"Motion graphics: Lottie files from After Effects play and export; 40+ original templates (titles, charts, annotations, maps, device frames); agents design their own from a JSON spec, and change single layers with edit_motion_layer.",
+			"Film grain, blend modes, rotation, opacity keyframes, hand-held wiggle and stepped motion ('on twos'); cut_out lifts people and objects out of pictures with a paper edge and a shadow.",
+			"An asset library of CC0 paper textures, light leaks, dust and sound effects, and device frames (TV, laptop, phone, polaroid) that footage fits into, now tiltable.",
+			"Playbooks for agents: how to work in Cue, editing craft, premium motion design, 13 styles (Vox, map documentary, tech review, vlog…), matching a reference video, and a worked example. analyze_reference measures a video's pace, look and loudness.",
+			"Projects: collections in the projects overview, File → Package Project… (one zip with all media, long footage trimmed), projects placed in other projects as media, and a .cueproj document icon.",
+			"Exports: scale keyframes and the vignette now match the preview, graphics-heavy edits no longer time out, and agents see export progress.",
+			"Reliability: render_frame works with Cue in the background, never catches half-drawn pictures, and long agent calls reply with a handle to wait on.",
+			"Blur, sharpen, vignette, glow and stabilisation effects; split a clip at its shot changes; GIF, MP3, AAC and FLAC exports; marquee selection and resizable tracks; RNNoise voice clean-up.",
+			"Timeline: moving clips between tracks and adding tracks by dropping onto the timeline, with overwrite as in other editors.",
 		],
 	},
 	{

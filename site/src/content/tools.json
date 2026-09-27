@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 164,
+	"count": 172,
 	"groups": [
 		{
 			"title": "Overview",
@@ -185,8 +185,39 @@
 					]
 				},
 				{
+					"name": "edit_motion_layer",
+					"description": "Change one layer of a motion graphic made in Cue without rewriting its spec: layer is its name or path (see get_motion_graphic layers, e.g. 'Title' or '1.0'); patch sets spec properties of that layer (text, color, fill, size, x, y, rotation, opacity, enter, exit, keys…; null removes one); move {dx, dy} shifts it in composition pixels (lines by their points, groups with everything in them); remove deletes it. A graphic made from a template becomes its own design (the template's params stop applying). One undoable step; clips using it update. Works without the window on screen.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "layer",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "patch",
+							"type": "object",
+							"required": false
+						},
+						{
+							"name": "move",
+							"type": "object",
+							"required": false
+						},
+						{
+							"name": "remove",
+							"type": "boolean",
+							"required": false
+						}
+					]
+				},
+				{
 					"name": "get_motion_graphic",
-					"description": "A motion graphic's source: the template and params it was made from, and its full spec (for templates, the spec they build). Copy and change the spec to make a new graphic in the same style.",
+					"description": "A motion graphic's source: the template and params it was made from, its full spec (for templates, the spec they build) and its layers (name, type, path) for edit_motion_layer. Copy and change the spec to make a new graphic in the same style.",
 					"inputs": [
 						{
 							"name": "assetId",
@@ -278,8 +309,73 @@
 				},
 				{
 					"name": "list_projects",
-					"description": "Every project in the projects overview (recent ones and those in the projects folder) with length, canvas, clip count and last change.",
+					"description": "Every project in the projects overview (recent ones and those in the projects folder) with length, canvas, clip count, last change and the collection it is in (collectionId; see list_collections).",
 					"inputs": []
+				},
+				{
+					"name": "list_collections",
+					"description": "Collections in the projects overview: named groups of projects, like folders (the pieces of one video — its edit, graphics made as their own projects, other versions). Each has an id, name and its project files. list_projects shows which collection each project is in.",
+					"inputs": []
+				},
+				{
+					"name": "create_collection",
+					"description": "Make a collection in the projects overview, optionally with projects (their file paths) moved into it. A project is in one collection at most.",
+					"inputs": [
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "projects",
+							"type": "string[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "rename_collection",
+					"description": "Rename a collection.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "name",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "delete_collection",
+					"description": "Delete a collection. Its projects are not deleted: they go back to the ungrouped list.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "move_to_collection",
+					"description": "Move projects (file paths) into a collection, out of any other; collectionId null takes them out of their collection.",
+					"inputs": [
+						{
+							"name": "projects",
+							"type": "string[]",
+							"required": true
+						},
+						{
+							"name": "collectionId",
+							"type": "string",
+							"required": true,
+							"nullable": true
+						}
+					]
 				},
 				{
 					"name": "close_project",
@@ -296,6 +392,37 @@
 							"required": true
 						}
 					]
+				},
+				{
+					"name": "add_project_media",
+					"description": "Place another Cue project (or one of its sequences) in this one as media, like a pre-composition shared between projects: it is rendered to a video (text and graphics included) and rendered again whenever that project file changes (on opening this project, when Cue comes to the front, before export, or with refresh_project_media). With trackId it is also put on the timeline at startMs. Its media item has projectSource with the file. Long: may reply with a callId for wait_for.",
+					"inputs": [
+						{
+							"name": "path",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "sequenceId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "refresh_project_media",
+					"description": "Render again the projects placed as media (add_project_media) whose files changed. Returns how many were updated.",
+					"inputs": []
 				},
 				{
 					"name": "analyze_reference",
@@ -2944,8 +3071,19 @@
 				},
 				{
 					"name": "set_view",
-					"description": "Show the user something: switch workspace (window layout), open a sidebar panel or a dock beside the viewer, fit the whole timeline in view, zoom the timeline (px per second), open a media item in the source monitor, zoom the viewer, turn viewer overlays on or off, split before/after, or A/B compare two sequences.",
+					"description": "Show the user something: go to a page (edit, motion, titles, colour, audio, voice, review, deliver, agent — motion with motionAssetId opens that graphic on the Motion page), switch workspace (window layout), open a sidebar panel or a dock beside the viewer, fit the whole timeline in view, zoom the timeline (px per second), open a media item in the source monitor, zoom the viewer, turn viewer overlays on or off, split before/after, or A/B compare two sequences.",
 					"inputs": [
+						{
+							"name": "page",
+							"type": "\"edit\" | \"motion\" | \"titles\" | \"colour\" | \"audio\" | \"voice\" | \"review\" | \"deliver\" | \"agent\"",
+							"required": false
+						},
+						{
+							"name": "motionAssetId",
+							"type": "string",
+							"required": false,
+							"note": "motion graphic to open on the Motion page"
+						},
 						{
 							"name": "panel",
 							"type": "\"media\" | \"library\" | \"script\" | \"transcript\" | \"text\" | \"mixer\" | \"generate\" | \"history\" | \"agent\" | \"settings\"",

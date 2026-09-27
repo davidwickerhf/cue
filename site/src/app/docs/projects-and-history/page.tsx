@@ -9,6 +9,9 @@ export const metadata = pageMetadata({ title: PAGE.title, description: PAGE.desc
 const TOC = [
 	{ id: "files", label: "Project files" },
 	{ id: "overview", label: "The projects overview" },
+	{ id: "collections", label: "Collections" },
+	{ id: "package", label: "Packaging a project" },
+	{ id: "project-media", label: "Projects as media" },
 	{ id: "relinking", label: "Relinking moved media" },
 	{ id: "history", label: "History" },
 ];
@@ -28,7 +31,8 @@ export default function Page() {
 			<H2 id="files">Project files</H2>
 			<Ul>
 				<li>
-					A project is a <C>.cueproj</C> file: plain JSON that diffs and versions well. Older <C>.cue.json</C> projects open too.
+					A project is a <C>.cueproj</C> file: plain JSON that diffs and versions well, with its own icon in Finder. Older{" "}
+					<C>.cue.json</C> projects open too and are renamed to <C>.cueproj</C> when opened.
 				</li>
 				<li>
 					New projects get their own folder in your projects folder, <C>~/Movies/Cue</C> by default. Change it in{" "}
@@ -62,6 +66,36 @@ export default function Page() {
 					<strong className="text-white">Agent access</strong> copies the command that connects an MCP client (see AI and agents).
 				</li>
 			</Ul>
+
+			<H2 id="collections">Collections</H2>
+			<p>
+				Collections group projects like folders, for example the pieces of one video: its edit, graphics made as their own
+				projects, other versions. They are listed on the left of the projects overview with how many projects each holds.
+			</p>
+			<Ul>
+				<li>Make one with <strong className="text-white">+</strong> next to Collections, then drag projects onto it, or use a project&apos;s menu → Move to collection.</li>
+				<li>A project is in one collection at most. Duplicates join the original&apos;s collection.</li>
+				<li>Rename or delete a collection from its right-click menu. Deleting one never deletes its projects.</li>
+				<li>
+					Agents use <C>list_collections</C>, <C>create_collection</C>, <C>move_to_collection</C>, <C>rename_collection</C> and{" "}
+					<C>delete_collection</C>.
+				</li>
+			</Ul>
+
+			<H2 id="package">Packaging a project</H2>
+			<p>
+				<strong className="text-white">File → Package Project…</strong> puts the project and every media file it uses into one zip
+				that opens anywhere, to share or archive it. Long footage is trimmed to the parts the edit uses, with one-second handles,
+				so a few shots from a feature film stay small. Caches and history are left out; Cue makes them again. Agents use{" "}
+				<C>package_project</C>, optionally with a README of credits.
+			</p>
+
+			<H2 id="project-media">Projects as media</H2>
+			<p>
+				Place one project inside another, like a pre-composition shared between projects: Media → Add another project as media…
+				(or <C>add_project_media</C>). Cue renders it, graphics included, and renders it again when that project changes: when you
+				open this one, come back to Cue, or export. Its media has a Project badge that opens the source project.
+			</p>
 
 			<H2 id="relinking">Relinking moved media</H2>
 			<p>

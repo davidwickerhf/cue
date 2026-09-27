@@ -1,4 +1,4 @@
-import { A, C, CodeBlock, DocPage, H2, H3, Note, Ol, Table, Ul } from "@/components/docs/Prose";
+import { A, C, CodeBlock, DocPage, H2, H3, Kbd, Note, Ol, Table, Ul } from "@/components/docs/Prose";
 import appData from "@/content/app-data.json";
 import { doc } from "@/content/docs";
 import { pageMetadata } from "@/lib/metadata";
@@ -94,6 +94,16 @@ export default function Page() {
 			<p>
 				Agents do the same with <C>update_clip</C> and <C>motion</C> <C>{"{text: {layerId: \"…\"}, colors: {\"#from\": \"#to\"}, loop}"}</C>;{" "}
 				<C>list_media</C> shows each graphic&apos;s text layers, colours and markers.
+			</p>
+
+			<H3>The Motion page</H3>
+			<p>
+				For graphics made in Cue, the Motion page (<Kbd>⌥8</Kbd>, or <strong className="text-white">Open in Motion</strong> in the
+				inspector) works on one graphic at a time, like an After Effects composition: its layers on the left, a large preview with
+				its own play and scrub, and the picked layer&apos;s text, font, colours, position, rotation, opacity, order, entrance and exit
+				on the right. Click a layer on the preview to pick it and drag it to move it. A graphic from a template shows the
+				template&apos;s fields; changing any layer directly makes it your own design. Agents change single layers with{" "}
+				<C>edit_motion_layer</C>, without the window.
 			</p>
 
 			<H2 id="templates">The template library</H2>

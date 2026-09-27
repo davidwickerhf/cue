@@ -19,12 +19,25 @@ const WORKSPACE_NOTES: Record<string, string> = {
 	review: "A large viewer with the sidebar and inspector hidden, a short timeline and the markers list docked beside the viewer.",
 };
 
+/** The page bar (src/lib/pages.ts), in its order. */
+const PAGES = [
+	{ label: "Edit", keys: "⌥1", about: "Cut the story: media, timeline and viewer." },
+	{ label: "Motion", keys: "⌥8", about: "Design one motion graphic: its layers, text, colours and timing, with a large preview." },
+	{ label: "Titles", keys: "⌥5", about: "Titles, captions and text on screen." },
+	{ label: "Colour", keys: "⌥3", about: "Grade shot by shot with scopes and before/after." },
+	{ label: "Audio", keys: "⌥2", about: "Mix, clean up and level the sound." },
+	{ label: "Voice", keys: "⌥4", about: "Script and voiceover takes, with a teleprompter." },
+	{ label: "Review", keys: "⌥7", about: "Watch it through and leave notes." },
+	{ label: "Deliver", keys: "⌥9", about: "Export for the web, a master, variants or sound." },
+	{ label: "Agent", keys: "⌥6", about: "Work with your agent, with the history beside it." },
+];
+
 const TOC = [
 	{ id: "install", label: "Install" },
 	{ id: "first-project", label: "Your first project" },
 	{ id: "import", label: "Importing media" },
 	{ id: "layout", label: "The editor" },
-	{ id: "workspaces", label: "Workspaces" },
+	{ id: "pages", label: "Pages" },
 ];
 
 export default function Page() {
@@ -137,11 +150,18 @@ export default function Page() {
 				header to resize the track; double-click the edge to reset it.
 			</p>
 
-			<H2 id="workspaces">Workspaces</H2>
+			<H2 id="pages">Pages</H2>
 			<p>
-				A workspace sets up the window for one kind of work: panel sizes, what is docked beside the viewer, how tall each kind
-				of track is, which viewer overlays are on and which inspector sections are open. Switch with the workspace button in the
-				header or with the keys below.
+				Cue has a page for each job, in the bar along the bottom of the window. The same project flows through all of them.
+				Most pages lay the editor out for their job; Motion and Deliver are screens of their own.
+			</p>
+			<Table
+				head={["Page", "Keys", "What it is for"]}
+				rows={PAGES.map((p) => [p.label, <Kbd key={p.label}>{p.keys}</Kbd>, p.about])}
+			/>
+			<p>
+				The layouts behind the editor pages are workspaces: panel sizes, what is docked beside the viewer, how tall each kind
+				of track is, which viewer overlays are on and which inspector sections are open.
 			</p>
 			<Table
 				head={["Workspace", "Keys", "What it sets up"]}
@@ -156,7 +176,8 @@ export default function Page() {
 				launches.
 			</p>
 			<Note>
-				Agents can switch workspace too, with <C>set_view</C>, for example to show you the Colour workspace after grading.
+				Agents can switch page or workspace too, with <C>set_view</C>, for example to show you the Colour page after grading or
+				open a graphic on the Motion page.
 			</Note>
 		</DocPage>
 	);
