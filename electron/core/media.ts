@@ -31,6 +31,8 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 export const FFMPEG_FAILURE_LOG = path.join(os.tmpdir(), "cue-ffmpeg-last-failure.txt");
 
 function keepFailure(args: string[], log: string) {
+	// Tests fail ffmpeg on purpose; they must not overwrite the report of a real failure.
+	if (process.env.VITEST) return;
 	fs.writeFile(
 		FFMPEG_FAILURE_LOG,
 		`ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n\n${log}`,

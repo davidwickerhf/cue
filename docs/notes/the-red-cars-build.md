@@ -65,3 +65,9 @@ Severity: **bug** (wrong behaviour), **gap** (missing capability), **ux** (works
 31. **perf (to do)** Export took 587 s for 224 s of 1920×960 (2.6× real time); one ffmpeg graph with 200+ inputs. Render in segments (per scene or per N seconds) in parallel and concat, skip clips outside the range, and run ffmpeg at lower priority so the UI stays responsive.
 32. **bug** `open_project` from an agent loads the project but the window stays on the projects overview; the user watching sees nothing. It should switch the window to the editor (or say it didn't).
 33. **bug** `update_clip` silently ignores `keyframes` in a patch (the reply says "Edited clip … ()"); keyframes need `set_keyframe`/`edit_keyframes`. Reject unknown or unsupported fields with an error instead of ignoring them.
+
+## Second pass
+34. **bug** Export renders text and motion graphics in the editor window. With that window closed (or its renderer gone), an export fails after a minute with "The editor window did not respond", and the first attempt left a 48-byte file. Render for export in a hidden window of its own, recreate it if needed, and never depend on the window the user is looking at.
+35. **fixed** The ffmpeg failure report in the temp folder was overwritten by the test suite (a test fails ffmpeg on purpose); it isn't written under vitest any more.
+36. **bug** A generated voice take silently dropped its last sentence ("Then the rails were paved over."); only transcribing the take showed it. generate_take / generate_voiceover should transcribe and compare with the text (the words are right there) and warn or retry.
+37. **lesson** Voicing whole passages (10 takes instead of 21) made the narrator consistent; anchoring every cut to words in a per-line word index made re-timing after a new take a one-command job.
