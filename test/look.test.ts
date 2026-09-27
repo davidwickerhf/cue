@@ -229,3 +229,63 @@ describe("animated scale in export", () => {
 		expect((await pixel(out, 1.5, 40, 90, 320))[0]).toBeGreaterThan(200);
 	}, 120000);
 });
+
+describe("vignette in export", () => {
+	it("darkens the corners as much as the preview does, on clips and adjustment layers", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-vignette-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Vignette" });
+		const file = path.join(dir, "white.png");
+		await ffmpeg(["-f", "lavfi", "-i", "color=c=white:s=320x180", "-frames:v", "1", file]);
+		const [white] = await store.importMedia([file], "user");
+		store.apply(
+			{ type: "setCanvas", canvas: { width: 320, height: 180, fps: 10 } } as never,
+			"user",
+		);
+		store.apply(
+			{
+				type: "addClips",
+				clips: [{ type: "media", trackId: "V1", assetId: white.id, startMs: 0, durationMs: 2000 }],
+			} as never,
+			"user",
+		);
+		const clip = store.current.clips[0];
+		store.apply(
+			{ type: "updateClip", id: clip.id, patch: { effects: { vignette: 0.4 } } } as never,
+			"user",
+		);
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } } as never,
+			"user",
+		);
+		// The preview: transparent until 52% of the way to the corner, then 57% black at the corner.
+		const corner = 255 * (1 - (0.35 + 0.4 * 0.55));
+		const out = (await store.export("video", "v.mp4", "user")).outputs[0];
+		expect((await pixel(out, 0.5, 160, 90, 320))[0]).toBeGreaterThan(245);
+		expect(Math.abs((await pixel(out, 0.5, 1, 1, 320))[0] - corner)).toBeLessThan(20);
+
+		// The same on an adjustment layer over an untouched clip.
+		store.apply(
+			{ type: "updateClip", id: clip.id, patch: { effects: { vignette: 0 } } } as never,
+			"user",
+		);
+		store.apply({ type: "addTrack", kind: "video", name: "Look" } as never, "user");
+		const look = store.current.tracks.find((t) => t.name === "Look")?.id;
+		store.apply(
+			{ type: "addAdjustment", trackId: look, startMs: 0, durationMs: 2000 } as never,
+			"user",
+		);
+		const adj = store.current.clips.find((c) => c.trackId === look);
+		store.apply(
+			{ type: "updateClip", id: adj?.id, patch: { effects: { vignette: 0.4 } } } as never,
+			"user",
+		);
+		const graded = (await store.export("video", "a.mp4", "user")).outputs[0];
+		expect((await pixel(graded, 0.5, 160, 90, 320))[0]).toBeGreaterThan(245);
+		expect(Math.abs((await pixel(graded, 0.5, 1, 1, 320))[0] - corner)).toBeLessThan(20);
+	}, 120000);
+});
