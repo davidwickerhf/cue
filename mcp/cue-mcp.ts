@@ -16,8 +16,11 @@ import { contract, type MethodName } from "../electron/control/contract";
 import { AGENT_GUIDE } from "../electron/control/guide";
 
 const VERSION = "0.1.0";
+// The app takes its data folder from CUE_USER_DATA (a second copy, e.g. a dev build),
+// so the bridge must too: with only CUE_DATA_DIR it silently drove the installed app.
 const dataDir =
 	process.env.CUE_DATA_DIR ??
+	process.env.CUE_USER_DATA ??
 	(process.platform === "darwin"
 		? path.join(os.homedir(), "Library", "Application Support", "Cue")
 		: process.platform === "win32"

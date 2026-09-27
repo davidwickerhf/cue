@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -33,10 +34,12 @@ export const FFMPEG_FAILURE_LOG = path.join(os.tmpdir(), "cue-ffmpeg-last-failur
 function keepFailure(args: string[], log: string) {
 	// Tests fail ffmpeg on purpose; they must not overwrite the report of a real failure.
 	if (process.env.VITEST) return;
-	fs.writeFile(
-		FFMPEG_FAILURE_LOG,
-		`ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n\n${log}`,
-	).catch(() => {});
+	try {
+		writeFileSync(
+			FFMPEG_FAILURE_LOG,
+			`ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n\n${log}`,
+		);
+	} catch {}
 }
 
 export async function ffmpeg(args: string[]): Promise<string> {
@@ -63,6 +66,8 @@ export function ffmpegWithProgress(
 	onProgress?: (fraction: number) => void,
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
+		if (process.env.CUE_TRACE_FFMPEG)
+			writeFileSync("/tmp/cue-ffmpeg-trace.txt", `ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n`);
 		const child = spawn(ffmpegPath(), ["-hide_banner", "-y", ...args]);
 		let log = "";
 		child.stderr.setEncoding("utf8");
