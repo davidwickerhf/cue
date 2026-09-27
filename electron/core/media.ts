@@ -337,12 +337,21 @@ export function atempoChain(speed: number): string {
 }
 
 /**
+ * A temporary file next to output that no other job writes to: an encoder left
+ * running by a previous session, or a second job for the same file, must never
+ * interleave its bytes with ours (that corrupts the result).
+ */
+export function partFile(output: string, ext: string): string {
+	return `${output}.${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.part.${ext}`;
+}
+
+/**
  * Small playback copy of a video: 540p with a keyframe every half second, so
  * the editor can seek and scrub instantly. Uses the GPU encoder on macOS.
  */
 export async function makeVideoProxy(input: string, output: string): Promise<void> {
 	await fs.mkdir(path.dirname(output), { recursive: true });
-	const tmp = `${output}.part.mp4`;
+	const tmp = partFile(output, "mp4");
 	const encoder =
 		process.platform === "darwin"
 			? ["-c:v", "h264_videotoolbox", "-b:v", "2500k", "-realtime", "1"]
@@ -361,7 +370,10 @@ export async function makeVideoProxy(input: string, output: string): Promise<voi
 		"-movflags",
 		"+faststart",
 		tmp,
-	]);
+	]).catch(async (error) => {
+		await fs.rm(tmp, { force: true });
+		throw error;
+	});
 	await fs.rename(tmp, output);
 }
 
@@ -378,7 +390,7 @@ export async function makeAudioProxy(
 	denoise: DenoiseMode = "off",
 ): Promise<void> {
 	await fs.mkdir(path.dirname(output), { recursive: true });
-	const tmp = `${output}.part.m4a`;
+	const tmp = partFile(output, "m4a");
 	const chain = [...(speed === 1 ? [] : [atempoChain(speed)]), ...denoiseFilters(denoise)];
 	const filters = chain.length ? ["-af", chain.join(",")] : [];
 	await ffmpeg([
@@ -395,6 +407,9 @@ export async function makeAudioProxy(
 		"-b:a",
 		"192k",
 		tmp,
-	]);
+	]).catch(async (error) => {
+		await fs.rm(tmp, { force: true });
+		throw error;
+	});
 	await fs.rename(tmp, output);
 }

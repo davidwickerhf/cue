@@ -584,6 +584,14 @@ function presets(layer: Layer, tl: Timeline, rest: Rest, growAxis: "x" | "y" | "
 		for (const prop of orient ? ["x", "y", "rotation"] : ["x", "y"])
 			claim(prop, atMs, atMs + durationMs);
 	}
+	/** The value a property's own keys hold at a time outside them (before the first, after the last). */
+	const heldBy = (prop: string, ms: number): number[] | undefined => {
+		const keys = tl.tracks.get(prop)?.keys;
+		if (!keys?.length) return undefined;
+		const f = tl.frame(ms);
+		const before = keys.filter((k) => k[0] <= f + 1e-6);
+		return (before.length ? before[before.length - 1] : keys[0])[1];
+	};
 	const apply = (m: MotionPreset, entering: boolean) => {
 		const d = m.durationMs ?? PRESET_MS[m.preset];
 		const a = entering ? m.atMs : m.atMs;
@@ -591,9 +599,20 @@ function presets(layer: Layer, tl: Timeline, rest: Rest, growAxis: "x" | "y" | "
 		const ease: Ease =
 			m.ease ?? (entering ? (m.preset === "pop" ? "outBack" : "outExpo") : "inCubic");
 		/** Adds a from→to move for a property, entering or leaving. */
-		const move = (prop: string, away: number[], home: number[]) => {
+		const move = (prop: string, awayFromRest: number[], rested: number[]) => {
 			const taken = own.get(prop);
 			if (taken && a <= taken[1] && b >= taken[0]) return;
+			// Before or after the layer's own keys, the preset starts from (or returns to)
+			// the value those keys hold there, not the rest value: a layer faded out by its
+			// keys stays out until its exit instead of drifting back up towards it.
+			const home = (taken && heldBy(prop, entering ? b : a)) || rested;
+			let away = awayFromRest;
+			if (home !== rested) {
+				const relative = prop === "opacity" || prop === "scale";
+				away = awayFromRest.map((v, i) =>
+					relative ? (rested[i] === 0 ? 0 : (v * home[i]) / rested[i]) : v + home[i] - rested[i],
+				);
+			}
 			if (entering) {
 				tl.add(prop, a, away, ease);
 				tl.add(prop, b, home);

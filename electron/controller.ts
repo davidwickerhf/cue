@@ -1182,7 +1182,13 @@ export class Controller extends EventEmitter {
 			case "list_playbooks": {
 				const { category } = parseInput("list_playbooks", params);
 				return PLAYBOOKS.filter((p) => !category || p.category === category).map(
-					({ id, name, category: kind, summary, useWhen }) => ({ id, name, category: kind, summary, useWhen }),
+					({ id, name, category: kind, summary, useWhen }) => ({
+						id,
+						name,
+						category: kind,
+						summary,
+						useWhen,
+					}),
 				);
 			}
 			case "get_playbook": {

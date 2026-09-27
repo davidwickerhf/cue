@@ -244,6 +244,43 @@ describe("motion specs", () => {
 		).toThrow(/no line layer named "Nope"/);
 	});
 
+	it("keeps a layer hidden by its own keys hidden until its exit", () => {
+		const json = compileMotion({
+			durationMs: 3000,
+			fps: 30,
+			layers: [
+				{
+					type: "text",
+					name: "Word",
+					text: "ld",
+					size: 100,
+					enter: { preset: "rise", atMs: 0, durationMs: 300 },
+					keys: {
+						opacity: [
+							[1000, 1],
+							[1200, 0],
+						],
+						x: [
+							[1000, 100],
+							[1200, 300],
+						],
+					},
+					exit: { preset: "slideLeft", atMs: 2500, durationMs: 300 },
+				},
+			],
+		});
+		const word = json.layers.find((l: LottieJson) => l.nm === "Word");
+		const opacity = word.ks.o.k.map((k: LottieJson) => [k.t, k.s[0]]);
+		// Faded out by its keys at 1200 ms, it stays out: the exit starts from 0, not 100.
+		expect(opacity.filter(([t]: number[]) => t >= 36).every(([, v]: number[]) => v === 0)).toBe(
+			true,
+		);
+		// The exit slides away from where the keys left it (300), not from its rest x.
+		const xs = word.ks.p.x.k.map((k: LottieJson) => [k.t, k.s[0]]);
+		expect(xs.find(([t]: number[]) => t === 75)?.[1]).toBe(300);
+		expect(xs.at(-1)[1]).toBe(300 - 120);
+	});
+
 	it("reports where text lands", () => {
 		const boxes = textBoxes({
 			width: 1920,

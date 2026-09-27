@@ -51,6 +51,7 @@ import {
 	makeAudioProxy,
 	makeVideoProxy,
 	PEAKS_PER_SECOND,
+	partFile,
 	probe,
 	toWav,
 } from "./media";
@@ -1703,7 +1704,7 @@ export class ProjectStore extends EventEmitter {
 				this.nestedRenders.get(file) ??
 				(async () => {
 					await fs.mkdir(path.dirname(file), { recursive: true });
-					const tmp = `${file}.part.mp4`;
+					const tmp = partFile(file, "mp4");
 					await exportVideo(
 						{
 							dir: this.projectDir,
