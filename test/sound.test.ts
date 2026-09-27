@@ -36,7 +36,10 @@ describe("a video's sound on its own track", () => {
 				{ type: "media", trackId: "V1", assetId: silent.id, startMs: 6000, durationMs: 2000 },
 			],
 		});
-		const [picture, sound] = [media(data).find((c) => c.trackId === "V1" && c.assetId === video.id), media(data).find((c) => data.tracks.find((t) => t.id === c.trackId)?.kind === "audio")] as MediaClip[];
+		const [picture, sound] = [
+			media(data).find((c) => c.trackId === "V1" && c.assetId === video.id),
+			media(data).find((c) => data.tracks.find((t) => t.id === c.trackId)?.kind === "audio"),
+		] as MediaClip[];
 		expect(picture.volume).toBe(0);
 		expect(sound).toBeDefined();
 		expect(sound.startMs).toBe(1000);
@@ -56,7 +59,10 @@ describe("a video's sound on its own track", () => {
 		const p = project();
 		const setting = applyOp(
 			{ ...p, settings: { ...p.settings, separateAudio: false } },
-			{ type: "addClips", clips: [{ type: "media", trackId: "V1", assetId: video.id, startMs: 0 }] },
+			{
+				type: "addClips",
+				clips: [{ type: "media", trackId: "V1", assetId: video.id, startMs: 0 }],
+			},
 		).data;
 		expect(media(setting)).toHaveLength(1);
 	});
@@ -82,7 +88,9 @@ describe("a video's sound on its own track", () => {
 			mode: "overwrite",
 		}).data;
 		// The overwritten stretch of sound was replaced, not layered.
-		const sounds = media(data).filter((c) => data.tracks.find((t) => t.id === c.trackId)?.kind === "audio");
+		const sounds = media(data).filter(
+			(c) => data.tracks.find((t) => t.id === c.trackId)?.kind === "audio",
+		);
 		const at1500 = sounds.filter((c) => c.startMs <= 1500 && c.startMs + c.durationMs > 1500);
 		expect(at1500).toHaveLength(1);
 		expect(at1500[0].inMs).toBe(5000);

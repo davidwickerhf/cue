@@ -869,9 +869,34 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			);
 			current = `sdo${label}`;
 		}
-		chains.push(
-			`[${current}][${label}]overlay=x='${W}*(${X})+${dx}-w/2':y='${H}*(${Y})+${dy}-h/2':enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
-		);
+		const position = `x='${W}*(${X})+${dx}-w/2':y='${H}*(${Y})+${dy}-h/2'`;
+		if (clip.blend && clip.blend !== "normal") {
+			// Blend modes: the picture is laid on a canvas of the mode's neutral colour (which
+			// leaves what is below unchanged), then that whole frame is blended with the edit.
+			const neutral =
+				clip.blend === "multiply" || clip.blend === "darken"
+					? "white"
+					: clip.blend === "screen" || clip.blend === "lighten"
+						? "black"
+						: "0x808080";
+			const mode = {
+				multiply: "multiply",
+				screen: "screen",
+				overlay: "overlay",
+				"soft-light": "softlight",
+				darken: "darken",
+				lighten: "lighten",
+			}[clip.blend];
+			chains.push(
+				`color=c=${neutral}:s=${W}x${H}:r=${fps}:d=${s(lengthMs)},format=rgba[nb${label}]`,
+				`[nb${label}][${label}]overlay=${position}:enable='between(t,${start},${end})':eof_action=pass,format=gbrap[nl${label}]`,
+				`[${current}]format=gbrap[bb${label}]`,
+				`[bb${label}][nl${label}]blend=all_mode=${mode}:enable='between(t,${start},${end})',format=yuva420p[o${index}]`,
+			);
+		} else
+			chains.push(
+				`[${current}][${label}]overlay=${position}:enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
+			);
 		current = `o${index}`;
 	}
 	const scale = data.export.scale;
@@ -931,6 +956,10 @@ function effectFilters(effects: Effects | undefined, height: number): string[] {
 		effects.vignette > 0 ? `vignette=angle=${(0.15 + effects.vignette * 0.75).toFixed(3)}` : "",
 		effects.glow > 0
 			? `glow:${(10 * px + effects.glow * 20 * px).toFixed(2)}:${(effects.glow * 0.8).toFixed(3)}`
+			: "",
+		// Grain on brightness only (like film), new every frame.
+		effects.grain > 0
+			? `format=yuva420p,noise=c0s=${Math.round(4 + effects.grain * 34)}:c0f=t+u`
 			: "",
 	].filter(Boolean);
 }

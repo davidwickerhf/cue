@@ -39,8 +39,17 @@ export const contract = {
 			"Cue's motion graphic templates (lower thirds, titles, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
 		input: {
 			category: z
-				.enum(["lower third", "title", "chart", "stat", "callout", "list", "quote", "transition",
-					"annotation"])
+				.enum([
+					"lower third",
+					"title",
+					"chart",
+					"stat",
+					"callout",
+					"list",
+					"quote",
+					"transition",
+					"annotation",
+				])
 				.optional(),
 		},
 	},
@@ -397,7 +406,7 @@ export const contract = {
 	},
 	update_clip: {
 		description:
-			"Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow: 0–1, stabilize: boolean} (partial, merged) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+			"Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow, grain (film grain): 0–1, stabilize: boolean} (partial, merged) or null; on an adjustment layer vignette and grain give the whole edit a filmic look. blend: normal | multiply | screen | overlay | soft-light | darken | lighten combines a picture with the tracks below (multiply a paper texture over everything, screen a light leak) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: {

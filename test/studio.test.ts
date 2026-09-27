@@ -110,10 +110,16 @@ describe("zoom framing", () => {
 	});
 
 	it("puts the cursor where the zoomed picture shows it", () => {
-		const zooms: Zoom[] = [{ id: "z", startMs: 0, endMs: 4000, scale: 2, x: 0.5, y: 0.5, easeMs: 1 }];
+		const zooms: Zoom[] = [
+			{ id: "z", startMs: 0, endMs: 4000, scale: 2, x: 0.5, y: 0.5, easeMs: 1 },
+		];
 		const place = { left: 0.1, top: 0.1, width: 0.8, height: 0.8 };
 		// The focus stays in the middle of the picture.
-		expect(onCanvas({ x: 0.5, y: 0.5 }, 2000, zooms, place)).toMatchObject({ x: 0.5, y: 0.5, zoom: 2 });
+		expect(onCanvas({ x: 0.5, y: 0.5 }, 2000, zooms, place)).toMatchObject({
+			x: 0.5,
+			y: 0.5,
+			zoom: 2,
+		});
 		// A quarter in shows at the picture's edge when zoomed 2×.
 		expect(onCanvas({ x: 0.25, y: 0.5 }, 2000, zooms, place).x).toBeCloseTo(0.1, 5);
 	});

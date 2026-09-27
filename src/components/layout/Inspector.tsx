@@ -1733,11 +1733,19 @@ function EffectsSection({
 	video?: boolean;
 	adjustment?: boolean;
 }) {
-	const e = { blur: 0, sharpen: 0, vignette: 0, glow: 0, stabilize: false, ...clip.effects };
+	const e = {
+		blur: 0,
+		sharpen: 0,
+		vignette: 0,
+		glow: 0,
+		grain: 0,
+		stabilize: false,
+		...clip.effects,
+	};
 	const set = (effects: Record<string, unknown> | null) =>
 		void run("update_clip", { id: clip.id, patch: { effects } });
 	const pct = (v: number) => (v ? `${Math.round(v * 100)}` : "Off");
-	const slider = (name: "blur" | "sharpen" | "vignette" | "glow", label: string) => (
+	const slider = (name: "blur" | "sharpen" | "vignette" | "glow" | "grain", label: string) => (
 		<Field label={label}>
 			<Range
 				value={e[name]}
@@ -1765,6 +1773,32 @@ function EffectsSection({
 			{slider("vignette", "Vignette")}
 			{/* Glow needs the picture itself, so an adjustment layer can't glow what's below it. */}
 			{!adjustment && slider("glow", "Glow")}
+			{slider("grain", "Film grain")}
+			{!adjustment && (
+				<Field label="Blend">
+					<select
+						value={clip.blend ?? "normal"}
+						onChange={(ev) =>
+							void run("update_clip", { id: clip.id, patch: { blend: ev.target.value } })
+						}
+						className="h-8 w-full rounded-md border border-border bg-field px-2 text-[12px]"
+					>
+						{[
+							["normal", "Normal"],
+							["multiply", "Multiply (paper, shadows)"],
+							["screen", "Screen (light leaks, glows)"],
+							["overlay", "Overlay (textures)"],
+							["soft-light", "Soft light"],
+							["darken", "Darken"],
+							["lighten", "Lighten"],
+						].map(([value, label]) => (
+							<option key={value} value={value}>
+								{label}
+							</option>
+						))}
+					</select>
+				</Field>
+			)}
 			{video && (
 				<Toggle
 					label="Stabilise (analysed on export)"

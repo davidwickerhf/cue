@@ -244,9 +244,21 @@ export interface Effects {
 	sharpen: number;
 	vignette: number;
 	glow: number;
+	/** Film grain, 0–1: moving noise over the picture (archive footage, paper, a filmic look). */
+	grain: number;
 	/** Smooth out camera shake (analysed on export). */
 	stabilize: boolean;
 }
+
+/** How a picture combines with what is under it (textures: multiply for paper, screen for light leaks). */
+export type BlendMode =
+	| "normal"
+	| "multiply"
+	| "screen"
+	| "overlay"
+	| "soft-light"
+	| "darken"
+	| "lighten";
 
 /** Rounded corners and a drop shadow around a picture (the "studio" look of screen recordings). */
 export interface Frame {
@@ -286,6 +298,8 @@ export interface MediaClip {
 	key?: ChromaKey;
 	effects?: Effects;
 	frame?: Frame;
+	/** Blend with the tracks below; none is normal. */
+	blend?: BlendMode;
 	/** Motion graphics: this clip's text and colour changes, and whether it loops. */
 	motion?: import("./motion").MotionSettings;
 	/** How this clip enters from the clip before it on the same track. */

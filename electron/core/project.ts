@@ -217,14 +217,31 @@ export const effectsSchema = z.object({
 	sharpen: z.number().min(0).max(1),
 	vignette: z.number().min(0).max(1),
 	glow: z.number().min(0).max(1),
+	grain: z.number().min(0).max(1).default(0),
 	stabilize: z.boolean(),
 });
+export const BLEND_MODES = [
+	"normal",
+	"multiply",
+	"screen",
+	"overlay",
+	"soft-light",
+	"darken",
+	"lighten",
+] as const;
 export const frameSchema = z.object({
 	radius: z.number().min(0).max(400),
 	shadow: z.number().min(0).max(1),
 });
 export const DEFAULT_FRAME = { radius: 24, shadow: 0.5 };
-export const NO_EFFECTS = { blur: 0, sharpen: 0, vignette: 0, glow: 0, stabilize: false };
+export const NO_EFFECTS = {
+	blur: 0,
+	sharpen: 0,
+	vignette: 0,
+	glow: 0,
+	grain: 0,
+	stabilize: false,
+};
 export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temperature: 0 };
 export const transitionSchema = z.object({
 	kind: z.enum(TRANSITION_KINDS),
@@ -395,6 +412,7 @@ const mediaClipSchema = z.object({
 	key: keySchema.optional(),
 	effects: effectsSchema.optional(),
 	frame: frameSchema.optional(),
+	blend: z.enum(BLEND_MODES).optional(),
 	motion: motionSettingsSchema.optional(),
 	transitionIn: transitionSchema.optional(),
 	groupId: z.string().optional(),

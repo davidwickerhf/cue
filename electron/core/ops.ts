@@ -5,6 +5,7 @@ import type { MotionSettings } from "./motion";
 import {
 	aiSchema,
 	assertUnique,
+	BLEND_MODES,
 	CLIP_LABELS,
 	captionWordSchema,
 	clipEnd,
@@ -101,6 +102,8 @@ export const mediaClipInput = z.object({
 		.partial()
 		.optional(),
 	frame: frameSchema.partial().optional(),
+	/** Blend with the tracks below (multiply for paper textures, screen for light leaks). */
+	blend: z.enum(BLEND_MODES).optional(),
 	/** Motion graphics: new text per text layer, colour swaps and looping. */
 	motion: motionSettingsSchema.optional(),
 });
@@ -150,6 +153,7 @@ export const clipPatch = z
 		mask: maskSchema.partial().nullable(),
 		key: keySchema.partial().nullable(),
 		effects: effectsSchema.partial().nullable(),
+		blend: z.enum(BLEND_MODES).nullable(),
 		frame: frameSchema.partial().nullable(),
 		motion: motionSettingsSchema.nullable(),
 		wordStyle: wordStyleSchema.nullable(),
@@ -782,6 +786,7 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 			: {}),
 		...(input.frame ? { frame: frameSchema.parse({ ...DEFAULT_FRAME, ...input.frame }) } : {}),
 		...(input.motion && a.kind === "lottie" ? { motion: input.motion } : {}),
+		...(input.blend && input.blend !== "normal" ? { blend: input.blend } : {}),
 	});
 }
 
@@ -1362,6 +1367,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				effects,
 				frame,
 				motion,
+				blend,
 				wordStyle,
 				words,
 				shape,
@@ -1396,7 +1402,12 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 								if (effects === null) return undefined;
 								const next = effectsSchema.parse({ ...NO_EFFECTS, ...current.effects, ...effects });
 								// All off is the same as none.
-								return next.blur || next.sharpen || next.vignette || next.glow || next.stabilize
+								return next.blur ||
+									next.sharpen ||
+									next.vignette ||
+									next.glow ||
+									next.grain ||
+									next.stabilize
 									? next
 									: undefined;
 							})(),
@@ -1413,6 +1424,9 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				...(motion === undefined || current.type !== "media"
 					? {}
 					: { motion: mergeMotion(current.motion, motion) }),
+				...(blend === undefined || current.type !== "media"
+					? {}
+					: { blend: blend === null || blend === "normal" ? undefined : blend }),
 			};
 			const merged =
 				current.type === "media"

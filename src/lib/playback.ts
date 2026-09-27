@@ -48,6 +48,8 @@ interface Slot {
 	keyer?: Keyer | null;
 	/** Dark-edge overlay for the vignette effect, made on first use. */
 	vignette?: HTMLDivElement;
+	/** Film grain over the slot's picture (made on first use). */
+	grain?: HTMLDivElement;
 	signal?: HTMLDivElement;
 	/** Set once the slot's layer is rebuilt; stops its frame callbacks. */
 	disposed?: boolean;
@@ -75,6 +77,29 @@ interface Index {
 }
 
 const clipEnd = (c: Clip) => c.startMs + c.durationMs;
+
+let grainUrl: string | null = null;
+/** A tile of random light and dark specks, drawn once. */
+function grainTile(): string {
+	if (grainUrl) return grainUrl;
+	const size = 192;
+	const canvas = document.createElement("canvas");
+	canvas.width = size;
+	canvas.height = size;
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return "";
+	const img = ctx.createImageData(size, size);
+	for (let i = 0; i < img.data.length; i += 4) {
+		const v = Math.random() < 0.5 ? 0 : 255;
+		img.data[i] = v;
+		img.data[i + 1] = v;
+		img.data[i + 2] = v;
+		img.data[i + 3] = Math.random() * 70;
+	}
+	ctx.putImageData(img, 0, 0);
+	grainUrl = canvas.toDataURL();
+	return grainUrl;
+}
 
 export function cssFilter(grade: ColorGrade | undefined): string {
 	if (!grade) return "none";
@@ -710,6 +735,9 @@ class PlaybackEngine {
 				assigned[free >= 0 ? free : assigned.findIndex((a) => !a)] = c;
 			}
 			const top = shown.at(-1);
+			// Blend modes apply to the whole track layer (it is its own stacking context).
+			const blend = top?.blend && top.blend !== "normal" ? top.blend : "";
+			if (layer.root.style.mixBlendMode !== blend) layer.root.style.mixBlendMode = blend;
 			layer.slots.forEach((slot, i) => {
 				this.renderSlot(slot, assigned[i], ms);
 				slot.frame.style.zIndex = assigned[i] && assigned[i] === top ? "1" : "0";
@@ -725,6 +753,28 @@ class PlaybackEngine {
 			}
 		}
 		this.drawText(ms);
+	}
+
+	/** Moving film grain over the slot's picture (made on first use). */
+	private showGrain(slot: Slot, effects: Effects | undefined) {
+		const amount = effects?.grain ?? 0;
+		if (!amount) {
+			if (slot.grain) slot.grain.style.display = "none";
+			return;
+		}
+		if (!slot.grain) {
+			slot.grain = document.createElement("div");
+			slot.grain.className = "pointer-events-none absolute inset-0";
+			slot.grain.style.zIndex = "2";
+			slot.grain.style.backgroundImage = `url(${grainTile()})`;
+			slot.grain.style.backgroundSize = "192px 192px";
+			slot.frame.append(slot.grain);
+		}
+		const g = slot.grain.style;
+		g.display = "";
+		g.opacity = (0.15 + amount * 0.55).toFixed(2);
+		// A new position every frame, so the grain moves like film.
+		g.backgroundPosition = `${Math.floor(Math.random() * 192)}px ${Math.floor(Math.random() * 192)}px`;
 	}
 
 	/** A dark edge over the slot's picture (made on first use). */
@@ -868,6 +918,7 @@ class PlaybackEngine {
 		if (slot.signal)
 			slot.signal.style.display = tr?.kind === "signal-glitch" && p < 1 ? "" : "none";
 		this.showVignette(slot, look?.effects);
+		this.showGrain(slot, look?.effects);
 		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
 		if (clip.key && !isMotion) {
 			if (slot.keyer === undefined) {
@@ -1005,6 +1056,7 @@ class PlaybackEngine {
 		);
 		frame.backdropFilter = backdrop === "none" ? "" : backdrop;
 		this.showVignette(slot, look?.effects);
+		this.showGrain(slot, look?.effects);
 		slot.video.style.display = "none";
 		slot.image.style.display = "none";
 		if (slot.motion) slot.motion.style.display = "none";
