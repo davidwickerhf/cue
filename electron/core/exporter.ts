@@ -976,8 +976,8 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	const graph = path.join(os.tmpdir(), `cue-graph-${Date.now()}.txt`);
 	await fs.writeFile(graph, chains.join(";\n"));
 	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
-	try {
-		await ffmpegWithProgress(
+	const encode = (video: string[]) =>
+		ffmpegWithProgress(
 			[
 				...inputs,
 				"-filter_complex_script",
@@ -985,7 +985,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				"-map",
 				"[vout]",
 				...audioMaps,
-				...encoder(data),
+				...video,
 				"-r",
 				String(fps),
 				...rangeArgs(ctx.range, lengthMs),
@@ -996,6 +996,22 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			(fraction) =>
 				ctx.onProgress?.((drawn.length ? 0.5 : 0) + fraction * (drawn.length ? 0.5 : 1)),
 		);
+	try {
+		try {
+			await encode(encoder(data));
+		} catch (error) {
+			// The Mac's hardware encoder sometimes refuses to start ("Error initializing
+			// output stream"); the software encoder always can, so try that before failing.
+			const hardwareFailed =
+				data.export.hardware &&
+				/videotoolbox|Error initializing output stream/i.test((error as Error).message);
+			if (!hardwareFailed) throw error;
+			await encode(encoder({ ...data, export: { ...data.export, hardware: false } }));
+		}
+	} catch (error) {
+		// A failed export leaves no half-written file behind to block the next one.
+		await fs.rm(out, { force: true });
+		throw error;
 	} finally {
 		await fs.rm(graph, { force: true });
 	}
