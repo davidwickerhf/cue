@@ -2402,7 +2402,7 @@ function ClipView({
 				{clip.groupId && <LinkSimple weight="bold" className="size-3 shrink-0 opacity-80" />}
 				<span className="truncate">{label}</span>
 				{media && media.speed !== 1 && (
-					<span className="rounded bg-black/30 px-1 text-[10px]">{media.speed}×</span>
+					<span className="rounded bg-black/30 px-1 text-[10px]">{+media.speed.toFixed(2)}×</span>
 				)}
 				{line && line.status !== "ok" && line.status !== "empty" && (
 					<span
