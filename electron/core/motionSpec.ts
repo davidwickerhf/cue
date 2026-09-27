@@ -418,7 +418,13 @@ function fontFor(family: (typeof FONT_FAMILIES)[number], weight: number, italic 
 }
 
 /** Rough advance widths (share of the size) for characters the fonts do not have. */
-const AVERAGE_WIDTH: Record<string, number> = { sans: 0.56, display: 0.58, serif: 0.46, mono: 0.6, ui: 0.56 };
+const AVERAGE_WIDTH: Record<string, number> = {
+	sans: 0.56,
+	display: 0.58,
+	serif: 0.46,
+	mono: 0.6,
+	ui: 0.56,
+};
 
 /**
  * How wide a line (the widest line, for several) of text is, in pixels, from

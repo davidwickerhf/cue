@@ -62,6 +62,7 @@ import {
 import { analyzeReference } from "./core/reference";
 import type { AiRuntime } from "./core/runtime";
 import { type NativeCapture, nativeMp4Args, startNativeCapture } from "./core/screenrec";
+import { downloadSfx, generateSfx, searchSfx } from "./core/sfx";
 import { parseSrt } from "./core/srt";
 import type { ProjectStore } from "./core/store";
 import { TITLE_TEMPLATES } from "./core/titles";
@@ -80,6 +81,8 @@ import type {
 
 /** Tracks found with find_music, by id, for import_music. */
 const foundMusic = new Map<string, MusicTrack>();
+/** Sounds found with find_sfx, by id, for import_sfx. */
+const foundSfx = new Map<string, MusicTrack>();
 /** Pictures and footage found with find_media, by id, for import_found. */
 const foundMedia = new Map<string, FoundMedia>();
 
@@ -1923,6 +1926,92 @@ export class Controller extends EventEmitter {
 				};
 			}
 
+			case "find_sfx": {
+				const { query, maxSeconds, limit } = parseInput("find_sfx", params);
+				const sounds = await this.job("Searching for sound effects", () =>
+					searchSfx({ query, maxSeconds, limit }),
+				);
+				for (const t of sounds) foundSfx.set(t.id, t);
+				return {
+					sounds: sounds.map((t) => ({
+						id: t.id,
+						title: t.title,
+						creator: t.creator,
+						seconds: Math.round(t.durationMs / 100) / 10,
+						licence: t.licence,
+						tags: t.tags,
+						credit: t.credit,
+					})),
+					note: sounds.length
+						? "Add one with import_sfx {id, atMs}. Its credit line goes in the credits."
+						: "Nothing matched: try simpler words, or make one with generate_sfx.",
+				};
+			}
+			case "import_sfx": {
+				const input = parseInput("import_sfx", params);
+				const sound = foundSfx.get(input.id);
+				if (!sound)
+					throw new Error(
+						"Unknown sound id: search with find_sfx first and use an id from its results.",
+					);
+				const file = await this.job(`Downloading ${sound.title}`, () =>
+					downloadSfx(sound, this.store.projectDir),
+				);
+				const { asset, clipId, trackId } = await this.store.addSound(file, actor, {
+					name: sound.title.slice(0, 80),
+					credit: {
+						title: sound.title,
+						creator: sound.creator,
+						licence: sound.licence,
+						licenceUrl: sound.licenceUrl,
+						sourceUrl: sound.sourceUrl,
+						line: sound.credit,
+					},
+					place:
+						input.atMs !== undefined
+							? { trackId: input.trackId, atMs: input.atMs, volume: input.volume }
+							: undefined,
+				});
+				return { ...this.describeAsset(asset), clipId, trackId, credit: sound.credit };
+			}
+			case "generate_sfx": {
+				const input = parseInput("generate_sfx", params);
+				const times = Array.isArray(input.atMs)
+					? input.atMs
+					: input.atMs !== undefined
+						? [input.atMs]
+						: [];
+				const count = Math.max(input.variants, times.length);
+				const made = [];
+				for (let i = 0; i < count; i++) {
+					const file = path.join(
+						this.store.projectDir,
+						"sfx",
+						`${input.kind}-${input.character}-${Date.now().toString(36)}-${i}.wav`,
+					);
+					const sound = await this.job(`Making a ${input.kind}`, () =>
+						generateSfx(
+							input.kind,
+							{ character: input.character, durationMs: input.durationMs },
+							file,
+						),
+					);
+					const at = times[i] ?? (times.length === 1 ? times[0] : undefined);
+					const { asset, clipId, trackId } = await this.store.addSound(sound.file, actor, {
+						name: `SFX: ${input.kind}, ${input.character} #${sound.seed.toString(36).slice(-4)}`,
+						generation: { provider: "cue", model: "sfx-synth", prompt: sound.about },
+						place:
+							at !== undefined
+								? { trackId: input.trackId, atMs: at, volume: input.volume }
+								: undefined,
+					});
+					made.push({ ...this.describeAsset(asset), clipId, trackId, about: sound.about });
+				}
+				return {
+					sounds: made,
+					note: "Original sounds made by Cue: no credit needed. Each is a different variant.",
+				};
+			}
 			case "seek":
 				return this.command({ type: "seek", ms: parseInput("seek", params).ms });
 			case "play":

@@ -1270,6 +1270,54 @@ export const contract = {
 			limit: z.number().int().min(1).max(20).default(8),
 		},
 	},
+	find_sfx: {
+		description:
+			"Search openly licensed sound effects (Freesound and others through Openverse; CC0, public domain, CC BY, CC BY-SA) for the exact sound a moment needs: 'door slam', 'camera shutter', 'crowd cheer', 'keyboard typing', 'wind'. Returns short sounds with id, length, licence and credit. Add one with import_sfx. Use real recorded sounds for real-world things; generate_sfx for designed ones (whooshes, risers, hits, UI sounds).",
+		input: {
+			query: z.string().min(2),
+			maxSeconds: z.number().min(0.1).max(60).default(12),
+			limit: z.number().int().min(1).max(20).default(8),
+		},
+	},
+	import_sfx: {
+		description:
+			"Download a sound found with find_sfx (by id), add it to the media with its credit, and place it at atMs on an SFX track (a free one, so sounds never cover each other). Put the credit line in the credits.",
+		input: {
+			id: z.string(),
+			atMs: z.number().min(0).optional(),
+			trackId: z.string().optional(),
+			volume: z.number().min(0).max(2).default(0.8),
+		},
+	},
+	generate_sfx: {
+		description:
+			"Synthesise original sound effects, a new variant every time (pitch, length, envelope and space vary), so repeated events don't repeat the same file. kind: whoosh, swish (short), riser, downlifter, impact, sub-drop, hit, pop, click, glitch, shimmer, beep, thump. character fits the material: soft (paper, gentle UI), bright (UI, tech), dark (tension, cinema), heavy (trailers, drops), digital (glitchy, screen), organic (neutral). variants makes several at once; atMs (one or a list, one per variant) places them on a free SFX track. No credit needed.",
+		input: {
+			kind: z.enum([
+				"whoosh",
+				"swish",
+				"riser",
+				"downlifter",
+				"impact",
+				"sub-drop",
+				"hit",
+				"pop",
+				"click",
+				"glitch",
+				"shimmer",
+				"beep",
+				"thump",
+			]),
+			character: z
+				.enum(["soft", "bright", "dark", "heavy", "digital", "organic"])
+				.default("organic"),
+			durationMs: z.number().min(30).max(10000).optional(),
+			variants: z.number().int().min(1).max(8).default(1),
+			atMs: z.union([z.number().min(0), z.array(z.number().min(0)).max(8)]).optional(),
+			trackId: z.string().optional(),
+			volume: z.number().min(0).max(2).default(0.7),
+		},
+	},
 	import_music: {
 		description:
 			"Download a track found with find_music (by id), add it to the media with its credit, and lay it on the music track (made if missing) from startMs with fades, ducked under the voiceover. durationMs trims it (default: the whole track). Put the returned credit line in the credits. place false only adds it to the media.",

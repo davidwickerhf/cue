@@ -63,7 +63,7 @@ Plan an edit as a list of techniques tied to moments ("0:12 J-cut into the demo;
 - **Brand consistency.** One font family for titles, one for text; a palette of a background, a text colour and one accent; the same positions for recurring graphics.
 
 ## Sound design
-- **Every visual event has a sound.** Whooshes on moves and transitions (the peak on the cut: use the library asset's syncMs with atMs), pops on things appearing, ticks on counters and clicks, paper slaps on collage, impacts on slams, risers into reveals. Vary them; keep them 12–18 dB under the voice.
+- **Every visual event has a sound, and no two are the same file.** Whooshes on moves and transitions (the peak on the cut), pops on things appearing, ticks on counters and clicks, paper slaps on collage, impacts on slams, risers into reveals. Repeating one library whoosh on every cut sounds cheap: make variants with generate_sfx {kind, character, variants, atMs: [...]} (a new pitch, length and space each time) and pick the character from the material (soft for paper, bright or digital for screens and UI, dark for tension, heavy for drops and trailers). For real-world sounds (a door, a crowd, rain, a shutter) use find_sfx then import_sfx. Keep them 12–18 dB under the voice.
 - **Room tone.** A bed of room tone under the whole edit so silences don't sound dead (library sfx-room-tone).
 - **Music.** A bed that fits the tone: generate_music {mood} made to measure, or find_music for a licensed track (credit it). Edit music on phrase boundaries (cuts on the downbeat, detect_beats); duck it under the voice (auto_mix does).
 - **Silence for emphasis.** Drop the music a beat before a key line or punchline, bring it back after.

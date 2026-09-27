@@ -3582,6 +3582,62 @@ export class ProjectStore extends EventEmitter {
 	 * Adds music (found or made) to the library with its credit or generation, and lays it
 	 * on the music track (made if missing) with fades, ducked under the voiceover.
 	 */
+	/** Imports a sound effect and, with a place, puts it at atMs on a free SFX track (never over another sound). */
+	async addSound(
+		file: string,
+		actor: Actor,
+		extra: {
+			name: string;
+			credit?: Asset["credit"];
+			generation?: Asset["generation"];
+			place?: { trackId?: string; atMs: number; volume: number };
+		},
+	): Promise<{ asset: Asset; clipId?: string; trackId?: string }> {
+		const [imported] = await this.importMedia([file], actor);
+		if (!imported) throw new Error("Could not import the sound.");
+		const patch: Partial<Asset> = {
+			name: extra.name,
+			...(extra.credit ? { credit: extra.credit } : {}),
+			...(extra.generation ? { generation: extra.generation, origin: "generated" as const } : {}),
+		};
+		this.apply({ type: "updateAsset", id: imported.id, patch }, actor);
+		const asset = { ...imported, ...patch };
+		const place = extra.place;
+		if (!place) return { asset };
+		let trackId = place.trackId;
+		let clipId: string | undefined;
+		await this.transaction(actor, `Placed ${extra.name}`, () => {
+			if (!trackId) {
+				const sfx = this.current.tracks.find(
+					(t) => t.kind === "audio" && !t.voiceover && /sfx|effects|sound/i.test(t.name),
+				);
+				trackId =
+					sfx?.id ??
+					(this.apply({ type: "addTrack", kind: "audio", name: "SFX" }, actor)
+						.created?.[0] as string);
+			}
+			clipId = this.apply(
+				{
+					type: "addClips",
+					avoidOverlap: true,
+					clips: [
+						{
+							type: "media",
+							trackId,
+							assetId: asset.id,
+							startMs: place.atMs,
+							volume: place.volume,
+							name: extra.name,
+						},
+					],
+				},
+				actor,
+			).created?.[0];
+		});
+		const placed = this.current.clips.find((c) => c.id === clipId);
+		return { asset, clipId, trackId: placed?.trackId ?? trackId };
+	}
+
 	async addMusic(
 		file: string,
 		actor: Actor,
