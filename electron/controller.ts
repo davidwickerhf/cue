@@ -928,7 +928,7 @@ export class Controller extends EventEmitter {
 
 			case "add_clips":
 				return this.store.apply(
-					{ type: "addClips", clips: parseInput("add_clips", params).clips },
+					{ type: "addClips", clips: parseInput("add_clips", params).clips, avoidOverlap: true },
 					actor,
 				);
 			case "add_text": {

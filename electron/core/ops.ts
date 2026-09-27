@@ -242,7 +242,12 @@ export const opSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("removeTrack"), id: z.string() }),
 	z.object({ type: z.literal("moveTrack"), id: z.string(), index: z.number().int().min(0) }),
 	// Clips
-	z.object({ type: z.literal("addClips"), clips: z.array(clipInput).min(1) }),
+	z.object({
+		type: z.literal("addClips"),
+		clips: z.array(clipInput).min(1),
+		/** Clips that would land on another clip go to a free track of the same kind. */
+		avoidOverlap: z.boolean().optional(),
+	}),
 	z.object({ type: z.literal("updateClip"), id: z.string(), patch: clipPatch }),
 	z.object({
 		type: z.literal("moveClips"),
@@ -989,6 +994,71 @@ function clearRange(
 	};
 }
 
+/**
+ * A track of the same kind as `trackId` where startMs–endMs is free of other clips: that
+ * track if it is, otherwise the nearest free unlocked one (below it for sound, above it for
+ * pictures and text), otherwise a new track next to it. Clips never land on top of each other.
+ */
+export function freeTrack(
+	data: ProjectData,
+	trackId: string,
+	startMs: number,
+	endMs: number,
+	ignore: ReadonlySet<string> = new Set(),
+): { data: ProjectData; trackId: string } {
+	const busy = (id: string) =>
+		data.clips.some(
+			(c) =>
+				c.trackId === id && !ignore.has(c.id) && c.startMs < endMs - 1 && clipEnd(c) > startMs + 1,
+		);
+	if (!busy(trackId)) return { data, trackId };
+	const from = track(data, trackId);
+	const same = data.tracks.filter((t) => t.kind === from.kind);
+	const at = same.findIndex((t) => t.id === trackId);
+	// Sound looks further down the list; pictures and text look upwards (the higher track).
+	const order =
+		from.kind === "audio"
+			? [...same.slice(at + 1), ...same.slice(0, at).reverse()]
+			: [...same.slice(0, at).reverse(), ...same.slice(at + 1)];
+	const free = order.find((t) => !t.locked && !busy(t.id));
+	if (free) return { data, trackId: free.id };
+	const index = data.tracks.findIndex((t) => t.id === trackId) + (from.kind === "audio" ? 1 : 0);
+	const name = from.voiceover ? `${from.name} ${same.length + 1}` : undefined;
+	const made = withTrack(data, from.kind, name, index);
+	const tracks = made.data.tracks.map((t) =>
+		t.id === made.track.id ? { ...t, overflow: true } : t,
+	);
+	return { data: { ...made.data, tracks }, trackId: made.track.id };
+}
+
+/**
+ * After lines move: takes sitting on an overflow track go back to the voiceover track when
+ * it has room for them there, and overflow tracks left empty are removed.
+ */
+function gatherTakes(data: ProjectData): ProjectData {
+	const main = voiceoverTrack(data);
+	let clips = data.clips;
+	if (main && !main.locked) {
+		const overflow = new Set(
+			data.tracks.filter((t) => t.overflow && t.kind === "audio").map((t) => t.id),
+		);
+		for (const c of clips) {
+			if (c.type !== "media" || !c.lineId || !overflow.has(c.trackId)) continue;
+			const busy = clips.some(
+				(o) =>
+					o.trackId === main.id &&
+					o.id !== c.id &&
+					o.startMs < clipEnd(c) - 1 &&
+					clipEnd(o) > c.startMs + 1,
+			);
+			if (!busy) clips = clips.map((o) => (o.id === c.id ? { ...o, trackId: main.id } : o));
+		}
+	}
+	const used = new Set(clips.map((c) => c.trackId));
+	const tracks = data.tracks.filter((t) => !t.overflow || used.has(t.id));
+	return { ...data, clips, tracks };
+}
+
 function placeTake(data: ProjectData, a: Asset): ProjectData {
 	if (!a.lineId) throw new Error(`"${a.name}" is not a take.`);
 	const line = data.lines.find((candidate) => candidate.id === a.lineId);
@@ -996,9 +1066,21 @@ function placeTake(data: ProjectData, a: Asset): ProjectData {
 	const existing = data.clips.find(
 		(c): c is MediaClip => c.type === "media" && c.lineId === a.lineId,
 	);
-	const trackId = existing?.trackId ?? voiceoverTrack(data)?.id;
-	if (!trackId) throw new Error("Add an audio track for the voiceover first.");
-	unlocked(data, trackId);
+	const preferred = existing?.trackId ?? voiceoverTrack(data)?.id;
+	if (!preferred) throw new Error("Add an audio track for the voiceover first.");
+	unlocked(data, preferred);
+	const draft = takeClip(a, preferred, data.settings.padMs, line.startMs);
+	// A take that would sit on another line's take (lines not yet spaced out, or a longer
+	// new take) goes to a free voiceover track instead of overlapping it.
+	const room = freeTrack(
+		data,
+		preferred,
+		draft.startMs,
+		clipEnd(draft),
+		new Set(existing ? [existing.id] : []),
+	);
+	data = room.data;
+	const trackId = room.trackId;
 	const next = takeClip(a, trackId, data.settings.padMs, line.startMs);
 	const kept = existing
 		? {
@@ -1348,8 +1430,22 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			let next = data;
 			const created: string[] = [];
 			const separate: string[] = [];
+			let movedOver = 0;
 			for (const input of op.clips) {
-				const c = buildClip(next, input);
+				let c = buildClip(next, input);
+				// Agents' clips never land on top of another clip on the same track; they go to a
+				// free track of the same kind (a transition into a clip overlaps on purpose).
+				if (
+					op.avoidOverlap &&
+					!("transitionIn" in c && c.transitionIn && overlaps(c.transitionIn))
+				) {
+					const room = freeTrack(next, c.trackId, c.startMs, clipEnd(c));
+					if (room.trackId !== c.trackId) {
+						next = room.data;
+						c = { ...c, trackId: room.trackId };
+						movedOver++;
+					}
+				}
 				next = { ...next, clips: [...next.clips, c] };
 				created.push(c.id);
 				if (!(input.type === "media" && input.linkedAudio === false)) separate.push(c.id);
@@ -1361,7 +1457,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			const sound = withSeparateSound(next, separate);
 			return {
 				data: sound.data,
-				summary: `Added ${created.length} clip(s)`,
+				summary: `Added ${created.length} clip(s)${movedOver ? ` (${movedOver} put on a free track so they don't overlap other clips)` : ""}`,
 				created: [...created, ...sound.created],
 			};
 		}
@@ -2524,7 +2620,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				);
 			}
 			return {
-				data: { ...data, lines, assets, clips },
+				data: gatherTakes({ ...data, lines, assets, clips }),
 				summary: `Updated line ${op.id} (${Object.keys(op.patch).join(", ")})`,
 			};
 		}
@@ -2557,7 +2653,7 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 					)
 				: data.clips;
 			return {
-				data: { ...data, lines, clips },
+				data: gatherTakes({ ...data, lines, clips }),
 				summary: `Shifted ${moved.size} line(s) by ${sec(op.deltaMs)}`,
 			};
 		}

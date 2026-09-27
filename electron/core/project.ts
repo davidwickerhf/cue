@@ -397,6 +397,7 @@ const trackSchema = z.object({
 	hidden: z.boolean().default(false),
 	volume: z.number().min(0).max(2).default(1),
 	voiceover: z.boolean().optional(),
+	overflow: z.boolean().optional(),
 	duck: z.boolean().optional(),
 	solo: z.boolean().optional(),
 	pan: z.number().min(-1).max(1).optional(),

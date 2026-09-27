@@ -143,6 +143,8 @@ export interface Track {
 	volume: number;
 	/** The track new voiceover takes are placed on. */
 	voiceover?: boolean;
+	/** Made by Cue so two clips wouldn't overlap; removed again once it is empty. */
+	overflow?: boolean;
 	/** Lower this track while the voiceover speaks. */
 	duck?: boolean;
 	/** Only soloed tracks are heard while any track is soloed. */
