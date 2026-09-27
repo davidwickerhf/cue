@@ -437,6 +437,7 @@ const controller = new Controller(store, {
 	projectsDir: () => appSettings.projectsDir,
 	captureSources: () => captureSources(false),
 	recipesFile: path.join(dataDir, "recipes.json"),
+	collectionsFile: path.join(dataDir, "collections.json"),
 	appSettings: {
 		get: () => appSettings,
 		set: async (patch) => {
@@ -1277,6 +1278,14 @@ function registerIpc() {
 				const data = JSON.parse(await fs.readFile(file, "utf8"));
 				data.name = `${data.name} copy`;
 				await fs.writeFile(target, `${JSON.stringify(data, null, "\t")}\n`);
+				// The copy goes in the same collection as the original.
+				const collection = await controller.collections.of(file);
+				if (collection)
+					await controller.call(
+						"move_to_collection",
+						{ projects: [target], collectionId: collection.id },
+						"user",
+					);
 				return target;
 			}
 			if (action === "trash") {
@@ -1293,6 +1302,11 @@ function registerIpc() {
 				if (store.filePath === file) await store.close();
 				await shell.trashItem(file);
 				await store.forget(file);
+				await controller.call(
+					"move_to_collection",
+					{ projects: [file], collectionId: null },
+					"user",
+				);
 				return controller.refreshRecentAndNotify();
 			}
 		},

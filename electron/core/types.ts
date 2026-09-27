@@ -654,6 +654,8 @@ export interface AppState {
 	agent: AgentStatus;
 	activity: ActivityEntry[];
 	recent: RecentProject[];
+	/** Goes up whenever a project collection changes (the projects overview reloads). */
+	collectionsVersion?: number;
 	jobs: JobStatus[];
 	ai: {
 		configured: boolean;
@@ -689,6 +691,8 @@ export interface ProjectSummary {
 	/** False when the file has been moved or deleted. */
 	exists: boolean;
 	problem?: string;
+	/** The collection it is filed in, if any. */
+	collectionId?: string;
 }
 
 export type PreviewMode = "all" | "voiceover" | "muted";

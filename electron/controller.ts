@@ -22,6 +22,7 @@ import {
 	recordingFiles,
 	type StudioChoice,
 } from "./core/capture";
+import { CollectionStore } from "./core/collections";
 import {
 	type CursorEvent,
 	normalise,
@@ -164,6 +165,8 @@ export interface ControllerHooks {
 	captureSources?: () => Promise<CaptureSources>;
 	/** Where user recipes are kept (app data). Without it only built-in recipes exist. */
 	recipesFile?: string;
+	/** Where project collections are kept (app data). */
+	collectionsFile?: string;
 }
 
 /**
@@ -202,13 +205,31 @@ export class Controller extends EventEmitter {
 	private lastCapture: CaptureResult | null = null;
 	private seq = 0;
 
+	/** Groups of projects in the projects overview. */
+	readonly collections: CollectionStore;
+	private collectionsVersion = 0;
+	/** After a collection changes: the projects overview reloads. */
+	private collectionsChanged(): void {
+		this.collectionsVersion++;
+		this.changed();
+	}
+
 	constructor(
 		readonly store: ProjectStore,
 		private readonly hooks: ControllerHooks,
 	) {
 		super();
+		this.collections = new CollectionStore(
+			hooks.collectionsFile ?? path.join(os.tmpdir(), "cue-collections.json"),
+		);
 		store.on("change", () => this.changed());
 		store.on("activity", () => this.changed());
+		// A project renamed on disk (e.g. from .cue.json to .cueproj) stays in its collection.
+		store.on(
+			"renamed",
+			(from: string, to: string) =>
+				void this.collections.renamed(from, to).then(() => this.collectionsChanged()),
+		);
 		void this.refreshRecent();
 		void this.refreshAi();
 	}
@@ -223,6 +244,7 @@ export class Controller extends EventEmitter {
 			agent: this.agent,
 			activity: this.store.getActivity().slice(0, 80),
 			recent: this.recent,
+			collectionsVersion: this.collectionsVersion,
 			jobs: this.jobs,
 			ai: {
 				configured: this.aiConfigured,
@@ -592,6 +614,31 @@ export class Controller extends EventEmitter {
 			case "list_recent_projects":
 				await this.refreshRecent();
 				return this.recent;
+			case "list_collections":
+				return this.collections.list();
+			case "create_collection": {
+				const { name, projects } = parseInput("create_collection", params);
+				const made = await this.collections.create(name, projects ?? []);
+				this.collectionsChanged();
+				return made;
+			}
+			case "rename_collection": {
+				const { id, name } = parseInput("rename_collection", params);
+				const renamed = await this.collections.rename(id, name);
+				this.collectionsChanged();
+				return renamed;
+			}
+			case "delete_collection": {
+				await this.collections.remove(parseInput("delete_collection", params).id);
+				this.collectionsChanged();
+				return { deleted: true };
+			}
+			case "move_to_collection": {
+				const { projects, collectionId } = parseInput("move_to_collection", params);
+				await this.collections.move(projects, collectionId);
+				this.collectionsChanged();
+				return { moved: projects.length, collectionId };
+			}
 			case "list_projects":
 				return this.projects();
 			case "close_project":
@@ -1738,9 +1785,22 @@ export class Controller extends EventEmitter {
 		const scanned = dir ? await scanProjects(dir) : [];
 		const byPath = new Map(this.recent.map((r) => [r.path, r]));
 		const files = [...new Set([...this.recent.map((r) => r.path), ...scanned])];
+		const collections = await this.collections.list();
 		const list = await Promise.all(
-			files.map((f) => summarise(f, (file) => this.store.toUrl(file), byPath.get(f))),
+			files.map(async (f) => {
+				const summary = await summarise(f, (file) => this.store.toUrl(file), byPath.get(f));
+				const collection = collections.find((c) => c.projects.includes(path.resolve(f)));
+				return collection ? { ...summary, collectionId: collection.id } : summary;
+			}),
 		);
+		// Projects filed in a collection are listed even when they are neither recent nor in the folder.
+		for (const c of collections)
+			for (const f of c.projects)
+				if (!files.includes(f))
+					list.push({
+						...(await summarise(f, (file) => this.store.toUrl(file))),
+						collectionId: c.id,
+					});
 		return list.sort(
 			(a, b) => Date.parse(b.openedAt ?? b.modifiedAt) - Date.parse(a.openedAt ?? a.modifiedAt),
 		);

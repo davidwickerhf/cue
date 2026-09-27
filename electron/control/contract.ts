@@ -153,8 +153,32 @@ export const contract = {
 	list_recent_projects: { description: "Recently opened projects.", input: {} },
 	list_projects: {
 		description:
-			"Every project in the projects overview (recent ones and those in the projects folder) with length, canvas, clip count and last change.",
+			"Every project in the projects overview (recent ones and those in the projects folder) with length, canvas, clip count, last change and the collection it is in (collectionId; see list_collections).",
 		input: {},
+	},
+	list_collections: {
+		description:
+			"Collections in the projects overview: named groups of projects, like folders (the pieces of one video — its edit, graphics made as their own projects, other versions). Each has an id, name and its project files. list_projects shows which collection each project is in.",
+		input: {},
+	},
+	create_collection: {
+		description:
+			"Make a collection in the projects overview, optionally with projects (their file paths) moved into it. A project is in one collection at most.",
+		input: { name: z.string().min(1).max(80), projects: z.array(z.string()).optional() },
+	},
+	rename_collection: {
+		description: "Rename a collection.",
+		input: { id: z.string(), name: z.string().min(1).max(80) },
+	},
+	delete_collection: {
+		description:
+			"Delete a collection. Its projects are not deleted: they go back to the ungrouped list.",
+		input: { id: z.string() },
+	},
+	move_to_collection: {
+		description:
+			"Move projects (file paths) into a collection, out of any other; collectionId null takes them out of their collection.",
+		input: { projects: z.array(z.string()).min(1), collectionId: z.string().nullable() },
 	},
 	close_project: {
 		description: "Save and close the open project, back to the projects overview.",
