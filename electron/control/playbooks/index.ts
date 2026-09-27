@@ -1,0 +1,38 @@
+import { AGENT_WORKFLOW } from "./agentWorkflow";
+import { EDITING_CRAFT } from "./editingCraft";
+import { MOTION_DESIGN } from "./motionDesign";
+import { OTHER_STYLES } from "./styles";
+import { VOX_EXPLAINER } from "./voxExplainer";
+
+/**
+ * Playbooks: what Cue's agents know about making videos, so they don't have to
+ * work it out each time. A playbook is a markdown document: how to work in Cue,
+ * editing craft, motion design, and recognisable styles taken apart into
+ * techniques with Cue's own tools and numbers. Agents read them with
+ * list_playbooks and get_playbook.
+ */
+export interface Playbook {
+	id: string;
+	name: string;
+	category: "workflow" | "craft" | "style";
+	/** One line: what it covers. */
+	summary: string;
+	/** When an agent should read it. */
+	useWhen: string;
+	body: string;
+}
+
+export const PLAYBOOKS: Playbook[] = [
+	AGENT_WORKFLOW,
+	EDITING_CRAFT,
+	MOTION_DESIGN,
+	VOX_EXPLAINER,
+	...OTHER_STYLES,
+];
+
+export function playbook(id: string): Playbook {
+	const found = PLAYBOOKS.find((p) => p.id === id);
+	if (!found)
+		throw new Error(`No playbook "${id}". Playbooks: ${PLAYBOOKS.map((p) => p.id).join(", ")}.`);
+	return found;
+}

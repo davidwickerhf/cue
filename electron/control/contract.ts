@@ -37,6 +37,15 @@ export const contract = {
 			startMs: z.number().min(0).optional(),
 		},
 	},
+	list_playbooks: {
+		description:
+			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first), editing craft, premium motion design, and recognisable styles (Vox explainer, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
+		input: { category: z.enum(["workflow", "craft", "style"]).optional() },
+	},
+	get_playbook: {
+		description: "A playbook's full text (markdown), by id from list_playbooks.",
+		input: { id: z.string() },
+	},
 	wait_for: {
 		description:
 			"Wait for a long call to finish. Calls that take longer than about 45 seconds (exports, voiceovers, transcripts) reply with {status: 'running', callId, progress} instead of their result; pass that callId here to wait again (up to about 45 seconds per call) and get the result. Never start the same work twice.",

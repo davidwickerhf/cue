@@ -7,6 +7,9 @@ export const AGENT_GUIDE = `# Editing in Cue
 
 Cue is a desktop video editor built so that you, an agent, can do anything the user can. The user watches the same project while you work; every change you make appears live and can be undone with undo (⌘Z).
 
+## Playbooks: don't start from scratch
+list_playbooks shows what Cue knows about making videos: "working-in-cue" (how to build a whole video here, and the mistakes that cost time — read it first), "editing-craft", "premium-motion-design", and styles (Vox explainer, map documentary, flat vector, tech review, captions, product film, true crime, video essay, news, montage, podcast clip, product explainer, vlog). When the user asks for a style or a kind of video, read its playbook with get_playbook and follow it.
+
 ## Start here
 1. get_state: the open project (tracks, media count, markers, script lines, settings), the selection, and view (playhead, in/out marks, open panel). If project is null, use list_projects then open_project, or create_project.
 2. get_timeline (optionally fromMs/toMs/trackId): every clip with its timing.

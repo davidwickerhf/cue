@@ -5,6 +5,7 @@ import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
 import { MOTION_GUIDE } from "./control/motionGuide";
+import { PLAYBOOKS, playbook } from "./control/playbooks";
 import { findLibraryAsset, LIBRARY_ASSETS, materializeLibraryAsset } from "./core/assetLibrary";
 import { binPath, filterMedia, mediaUses, usedAssetIds } from "./core/bins";
 import {
@@ -1177,6 +1178,16 @@ export class Controller extends EventEmitter {
 					),
 				);
 				return this.describeAsset(asset);
+			}
+			case "list_playbooks": {
+				const { category } = parseInput("list_playbooks", params);
+				return PLAYBOOKS.filter((p) => !category || p.category === category).map(
+					({ id, name, category: kind, summary, useWhen }) => ({ id, name, category: kind, summary, useWhen }),
+				);
+			}
+			case "get_playbook": {
+				const { id } = parseInput("get_playbook", params);
+				return playbook(id).body;
 			}
 			case "wait_for":
 				throw new Error("wait_for is answered by the control server for agents.");
