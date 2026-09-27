@@ -2,7 +2,8 @@ import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { crc32, deflateRawSync } from "node:zlib";
+import { promisify } from "node:util";
+import { crc32, deflateRaw } from "node:zlib";
 import { ffmpeg } from "./media";
 import { relativeToProject, resolveInProject } from "./paths";
 import { PROJECT_EXTENSION, sourceSpan } from "./project";
@@ -237,6 +238,8 @@ async function walk(dir: string): Promise<string[]> {
 
 type ZipEntry = { name: string; data: Buffer } | { name: string; file: string };
 
+const deflateAsync = promisify(deflateRaw);
+
 /** Already-compressed files are stored as they are; deflating them gains nothing. */
 const STORED = /\.(mp4|mov|m4a|mp3|aac|jpe?g|png|webp|gif|zip|lottie|mkv|webm)$/i;
 
@@ -264,7 +267,8 @@ export async function writeZip(
 	for (const entry of entries) {
 		const raw = "data" in entry ? entry.data : await fs.readFile(entry.file);
 		const store = STORED.test(entry.name);
-		const body = store ? raw : deflateRawSync(raw);
+		// Compressed off the main thread: a big package must not stall the app.
+		const body = store ? raw : await deflateAsync(raw);
 		if (raw.length >= 0xffffffff || offset >= 0xffffffff)
 			throw new Error("The package would be over 4 GB; trim the media or leave some out.");
 		const crc = crc32(raw);

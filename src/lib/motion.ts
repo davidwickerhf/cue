@@ -26,19 +26,42 @@ const fontFiles = import.meta.glob("../assets/motion-fonts/*.ttf", {
 	import: "default",
 }) as Record<string, string>;
 
-/** Registered once, before the first graphic loads (text layers look fonts up by name). */
-const fontsReady: Promise<unknown> = Promise.all(
-	MOTION_FONTS.map((f) => {
-		const url = Object.entries(fontFiles).find(([file]) => file.endsWith(`/${f.name}.ttf`))?.[1];
-		const ok = url
-			? DotLottie.registerFont(f.name, url).catch(() => false)
-			: Promise.resolve(false);
-		return ok.then((registered) => {
-			if (!registered) console.warn(`[motion] Could not register the font ${f.name}.`);
-			return registered;
-		});
-	}),
-);
+/**
+ * Registers the bundled fonts, before the first graphic loads (text layers look
+ * fonts up by name). A font that fails (its file couldn't be read while the app
+ * was busy) is tried again, and again before every new graphic, so one bad
+ * moment never leaves a session drawing text in the fallback font.
+ */
+const registered = new Set<string>();
+let registering: Promise<void> | null = null;
+function registerFonts(): Promise<void> {
+	if (registered.size === MOTION_FONTS.length) return Promise.resolve();
+	registering ??= (async () => {
+		for (let attempt = 0; attempt < 3 && registered.size < MOTION_FONTS.length; attempt++) {
+			if (attempt) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+			await Promise.all(
+				MOTION_FONTS.filter((f) => !registered.has(f.name)).map(async (f) => {
+					const url = Object.entries(fontFiles).find(([file]) =>
+						file.endsWith(`/${f.name}.ttf`),
+					)?.[1];
+					if (!url) return;
+					try {
+						const res = await fetch(url);
+						if (!res.ok) return;
+						const bytes = new Uint8Array(await res.arrayBuffer());
+						if (await DotLottie.registerFont(f.name, bytes)) registered.add(f.name);
+					} catch {}
+				}),
+			);
+		}
+		for (const f of MOTION_FONTS)
+			if (!registered.has(f.name)) console.warn(`[motion] Could not register the font ${f.name}.`);
+	})().finally(() => {
+		registering = null;
+	});
+	return registering;
+}
+void registerFonts();
 
 interface Player {
 	/** Made once the file is read (the player takes its data when created). */
@@ -136,7 +159,7 @@ function player(url: string, settings: MotionSettings | undefined): Player {
 		p.failed = message;
 		resolveReady();
 	};
-	Promise.all([load(url), fontsReady])
+	Promise.all([load(url), registerFonts()])
 		.then(([json]) => {
 			if (players.get(key) !== p) return resolveReady();
 			const dot = new DotLottie({
