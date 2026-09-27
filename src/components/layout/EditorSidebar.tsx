@@ -67,21 +67,24 @@ export function EditorSidebar() {
 	return (
 		<div className={cn("flex min-h-0 shrink-0 bg-surface", open && "border-r border-separator")}>
 			<nav
-				className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-separator py-2"
+				className="flex min-h-0 w-12 shrink-0 flex-col items-center border-r border-separator py-2"
 				aria-label="Panels"
 			>
-				{ITEMS.map((item) => (
-					<RailButton
-						key={item.id}
-						label={item.label}
-						active={open && panel === item.id}
-						onPress={() => choose(item.id)}
-						dot={item.id === "agent" && !!agentSeen}
-					>
-						{item.icon}
-					</RailButton>
-				))}
-				<div className="mt-auto">
+				{/* When the timeline leaves little height, the buttons scroll instead of spilling over it. */}
+				<div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto [scrollbar-width:none]">
+					{ITEMS.map((item) => (
+						<RailButton
+							key={item.id}
+							label={item.label}
+							active={open && panel === item.id}
+							onPress={() => choose(item.id)}
+							dot={item.id === "agent" && !!agentSeen}
+						>
+							{item.icon}
+						</RailButton>
+					))}
+				</div>
+				<div className="shrink-0 pt-1">
 					<RailButton
 						label="Project settings"
 						active={open && panel === "settings"}
