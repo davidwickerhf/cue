@@ -58,7 +58,12 @@ import { type MontageSource, planMontage } from "./montage";
 import { type LottieJson, motionDurationMs, motionInfo } from "./motion";
 import { readMotionFile } from "./motionFile";
 import { compileMotion, type TextBox, textBoxes } from "./motionSpec";
-import { buildTemplate, motionTemplate } from "./motionTemplates";
+import {
+	buildTemplate,
+	type FittedRegion,
+	motionTemplate,
+	templateRegions,
+} from "./motionTemplates";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { relativeToProject, resolveInProject } from "./paths";
 import {
@@ -2628,7 +2633,7 @@ export class ProjectStore extends EventEmitter {
 			place?: { trackId?: string; startMs?: number; durationMs?: number; atCutMs?: number };
 		},
 		actor: Actor,
-	): Promise<{ asset: Asset; clipId?: string }> {
+	): Promise<{ asset: Asset; clipId?: string; regions?: FittedRegion[] }> {
 		const source: MotionSource = input.template
 			? { template: input.template, params: input.params ?? {} }
 			: { spec: input.spec };
@@ -2688,7 +2693,12 @@ export class ProjectStore extends EventEmitter {
 			);
 			clipId = result.created?.[0];
 		});
-		return { asset: this.current.assets.find((a) => a.id === asset.id) ?? asset, clipId };
+		return {
+			asset: this.current.assets.find((a) => a.id === asset.id) ?? asset,
+			clipId,
+			// Device frames: where their see-through screens are, and how to fit footage under them.
+			regions: templateRegions(source, this.current.canvas),
+		};
 	}
 
 	/**

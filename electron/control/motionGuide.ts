@@ -53,6 +53,15 @@ Markers: "outro" at the start of the exit makes longer clips hold before it and 
 - Exit as carefully as you enter, faster (about 60% of the entrance time), and with an "outro" marker so the graphic can hold.
 - Data: label every number with its unit, round sensibly, cite the source, and highlight the one bar or slice the story is about.
 
+## Archive footage in a frame
+Device frames (list_motion_templates {category: "frame"}) label footage as source material: frame-crt (retro TV, 4:3 screen, scanlines), frame-laptop (16:9), frame-phone (portrait or landscape), frame-polaroid (square, caption), frame-film-strip (1–4 frames: regions frame-1…, the middle one "screen") and frame-photo-card (taped print, 16:9/4:3/3:2/1:1). Each is drawn with a see-through hole; create_motion_graphic and update_motion_graphic return regions: [{name, x, y, width, height (shares of the frame), fit: {"16:9", "4:3", "9:16": {x, y, scale, crop}}, pushed}].
+1. Place the frame on an upper picture track: create_motion_graphic {template: "frame-crt", params: {size: 0.66, x: 0.5, y: 0.5}, trackId: <upper track>, startMs, durationMs}.
+2. Put the footage on a track BELOW it over the same time, then fit it: pass fit: [{clipId}] to create_motion_graphic (or update_motion_graphic), or set update_clip {transform: region.fit["16:9"]} yourself (use "4:3" for 4:3 archive footage). The fit covers the hole with a little bleed under the device and crops the rest, so nothing spills past it.
+3. Grade the footage as archive: update_clip {color: {saturation: 0.7, contrast: 1.1}, effects: {grain: 0.3}} (black and white: saturation 0, temperature 0.05).
+4. Push the pair in together over the hold: on the frame clip, scale keyframes 1 → 1.06; on the footage clip, scale fit.scale → pushed.clip.scale and x, y fit → pushed.clip.x, pushed.clip.y, same times and ease (the frame scales around the canvas centre, so the footage has to move with it).
+5. Optionally lay paper under everything (import_library_asset {id: "paper-off-white", startMs}), film dust over it (import_library_asset {id: "film-dust", startMs, durationMs}), a paper slap (sfx-paper-slap) as the frame lands or a camera shutter (sfx-camera-shutter) on the cut. render_frame to check the footage fills the screen.
+When you move or resize the frame (update_motion_graphic params x, y, size), pass fit again to refit the clips.
+
 ## Patterns
 - Lower third: accent bar grows (rect, origin bottom, grow) → panel grows from the left (origin left, grow) → name rises inside a clip rect → role slides in → outro reverses.
 - Kinetic title: each line a text layer with a clip rect exactly around its line and enter rise with amount = line height, staggered 110 ms; a rule that draws under it.

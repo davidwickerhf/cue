@@ -18,6 +18,12 @@ import { TRANSITION_KINDS } from "../core/transitions";
  * and a method on the app's local control server; the editor window calls the
  * same methods as the user. Descriptions are written for the calling model.
  */
+/** Clips to fit into a device frame's see-through regions (by name, or in order). */
+const fitInput = z
+	.array(z.object({ clipId: z.string(), region: z.string().optional() }))
+	.max(8)
+	.optional();
+
 const line = lineInputSchema.describe(
 	"Script line: id, text, startMs on the timeline, optional targetMs and maxMs.",
 );
@@ -37,7 +43,7 @@ export const contract = {
 	},
 	list_motion_templates: {
 		description:
-			"Cue's motion graphic templates (lower thirds, titles, kinetic words, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, a subscribe reminder, a chapter progress bar, a route map, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
+			"Cue's motion graphic templates (lower thirds, titles, kinetic words, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, a subscribe reminder, a chapter progress bar, a route map, editorial annotations, device frames with see-through screens for footage (retro TV, laptop, phone, polaroid, film strip, taped photo), and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
 		input: {
 			category: z
 				.enum([
@@ -52,13 +58,14 @@ export const contract = {
 					"map",
 					"transition",
 					"annotation",
+					"frame",
 				])
 				.optional(),
 		},
 	},
 	create_motion_graphic: {
 		description:
-			"Make a motion graphic (a Lottie animation, played like video) from a template with params, or from a spec you write (see get_guide {topic: 'motion'}). It is added to the media; with trackId, startMs or atCutMs it is also placed on the timeline (on the top picture track when free there, else a new Graphics track). atCutMs centres a transition on a cut. Text and data are editable later with update_motion_graphic; look at it with render_frame.",
+			'Make a motion graphic (a Lottie animation, played like video) from a template with params, or from a spec you write (see get_guide {topic: \'motion\'}). It is added to the media; with trackId, startMs or atCutMs it is also placed on the timeline (on the top picture track when free there, else a new Graphics track). atCutMs centres a transition on a cut. Text and data are editable later with update_motion_graphic; look at it with render_frame. Device frames (category frame: frame-crt, frame-laptop, frame-phone, frame-polaroid, frame-film-strip, frame-photo-card) have see-through screens: the reply\'s regions give each screen\'s {name, x, y, width, height} (shares of the frame) and fit {"16:9", "4:3", "9:16"}: the {x, y, scale, crop} transform that makes a clip of that shape fill it. Put the frame on an upper track and the footage on a track below it; fit: [{clipId, region?}] applies the fit to those clips (by their media\'s shape) for you.',
 		input: {
 			template: z.string().optional(),
 			params: z.record(z.string(), z.unknown()).optional(),
@@ -68,16 +75,18 @@ export const contract = {
 			startMs: z.number().min(0).optional(),
 			durationMs: z.number().min(1).optional(),
 			atCutMs: z.number().min(0).optional(),
+			fit: fitInput,
 		},
 	},
 	update_motion_graphic: {
 		description:
-			"Rebuild a motion graphic made in Cue: params merge with its current ones (change a title, the data, the theme, colors); spec replaces it entirely; template switches to another template. Clips using it update; one undo step.",
+			"Rebuild a motion graphic made in Cue: params merge with its current ones (change a title, the data, the theme, colors); spec replaces it entirely; template switches to another template. Clips using it update; one undo step. Device frames reply with their regions again; pass fit [{clipId, region?}] to refit the footage after moving or resizing the frame.",
 		input: {
 			assetId: z.string(),
 			params: z.record(z.string(), z.unknown()).optional(),
 			spec: z.record(z.string(), z.unknown()).optional(),
 			template: z.string().optional(),
+			fit: fitInput,
 		},
 	},
 	get_motion_graphic: {

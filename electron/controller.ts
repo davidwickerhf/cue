@@ -31,7 +31,14 @@ import {
 import type { Rasteriser } from "./core/exporter";
 import { scanProjects, summarise } from "./core/library";
 import { ffmpeg } from "./core/media";
-import { describeParams, MOTION_TEMPLATES, MOTION_THEMES } from "./core/motionTemplates";
+import { fitToRegion } from "./core/motionFrames";
+import {
+	describeParams,
+	type FittedRegion,
+	MOTION_TEMPLATES,
+	MOTION_THEMES,
+	templateRegions,
+} from "./core/motionTemplates";
 import { reviewEdit } from "./core/notes";
 import { activeSequence, allSequences } from "./core/ops";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
@@ -1238,7 +1245,7 @@ export class Controller extends EventEmitter {
 				const input = parseInput("create_motion_graphic", params);
 				const placed =
 					input.trackId !== undefined || input.startMs !== undefined || input.atCutMs !== undefined;
-				const { asset, clipId } = await this.store.createMotionGraphic(
+				const { asset, clipId, regions } = await this.store.createMotionGraphic(
 					{
 						template: input.template,
 						params: input.params,
@@ -1260,19 +1267,26 @@ export class Controller extends EventEmitter {
 					...(clipId ? { clipId } : {}),
 					// Where the words landed, to line other things up with them.
 					...(input.spec ? { textBoxes: this.store.motionGraphicSource(asset.id).textBoxes } : {}),
+					...(regions ? { regions } : {}),
+					...(input.fit?.length ? await this.fitToFrame(asset.id, regions, input.fit, actor) : {}),
 				};
 			}
 			case "update_motion_graphic": {
-				const { assetId, ...change } = parseInput("update_motion_graphic", params);
+				const { assetId, fit, ...change } = parseInput("update_motion_graphic", params);
 				const asset = await this.store.updateMotionGraphic(assetId, change, actor);
+				const regions = templateRegions(asset.motionSource, this.store.current.canvas);
 				return {
 					...this.describeAsset(asset),
 					...(change.spec ? { textBoxes: this.store.motionGraphicSource(asset.id).textBoxes } : {}),
+					...(regions ? { regions } : {}),
+					...(fit?.length ? await this.fitToFrame(asset.id, regions, fit, actor) : {}),
 				};
 			}
 			case "get_motion_graphic": {
 				const { assetId } = parseInput("get_motion_graphic", params);
-				return this.store.motionGraphicSource(assetId);
+				const source = this.store.motionGraphicSource(assetId);
+				const regions = templateRegions(source.source, this.store.current.canvas);
+				return { ...source, ...(regions ? { regions } : {}) };
 			}
 			case "arrange_clips": {
 				const { layout, clipIds } = parseInput("arrange_clips", params);
@@ -1838,6 +1852,61 @@ export class Controller extends EventEmitter {
 		);
 		this.command({ type: "stopScreen" });
 		return done;
+	}
+
+	/**
+	 * Moves, scales and crops clips so they fill a device frame's see-through regions
+	 * (by region name, or in order), using the shape of each clip's media.
+	 */
+	private async fitToFrame(
+		frameAssetId: string,
+		regions: FittedRegion[] | undefined,
+		fit: { clipId: string; region?: string }[],
+		actor: Actor,
+	) {
+		if (!regions?.length)
+			throw new Error(
+				"This graphic has no see-through regions to fit clips into (use a frame template).",
+			);
+		const data = this.store.current;
+		const trackIndex = (id: string) => data.tracks.findIndex((t) => t.id === id);
+		const frameClips = data.clips.filter((c) => c.type === "media" && c.assetId === frameAssetId);
+		const frameTrack = Math.min(...frameClips.map((c) => trackIndex(c.trackId)));
+		const warnings: string[] = [];
+		// Without a region name, clips fill the main screen first, then the others in order.
+		const order = [
+			...regions.filter((r) => r.name === "screen"),
+			...regions.filter((r) => r.name !== "screen"),
+		];
+		const fitted = fit.map((item, i) => {
+			const clip = data.clips.find((c) => c.id === item.clipId);
+			if (clip?.type !== "media") throw new Error(`No video or image clip "${item.clipId}".`);
+			const region = item.region
+				? regions.find((r) => r.name === item.region)
+				: (order[i] ?? order[0]);
+			if (!region)
+				throw new Error(
+					`No region "${item.region}". Regions: ${regions.map((r) => r.name).join(", ")}.`,
+				);
+			const media = data.assets.find((a) => a.id === clip.assetId);
+			const aspect = media?.width && media.height ? media.width / media.height : 16 / 9;
+			if (frameClips.length && trackIndex(clip.trackId) <= frameTrack)
+				warnings.push(
+					`${clip.id} is not on a track below the frame; move it to a lower track so the device covers its edges.`,
+				);
+			if (clip.keyframes?.x?.length || clip.keyframes?.y?.length || clip.keyframes?.scale?.length)
+				warnings.push(`${clip.id} has position or scale keyframes, which override the fit.`);
+			const { x, y, scale, crop } = fitToRegion(region, aspect, data.canvas);
+			return { clipId: clip.id, region: region.name, transform: { x, y, scale, crop } };
+		});
+		await this.store.transaction(actor, "Fitted footage into the frame", () => {
+			for (const f of fitted)
+				this.store.apply(
+					{ type: "updateClip", id: f.clipId, patch: { transform: f.transform } },
+					actor,
+				);
+		});
+		return { fitted, ...(warnings.length ? { warnings } : {}) };
 	}
 
 	private describeAsset(a: Asset, used?: Set<string>) {
