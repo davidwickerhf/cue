@@ -46,7 +46,7 @@ export const contract = {
 	},
 	list_playbooks: {
 		description:
-			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first), how to match a reference video ('match-a-reference', with analyze_reference), a complete worked example ('example-why-we-say-ok'), editing craft, premium motion design, and recognisable styles (Vox explainer, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
+			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first, then 'before-your-first-pass': the mistakes earlier builds made), how to match a reference video ('match-a-reference', with analyze_reference), a complete worked example ('example-why-we-say-ok'), editing craft, premium motion design, and recognisable styles (Vox explainer, archive history documentary, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
 		input: { category: z.enum(["workflow", "craft", "style", "example"]).optional() },
 	},
 	get_playbook: {

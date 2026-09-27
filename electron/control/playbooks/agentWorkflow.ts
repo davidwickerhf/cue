@@ -6,7 +6,8 @@ export const AGENT_WORKFLOW: Playbook = {
 	category: "workflow",
 	summary:
 		"How to build a whole video in Cue as an agent: plan, script, voice, timings, sources, build, check and export — and the mistakes that cost the most time.",
-	useWhen: "Read first, before any edit longer than a few changes.",
+	useWhen:
+		"Read first, before any edit longer than a few changes; then read 'before-your-first-pass' (the mistakes earlier builds made).",
 	body: `# Working in Cue
 
 ## The order that works

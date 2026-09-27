@@ -1,6 +1,7 @@
 import { AGENT_WORKFLOW } from "./agentWorkflow";
 import { EDITING_CRAFT } from "./editingCraft";
 import { EXAMPLE_OK } from "./exampleOk";
+import { FIRST_PASS } from "./firstPass";
 import { MATCH_REFERENCE } from "./matchReference";
 import { MOTION_DESIGN } from "./motionDesign";
 import { OTHER_STYLES } from "./styles";
@@ -26,6 +27,7 @@ export interface Playbook {
 
 export const PLAYBOOKS: Playbook[] = [
 	AGENT_WORKFLOW,
+	FIRST_PASS,
 	MATCH_REFERENCE,
 	EDITING_CRAFT,
 	MOTION_DESIGN,
