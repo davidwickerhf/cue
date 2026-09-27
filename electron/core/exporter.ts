@@ -307,7 +307,10 @@ function audioCodec(file: string): string[] {
  * 720 px wide, with one palette made for the whole clip (so colours stay clean).
  */
 export async function exportGif(ctx: ExportContext, out: string): Promise<ExportReport> {
-	const tmp = path.join(os.tmpdir(), `cue-gif-${Date.now()}.mp4`);
+	const tmp = path.join(
+		os.tmpdir(),
+		`cue-gif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`,
+	);
 	try {
 		const video = await exportVideo(
 			{
@@ -973,7 +976,12 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		);
 	}
 
-	const graph = path.join(os.tmpdir(), `cue-graph-${Date.now()}.txt`);
+	// Unique per export: two exports started in the same millisecond (tests run several at once)
+	// used to share a name and read each other's graph ("Invalid file index … in filtergraph").
+	const graph = path.join(
+		os.tmpdir(),
+		`cue-graph-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.txt`,
+	);
 	await fs.writeFile(graph, chains.join(";\n"));
 	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
 	// Every input gets its own decoder threads (about one per core) by default. A long,

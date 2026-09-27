@@ -3641,7 +3641,10 @@ export class ProjectStore extends EventEmitter {
 			wordColor?: string;
 		},
 	): Promise<{ count: number; trackId: string }> {
-		const tmp = path.join(os.tmpdir(), `cue-captions-${Date.now()}.wav`);
+		const tmp = path.join(
+			os.tmpdir(),
+			`cue-captions-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.wav`,
+		);
 		try {
 			if (options.source === "voiceover") await exportVoiceover(this.exportContext(), tmp);
 			else await exportAudioMix(this.exportContext(), tmp);
