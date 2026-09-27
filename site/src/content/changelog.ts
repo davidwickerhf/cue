@@ -9,6 +9,16 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.5",
+		date: "2026-09-27",
+		summary: "Takes trimmed to the speech, and a clearer takes list you can stop.",
+		changes: [
+			"A take's speech is found from its loudness, so the silence before you speak and after you finish (a late Stop) is left out, on any mic and at any level; 'Trim silence' fixes takes recorded before.",
+			"Levelled takes stay exactly in sync (the limiter's delay is compensated).",
+			"The takes list: the take's name in full, its source as an icon, its length against the line, a 'Quiet · Raise' button when it's too quiet, and Play that turns into Stop with a progress bar.",
+		],
+	},
+	{
 		version: "0.2.4",
 		date: "2026-09-27",
 		summary: "An agent that edits like a pro, reads screen recordings in seconds, and levels quiet voiceovers.",

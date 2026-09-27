@@ -585,16 +585,32 @@ class PlaybackEngine {
 			});
 	}
 
+	/** What the take/media preview is playing, for play/stop buttons and a progress bar. */
+	readonly previewing = createStore({ url: null as string | null, progress: 0 });
+
+	/** Plays a media file on its own; pressing it again while it plays stops it. */
 	previewAsset(url: string) {
-		this.pause();
+		const same = this.previewing.get().url === url;
 		this.stopPreview();
-		this.preview = new Audio(url);
-		void this.preview.play();
+		if (same) return;
+		this.pause();
+		const audio = new Audio(url);
+		this.preview = audio;
+		this.previewing.set({ url, progress: 0 });
+		audio.ontimeupdate = () => {
+			if (this.preview === audio && audio.duration)
+				this.previewing.set({ progress: audio.currentTime / audio.duration });
+		};
+		audio.onended = () => {
+			if (this.preview === audio) this.stopPreview();
+		};
+		void audio.play().catch(() => this.stopPreview());
 	}
 
 	stopPreview() {
 		this.preview?.pause();
 		this.preview = null;
+		this.previewing.set({ url: null, progress: 0 });
 	}
 
 	// -------------------------------------------------------------------------

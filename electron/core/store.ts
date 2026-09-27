@@ -3072,6 +3072,35 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/**
+	 * Measures again where a take's speech starts and ends (see analyseSpeech) and, if it
+	 * is the take in use, places it again, so silence before and after it is left out.
+	 */
+	async trimTake(assetId: string, actor: Actor): Promise<{ asset: Asset; speechMs: number }> {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset || asset.kind !== "audio") throw new Error(`No audio media "${assetId}".`);
+		const analysis = await analyseSpeech(this.assetPath(assetId), this.current.settings.silenceDb);
+		const patch: Partial<Asset> = {
+			speechStartMs: analysis.speechStartMs,
+			speechEndMs: analysis.speechEndMs,
+			peakDb: analysis.peakDb,
+		};
+		await this.transaction(actor, `Trimmed the silence around ${asset.name}`, () => {
+			this.apply({ type: "updateAsset", id: assetId, patch }, actor);
+			const inUse = asset.lineId
+				? this.current.clips.some(
+						(c) => c.type === "media" && c.lineId === asset.lineId && c.assetId === assetId,
+					)
+				: false;
+			if (inUse && asset.lineId)
+				this.apply({ type: "chooseTake", lineId: asset.lineId, assetId }, actor);
+		});
+		return {
+			asset: { ...asset, ...patch },
+			speechMs: analysis.speechEndMs - analysis.speechStartMs,
+		};
+	}
+
+	/**
 	 * Raises a quiet take to voiceover level (see levelSpeech) as a new file beside it,
 	 * and points the take at that file, so the original stays and no cache is stale.
 	 */

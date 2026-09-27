@@ -262,7 +262,7 @@ export async function levelSpeech(file: string, output = file): Promise<number> 
 		"-i",
 		original,
 		"-af",
-		`volume=${gain.toFixed(2)}dB,alimiter=limit=0.891:attack=5:release=60:level=disabled`,
+		`volume=${gain.toFixed(2)}dB,alimiter=limit=0.891:attack=5:release=60:level=disabled:latency=1`,
 		"-c:a",
 		"pcm_s16le",
 		tmp,
@@ -282,42 +282,71 @@ export interface SpeechAnalysis {
 }
 
 /** Finds where speech starts and ends, using ffmpeg's silence detector. */
-export async function analyseSpeech(file: string, silenceDb: number): Promise<SpeechAnalysis> {
-	const { durationMs } = await probe(file);
+/**
+ * The background level of a recording: the 10th percentile of its 100 ms loudness
+ * readings (digital silence ignored), or null when it can't be read.
+ */
+export async function noiseFloorDb(file: string): Promise<number | null> {
 	const log = await ffmpeg([
 		"-i",
 		file,
 		"-af",
-		`silencedetect=noise=${silenceDb}dB:d=0.2,volumedetect`,
+		"aresample=48000,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level",
 		"-f",
 		"null",
 		"-",
-	]);
-	const silences: { start: number; end: number }[] = [];
-	let open: number | null = null;
-	for (const line of log.split("\n")) {
-		const start = /silence_start: (-?[\d.]+)/.exec(line);
-		const end = /silence_end: ([\d.]+)/.exec(line);
-		if (start) open = Math.max(0, Number(start[1]) * 1000);
-		if (end) {
-			silences.push({ start: open ?? 0, end: Number(end[1]) * 1000 });
-			open = null;
-		}
-	}
-	if (open !== null) silences.push({ start: open, end: durationMs });
-	const peak = /max_volume: (-?[\d.]+) dB/.exec(log);
+	]).catch(() => "");
+	const levels = [...log.matchAll(/RMS_level=(-?[\d.]+)/g)]
+		.map((m) => Number(m[1]))
+		.filter((v) => Number.isFinite(v) && v > -120)
+		.sort((a, b) => a - b);
+	if (levels.length < 5) return null;
+	return levels[Math.floor(levels.length * 0.1)];
+}
 
+/**
+ * Where the speech starts and ends in a take, and its peak. Read from the loudness of
+ * 100 ms windows: speech is louder than halfway between the take's quiet level and its
+ * speaking level, so it works for any mic, room or gain (a take levelled +20 dB lifts
+ * its silences above any fixed threshold, and ffmpeg's silence detector, which reads
+ * single samples, would call the whole take speech).
+ */
+export async function analyseSpeech(file: string, silenceDb: number): Promise<SpeechAnalysis> {
+	const { durationMs } = await probe(file);
+	const windowMs = 100;
+	const [levelsLog, peakLog] = await Promise.all([
+		ffmpeg([
+			"-i",
+			file,
+			"-af",
+			"aresample=48000,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level",
+			"-f",
+			"null",
+			"-",
+		]),
+		ffmpeg(["-i", file, "-af", "volumedetect", "-f", "null", "-"]),
+	]);
+	const peak = /max_volume: (-?[\d.]+) dB/.exec(peakLog);
+	const levels = [...levelsLog.matchAll(/RMS_level=(-?[\d.]+|-inf)/g)].map((m) =>
+		m[1] === "-inf" ? -120 : Number(m[1]),
+	);
+	// Digital silence counts as quiet too (it reads -inf, kept here as -120 dB).
+	const sorted = [...levels].sort((a, b) => a - b);
 	let speechStartMs = 0;
 	let speechEndMs = durationMs;
-	const leading = silences.find((silence) => silence.start <= 30);
-	if (leading) speechStartMs = Math.min(leading.end, durationMs);
-	const trailing = silences.find(
-		(silence) => silence.end >= durationMs - 30 && silence.start > speechStartMs,
-	);
-	if (trailing) speechEndMs = trailing.start;
-	if (speechEndMs <= speechStartMs) {
-		speechStartMs = 0;
-		speechEndMs = durationMs;
+	if (sorted.length >= 5) {
+		const quiet = sorted[Math.floor(sorted.length * 0.1)];
+		const loud = sorted[Math.floor(sorted.length * 0.9)];
+		// Halfway between quiet and speaking, never below the project's silence level.
+		const threshold = Math.max(silenceDb - 8, (quiet + loud) / 2);
+		// Two windows in a row above it, so a click or a breath doesn't count as speech.
+		const above = levels.map((v, i) => v > threshold && (levels[i + 1] ?? -120) > threshold);
+		const first = above.indexOf(true);
+		const last = above.lastIndexOf(true);
+		if (first !== -1 && loud - quiet > 12) {
+			speechStartMs = first * windowMs;
+			speechEndMs = Math.min(durationMs, (last + 2) * windowMs);
+		}
 	}
 	return {
 		durationMs,

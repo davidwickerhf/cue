@@ -2,7 +2,7 @@
 	"name": "cue",
 	"productName": "Cue",
 	"desktopName": "cue.desktop",
-	"version": "0.2.4",
+	"version": "0.2.5",
 	"private": true,
 	"description": "A fast, lightweight video editor that you and an AI agent edit together.",
 	"author": {

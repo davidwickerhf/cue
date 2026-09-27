@@ -5,6 +5,7 @@ import {
 	Microphone,
 	Play,
 	Plus,
+	Scissors,
 	Sparkle,
 	SpeakerHigh,
 	Stop,
@@ -409,68 +410,103 @@ function LineDetail({ line, aiReady }: { line: LineView; aiReady: boolean }) {
 
 function TakeRow({ take, line, url }: { take: Asset; line: LineView; url: string }) {
 	const chosen = line.chosenAssetId === take.id;
+	const previewing = playback.previewing.use((p) => (p.url === url ? p.progress : null));
+	const playing = previewing !== null;
 	const speech = (take.speechEndMs ?? take.durationMs) - (take.speechStartMs ?? 0);
 	const fit = speech > line.maxMs ? "over" : speech > line.maxMs - 300 ? "tight" : "ok";
 	// A take peaking this low is much quieter than a normal voice (a laptop mic, far away).
 	const quiet = take.peakDb !== undefined && take.peakDb !== null && take.peakDb < -12;
-	const Icon =
+	const source =
 		take.origin === "tts"
-			? Sparkle
+			? { Icon: Sparkle, label: "Generated" }
 			: take.origin === "import"
-				? UploadSimple
+				? { Icon: UploadSimple, label: "Imported" }
 				: take.actor === "agent"
-					? UserSound
-					: Microphone;
+					? { Icon: UserSound, label: "Recorded by agent" }
+					: { Icon: Microphone, label: "Recorded" };
 	return (
 		<li
 			className={cn(
-				"group flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors",
-				chosen ? "border-border bg-default/60" : "border-transparent hover:bg-default/50",
+				"group relative overflow-hidden rounded-md border transition-colors",
+				chosen ? "border-accent/40 bg-accent/5" : "border-transparent hover:bg-default/50",
 			)}
 		>
-			<button
-				type="button"
-				onClick={() => void run("choose_take", { lineId: line.id, assetId: take.id })}
-				className={cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-full border-2",
-					chosen ? "border-accent" : "border-foreground/25",
-				)}
-				aria-label={chosen ? "In use" : "Use this take"}
-			>
-				{chosen && <span className="size-2 rounded-full bg-accent" />}
-			</button>
-			<Icon className="size-3.5 shrink-0 text-muted" />
-			<div className="min-w-0 flex-1">
-				<p className="truncate text-[12px]">{take.name}</p>
-				<p className={cn("text-[11px] tabular-nums", STATUS_STYLE[fit].text)}>
-					{formatSeconds(speech)} of {formatSeconds(line.maxMs)}
-					{take.peakDb !== undefined && take.peakDb !== null && (
-						<span className={quiet ? "text-warning" : "text-muted"}>
-							{" "}
-							· peak {take.peakDb.toFixed(0)} dB{quiet ? " · quiet" : ""}
-						</span>
+			<div className="flex items-center gap-2.5 px-2 py-1.5">
+				<button
+					type="button"
+					onClick={() => void run("choose_take", { lineId: line.id, assetId: take.id })}
+					className={cn(
+						"flex size-4 shrink-0 items-center justify-center rounded-full border-2",
+						chosen ? "border-accent" : "border-foreground/25 hover:border-foreground/50",
 					)}
-				</p>
-			</div>
-			{quiet && (
-				<IconButton
-					label="Raise to voice level"
-					onPress={() => void run("level_take", { assetId: take.id })}
-					className="text-warning"
+					aria-label={chosen ? "In use" : "Use this take"}
+					title={chosen ? "In use" : "Use this take"}
 				>
-					<SpeakerHigh className="size-3.5" />
+					{chosen && <span className="size-2 rounded-full bg-accent" />}
+				</button>
+				<div className="min-w-0 flex-1">
+					<div className="flex min-w-0 items-center gap-1.5">
+						<span title={source.label} className="shrink-0 text-muted">
+							<source.Icon className="size-3" />
+						</span>
+						<span
+							className="min-w-0 truncate text-[12px] font-medium"
+							title={`${take.name} · ${source.label}`}
+						>
+							{take.name}
+						</span>
+					</div>
+					<div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] tabular-nums">
+						<span className={STATUS_STYLE[fit].text}>
+							{formatSeconds(speech)} / {formatSeconds(line.maxMs)}
+						</span>
+						{quiet && (
+							<button
+								type="button"
+								onClick={() => void run("level_take", { assetId: take.id })}
+								className="flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning hover:bg-warning/25"
+								title="Much quieter than a normal voice: raise it to voiceover level (the original is kept)"
+							>
+								<SpeakerHigh className="size-3" />
+								Quiet ({take.peakDb?.toFixed(0)} dB) · Raise
+							</button>
+						)}
+					</div>
+				</div>
+				<IconButton
+					label={playing ? "Stop" : "Listen"}
+					onPress={() => playback.previewAsset(url)}
+					className={playing ? "text-accent" : undefined}
+				>
+					{playing ? (
+						<Stop weight="fill" className="size-3.5" />
+					) : (
+						<Play weight="fill" className="size-3.5" />
+					)}
 				</IconButton>
+				<IconButton
+					label="Trim silence before and after"
+					onPress={() => void run("trim_take", { assetId: take.id })}
+					className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+				>
+					<Scissors className="size-3.5" />
+				</IconButton>
+				<IconButton
+					label="Delete take"
+					onPress={() => {
+						if (playing) playback.stopPreview();
+						void run("delete_take", { assetId: take.id });
+					}}
+					className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+				>
+					<Trash className="size-3.5" />
+				</IconButton>
+			</div>
+			{playing && (
+				<div className="absolute right-0 bottom-0 left-0 h-0.5 bg-default">
+					<div className="h-full bg-accent" style={{ width: `${(previewing ?? 0) * 100}%` }} />
+				</div>
 			)}
-			<IconButton label="Listen" onPress={() => playback.previewAsset(url)}>
-				<Play weight="fill" className="size-3.5" />
-			</IconButton>
-			<IconButton
-				label="Delete take"
-				onPress={() => void run("delete_take", { assetId: take.id })}
-				className="opacity-0 group-hover:opacity-100"
-			>
-				<Trash className="size-3.5" />
-			</IconButton>
 		</li>
 	);
 }

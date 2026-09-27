@@ -863,6 +863,11 @@ export const contract = {
 			markers: z.boolean().default(false),
 		},
 	},
+	trim_take: {
+		description:
+			"Measure again where a take's speech starts and ends and, if it's the take in use, place it again so the silence before and after is left out (a recording stopped late, a pause before speaking). New takes are measured this way when saved.",
+		input: { assetId: z.string() },
+	},
 	level_take: {
 		description:
 			"Raise a quiet voiceover take (or any speech audio) to voiceover level: measured, raised by up to 30 dB towards -18 LUFS and limited so it never clips, written as a new file (the original stays). Use it when a recorded take is much quieter than the others: a clip's volume only goes up to +6 dB. New recordings are levelled automatically.",

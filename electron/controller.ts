@@ -1322,6 +1322,17 @@ export class Controller extends EventEmitter {
 					),
 				};
 			}
+			case "trim_take": {
+				const { assetId } = parseInput("trim_take", params);
+				const { asset, speechMs } = await this.job("Trimming the take", () =>
+					this.store.trimTake(assetId, actor),
+				);
+				return {
+					...this.describeAsset(asset),
+					speechMs,
+					note: `Speech is ${(speechMs / 1000).toFixed(1)} s; silence before and after is left out.`,
+				};
+			}
 			case "level_take": {
 				const { assetId } = parseInput("level_take", params);
 				const { asset, gainDb } = await this.job("Levelling the take", () =>
