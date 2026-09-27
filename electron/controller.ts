@@ -1931,8 +1931,12 @@ export class Controller extends EventEmitter {
 				);
 			if (clip.keyframes?.x?.length || clip.keyframes?.y?.length || clip.keyframes?.scale?.length)
 				warnings.push(`${clip.id} has position or scale keyframes, which override the fit.`);
-			const { x, y, scale, crop } = fitToRegion(region, aspect, data.canvas);
-			return { clipId: clip.id, region: region.name, transform: { x, y, scale, crop } };
+			const { x, y, scale, rotation, crop } = fitToRegion(region, aspect, data.canvas);
+			return {
+				clipId: clip.id,
+				region: region.name,
+				transform: { x, y, scale, rotation, crop },
+			};
 		});
 		await this.store.transaction(actor, "Fitted footage into the frame", () => {
 			for (const f of fitted)

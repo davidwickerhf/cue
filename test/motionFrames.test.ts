@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLottie } from "../electron/core/motion";
-import { type fitToRegion, FRAME_TEMPLATES, pushedFit } from "../electron/core/motionFrames";
+import { FRAME_TEMPLATES, type fitToRegion, pushedFit } from "../electron/core/motionFrames";
 import { compileMotion } from "../electron/core/motionSpec";
 import { buildTemplate, templateRegions } from "../electron/core/motionTemplates";
 
@@ -114,5 +114,40 @@ describe("device frames", () => {
 		expect(regions.map((r) => r.name)).toEqual(["frame-1", "screen", "frame-3"]);
 		expect(regions[0].x).toBeLessThan(regions[1].x);
 		expect(templateRegions({ template: "lower-third", params: {} }, landscape)).toBeUndefined();
+	});
+});
+
+describe("turned frames", () => {
+	it("turns a polaroid with its hole, and the fit turns the footage with it", () => {
+		const straight = templateRegions(
+			{ template: "frame-polaroid", params: { x: 0.4, y: 0.5 } },
+			landscape,
+		);
+		const turned = templateRegions(
+			{ template: "frame-polaroid", params: { x: 0.4, y: 0.5, rotation: 12 } },
+			landscape,
+		);
+		const a = straight?.[0];
+		const b = turned?.[0];
+		if (!a || !b) throw new Error("no regions");
+		expect(a.fit["4:3"].rotation).toBe(0);
+		expect(b.rotation).toBe(12);
+		expect(b.fit["4:3"].rotation).toBe(12);
+		// The hole keeps its size; its centre swings around the card's centre.
+		expect(b.width).toBeCloseTo(a.width, 4);
+		const centre = (r: { x: number; y: number; width: number; height: number }) => [
+			(r.x + r.width / 2) * landscape.width - 0.4 * landscape.width,
+			(r.y + r.height / 2) * landscape.height - 0.5 * landscape.height,
+		];
+		const [ax, ay] = centre(a);
+		const [bx, by] = centre(b);
+		expect(Math.hypot(bx, by)).toBeCloseTo(Math.hypot(ax, ay), 0);
+		const rad = (12 * Math.PI) / 180;
+		expect(bx).toBeCloseTo(ax * Math.cos(rad) - ay * Math.sin(rad), 0);
+		expect(by).toBeCloseTo(ax * Math.sin(rad) + ay * Math.cos(rad), 0);
+		// The drawing is turned as one group around the card's centre.
+		const spec = buildTemplate("frame-photo-card", { rotation: -8 }, landscape);
+		expect(spec.layers).toHaveLength(1);
+		expect(spec.layers[0]).toMatchObject({ type: "group", rotation: -8 });
 	});
 });

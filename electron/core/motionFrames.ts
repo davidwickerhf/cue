@@ -18,6 +18,8 @@ export interface MotionRegion {
 	y: number;
 	width: number;
 	height: number;
+	/** Degrees clockwise the hole is turned around its centre (a tilted polaroid). */
+	rotation?: number;
 }
 
 /** A clip transform (x, y = centre, scale 1 fits the canvas, crop in shares per edge). */
@@ -25,6 +27,8 @@ export interface RegionFit {
 	x: number;
 	y: number;
 	scale: number;
+	/** Degrees clockwise: the clip turns with a tilted frame. */
+	rotation: number;
 	crop: { left: number; top: number; right: number; bottom: number };
 }
 
@@ -34,7 +38,7 @@ export interface RegionFit {
  * past the device. Scale 1 fits the picture inside the canvas (contain).
  */
 export function fitToRegion(
-	region: Pick<MotionRegion, "x" | "y" | "width" | "height">,
+	region: Pick<MotionRegion, "x" | "y" | "width" | "height" | "rotation">,
 	aspect: number,
 	canvas: { width: number; height: number },
 	bleed = 0.006,
@@ -57,6 +61,7 @@ export function fitToRegion(
 		x: round(region.x + region.width / 2),
 		y: round(region.y + region.height / 2),
 		scale: round(scale),
+		rotation: round(region.rotation ?? 0),
 		crop: { left: round(side), right: round(side), top: round(ends), bottom: round(ends) },
 	};
 }
@@ -85,6 +90,8 @@ const common = {
 	/** Centre of the device on the frame, shares 0–1. */
 	x: share.default(0.5),
 	y: share.default(0.5),
+	/** Degrees clockwise the whole device is turned (the footage fitted to it turns too). */
+	rotation: z.number().min(-45).max(45).default(0),
 	durationMs: z.number().min(500).max(600000).default(8000),
 };
 
@@ -219,6 +226,14 @@ function spec(
 	return { width: c.width, height: c.height, fps: c.fps, durationMs, layers };
 }
 
+/** The params every frame has: where its centre is, how far it is turned, how long it lasts. */
+interface Turned {
+	x: number;
+	y: number;
+	rotation: number;
+	durationMs: number;
+}
+
 function template<P extends z.ZodRawShape>(
 	t: Omit<MotionTemplate<P>, "build" | "regions" | "overlay" | "category"> & {
 		layout: (
@@ -232,15 +247,39 @@ function template<P extends z.ZodRawShape>(
 		...rest,
 		category: "frame",
 		overlay: true,
-		build: (p, c) => spec(c, (p as { durationMs: number }).durationMs, layout(p, c).layers),
-		regions: (p, c) =>
-			layout(p, c).holes.map((h) => ({
-				name: h.name,
-				x: h.x / c.width,
-				y: h.y / c.height,
-				width: h.w / c.width,
-				height: h.h / c.height,
-			})),
+		build: (p, c) => {
+			const { x, y, rotation, durationMs } = p as unknown as Turned;
+			const { layers } = layout(p, c);
+			return spec(
+				c,
+				durationMs,
+				rotation
+					? [{ type: "group", name: "Frame", pivot: [x * c.width, y * c.height], rotation, layers }]
+					: layers,
+			);
+		},
+		// A turned device turns its holes around the device's centre: each region is the
+		// hole's own box, moved to where its centre lands, with the angle to turn the clip.
+		regions: (p, c) => {
+			const { x, y, rotation } = p as unknown as Turned;
+			const rad = (rotation * Math.PI) / 180;
+			const px = x * c.width;
+			const py = y * c.height;
+			return layout(p, c).holes.map((h) => {
+				const dx = h.x + h.w / 2 - px;
+				const dy = h.y + h.h / 2 - py;
+				const cx = px + dx * Math.cos(rad) - dy * Math.sin(rad);
+				const cy = py + dx * Math.sin(rad) + dy * Math.cos(rad);
+				return {
+					name: h.name,
+					x: (cx - h.w / 2) / c.width,
+					y: (cy - h.h / 2) / c.height,
+					width: h.w / c.width,
+					height: h.h / c.height,
+					...(rotation ? { rotation } : {}),
+				};
+			});
+		},
 	};
 	return built as unknown as MotionTemplate;
 }
