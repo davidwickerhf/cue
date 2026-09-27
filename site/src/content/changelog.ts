@@ -9,6 +9,19 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.3",
+		date: "2026-09-27",
+		summary: "Big projects stay light and export reliably, and a second worked example: The Red Cars.",
+		changes: [
+			"Pictures in the media panel and timeline use small thumbnails instead of the full-size files, and silent clips' sound isn't decoded: a 150-clip project went from 2.1 GB to about 740 MB.",
+			"Exports of large, layered edits no longer fail: inputs decode on one thread each, animated text gets time for its frames, the Mac's hardware encoder falls back to software when it won't start, and a failed export leaves no half-written file.",
+			"Agents connecting to a second copy of Cue reach that copy (the MCP bridge honours CUE_USER_DATA).",
+			"New example: The Red Cars, an archive history documentary in the style of Hoog, with its project, prompt and a worked-example playbook.",
+			"New playbooks: 'before-your-first-pass' (the mistakes earlier builds made, as rules and a checklist) and 'archive-history-documentary'.",
+			"Releases can no longer split into two drafts: the draft is created before the builds start.",
+		],
+	},
+	{
 		version: "0.2.2",
 		date: "2026-09-27",
 		summary: "Signed with a Developer ID and notarised by Apple, so Cue opens without a warning and updates itself.",

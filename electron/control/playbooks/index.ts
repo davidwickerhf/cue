@@ -1,6 +1,7 @@
 import { AGENT_WORKFLOW } from "./agentWorkflow";
 import { EDITING_CRAFT } from "./editingCraft";
 import { EXAMPLE_OK } from "./exampleOk";
+import { EXAMPLE_RED_CARS } from "./exampleRedCars";
 import { FIRST_PASS } from "./firstPass";
 import { MATCH_REFERENCE } from "./matchReference";
 import { MOTION_DESIGN } from "./motionDesign";
@@ -34,6 +35,7 @@ export const PLAYBOOKS: Playbook[] = [
 	VOX_EXPLAINER,
 	...OTHER_STYLES,
 	EXAMPLE_OK,
+	EXAMPLE_RED_CARS,
 ];
 
 export function playbook(id: string): Playbook {
