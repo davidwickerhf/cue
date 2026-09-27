@@ -13,7 +13,15 @@ import { playback } from "../../lib/playback";
 import { useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 
-const CATEGORIES = ["All", "Titles", "Charts", "Callouts", "Lists", "Transitions"] as const;
+const CATEGORIES = [
+	"All",
+	"Titles",
+	"Charts",
+	"Callouts",
+	"Lists",
+	"Overlays",
+	"Transitions",
+] as const;
 const GROUP: Record<MotionTemplate["category"], (typeof CATEGORIES)[number]> = {
 	"lower third": "Titles",
 	title: "Titles",
@@ -22,6 +30,8 @@ const GROUP: Record<MotionTemplate["category"], (typeof CATEGORIES)[number]> = {
 	stat: "Charts",
 	callout: "Callouts",
 	list: "Lists",
+	overlay: "Overlays",
+	map: "Charts",
 	transition: "Transitions",
 };
 

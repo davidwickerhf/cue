@@ -31,10 +31,21 @@ export const contract = {
 	},
 	list_motion_templates: {
 		description:
-			"Cue's motion graphic templates (lower thirds, titles, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
+			"Cue's motion graphic templates (lower thirds, titles, kinetic words, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, a subscribe reminder, a chapter progress bar, a route map, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
 		input: {
 			category: z
-				.enum(["lower third", "title", "chart", "stat", "callout", "list", "quote", "transition"])
+				.enum([
+					"lower third",
+					"title",
+					"chart",
+					"stat",
+					"callout",
+					"list",
+					"quote",
+					"overlay",
+					"map",
+					"transition",
+				])
 				.optional(),
 		},
 	},

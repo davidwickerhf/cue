@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { isLottie, type LottieJson, motionInfo } from "../electron/core/motion";
-import { compileMotion, easeAt, parsePath } from "../electron/core/motionSpec";
+import {
+	compileMotion,
+	easeAt,
+	parsePath,
+	textBoxes,
+	textWidth,
+} from "../electron/core/motionSpec";
 import { buildTemplate, describeParams, MOTION_TEMPLATES } from "../electron/core/motionTemplates";
 import { ProjectStore } from "../electron/core/store";
 import type { MediaClip } from "../electron/core/types";
@@ -32,6 +38,29 @@ describe("motion specs", () => {
 		const [curve] = parsePath("M0 0 C 10 0 20 10 20 20");
 		expect(curve.o[0]).toEqual([10, 0]);
 		expect(curve.i[1]).toEqual([0, -10]);
+	});
+
+	it("turns SVG arcs into curves that stay on the circle", () => {
+		const [circle] = parsePath("M -10 0 A 10 10 0 0 0 10 0 A 10 10 0 0 0 -10 0 Z");
+		expect(circle.c).toBe(true);
+		const at = (k: number, t: number) => {
+			const n = (k + 1) % circle.v.length;
+			const [p0, p3] = [circle.v[k], circle.v[n]];
+			const c1 = [p0[0] + circle.o[k][0], p0[1] + circle.o[k][1]];
+			const c2 = [p3[0] + circle.i[n][0], p3[1] + circle.i[n][1]];
+			const b = (a: number, b: number, c: number, d: number) =>
+				(1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * d;
+			return [b(p0[0], c1[0], c2[0], p3[0]), b(p0[1], c1[1], c2[1], p3[1])];
+		};
+		for (let k = 0; k < circle.v.length; k++)
+			for (const t of [0, 0.25, 0.5, 0.75]) expect(Math.hypot(...at(k, t))).toBeCloseTo(10, 1);
+		// Sweep 0 turns anticlockwise on screen: from the left point through the bottom (y down).
+		expect(circle.v[1][0]).toBeCloseTo(0, 6);
+		expect(circle.v[1][1]).toBeCloseTo(10, 6);
+		// Relative arcs end where they say; radii too small grow to reach.
+		const [half] = parsePath("M 0 0 a 1 1 0 0 1 10 0");
+		expect(half.v.at(-1)?.[0]).toBeCloseTo(10, 6);
+		expect(half.v.some(([, y]) => y < -4.9)).toBe(true);
 	});
 
 	it("compiles layers bottom to top, with presets, clips, counters and markers", () => {
@@ -104,6 +133,135 @@ describe("motion specs", () => {
 		expect(motionInfo(json).markers).toEqual([{ name: "outro", startMs: 3200, durationMs: 0 }]);
 	});
 
+	it("measures text with the bundled fonts' widths", () => {
+		// Narrow letters measure narrower than wide ones, and tracking adds per letter.
+		expect(textWidth("iiii", 100)).toBeLessThan(textWidth("MMMM", 100));
+		expect(textWidth("AB", 100, "sans", 10)).toBeCloseTo(textWidth("AB", 100) + 20, 6);
+		// Several lines: the widest.
+		expect(textWidth("A\nABC", 50)).toBeCloseTo(textWidth("ABC", 50), 6);
+	});
+
+	it("turns and scales text around x, y and sets runs side by side", () => {
+		const json = compileMotion({
+			durationMs: 2000,
+			layers: [
+				{ type: "text", name: "Title", text: "Hello", size: 100, x: 400, y: 300, align: "center" },
+				{
+					type: "text",
+					name: "Label",
+					x: 100,
+					y: 600,
+					size: 40,
+					runs: [{ text: "CHAPTER 2" }, { text: " Title", color: "#ff0000", weight: 400 }],
+				},
+			],
+		});
+		const title = json.layers.find((l: LottieJson) => l.nm === "Title");
+		// The anchor is on x, y (the baseline sits lower, by half the cap height).
+		expect(title.ks.p.x.k).toBe(400);
+		expect(title.ks.p.y.k).toBe(300);
+		expect(title.ks.a.k[1]).toBeLessThan(0);
+		const label = json.layers.find((l: LottieJson) => l.nm === "Label");
+		expect(label.ty).toBe(0);
+		const runs = json.assets.find((a: LottieJson) => a.id === label.refId).layers;
+		// Top first: the second run is to the right of the first, in its own colour.
+		const [second, first] = runs;
+		expect(first.t.d.k[0].s.t).toBe("CHAPTER 2");
+		expect(second.t.d.k[0].s.fc).toEqual([1, 0, 0]);
+		expect(second.ks.p.x.k).toBeGreaterThan(first.ks.p.x.k);
+		// Both share one baseline.
+		expect(first.ks.p.y.k - first.ks.a.k[1]).toBeCloseTo(second.ks.p.y.k - second.ks.a.k[1], 1);
+	});
+
+	it("combines presets with keys at other times, and follows a route", () => {
+		const json = compileMotion({
+			durationMs: 3000,
+			fps: 30,
+			layers: [
+				{
+					type: "rect",
+					name: "Button",
+					width: 200,
+					height: 80,
+					enter: { preset: "pop", atMs: 0, durationMs: 500 },
+					keys: {
+						scale: [
+							[1000, 1],
+							[1100, 0.9],
+							[1300, 1],
+						],
+						opacity: [
+							[0, 0],
+							[200, 1],
+						],
+					},
+					exit: { preset: "fade", atMs: 2500, durationMs: 300 },
+				},
+				{
+					type: "line",
+					name: "Route",
+					points: [
+						[0, 500],
+						[1000, 500],
+					],
+					enter: { preset: "draw", atMs: 0, durationMs: 1000 },
+				},
+				{
+					type: "ellipse",
+					name: "Dot",
+					width: 20,
+					height: 20,
+					follow: { line: "Route", atMs: 0, durationMs: 1000, ease: "linear" },
+				},
+			],
+		});
+		const button = json.layers.find((l: LottieJson) => l.nm === "Button");
+		// Pop (from 0.6 at 0 ms) then the press keys.
+		const scales = button.ks.s.k.map((k: LottieJson) => [k.t, k.s[0]]);
+		expect(scales[0]).toEqual([0, 60]);
+		expect(scales.map((k: number[]) => k[1])).toContain(90);
+		// The fade out joins the opacity keys; the pop's own fade in overlaps them and is left out.
+		const opacity = button.ks.o.k.map((k: LottieJson) => k.s[0]);
+		expect(opacity).toEqual([0, 100, 100, 0]);
+		const dot = json.layers.find((l: LottieJson) => l.nm === "Dot");
+		const xs = dot.ks.p.x.k;
+		expect(xs[0].s[0]).toBeCloseTo(0, 3);
+		expect(xs[15].s[0]).toBeCloseTo(500, 0);
+		expect(xs.at(-1).s[0]).toBeCloseTo(1000, 3);
+		expect(dot.ks.p.y.k[5].s[0]).toBeCloseTo(500, 3);
+		expect(() =>
+			compileMotion({
+				durationMs: 1000,
+				layers: [
+					{
+						type: "ellipse",
+						width: 1,
+						height: 1,
+						follow: { line: "Nope", atMs: 0, durationMs: 100 },
+					},
+				],
+			}),
+		).toThrow(/no line layer named "Nope"/);
+	});
+
+	it("reports where text lands", () => {
+		const boxes = textBoxes({
+			width: 1920,
+			height: 1080,
+			durationMs: 1000,
+			layers: [
+				{ type: "text", name: "Left", text: "Hello", size: 100, x: 200, y: 300 },
+				{ type: "text", name: "Centre", text: "Hello", size: 100, x: 960, y: 300, align: "center" },
+			],
+		});
+		const [left, centre] = boxes;
+		expect(left.left).toBe(200);
+		expect(left.right - left.left).toBe(Math.round(textWidth("Hello", 100)));
+		expect(centre.left + centre.right).toBeCloseTo(1920, -1);
+		// The middle of the capitals is on y.
+		expect((left.top + left.bottom) / 2).toBeCloseTo(300, -1);
+	});
+
 	it("explains what is wrong with a bad spec", () => {
 		expect(() =>
 			compileMotion({ durationMs: 1000, layers: [{ type: "rect", width: 10 }] }),
@@ -133,6 +291,32 @@ describe("motion templates", () => {
 			expect(Object.keys(describeParams(t))).toContain("theme");
 		},
 	);
+
+	it("fits kinetic words and the subscribe button to their text", () => {
+		for (const size of [canvas, { width: 1080, height: 1920, fps: 30 }])
+			for (const layout of ["stack", "line"]) {
+				const spec = buildTemplate(
+					"kinetic-words",
+					{ words: ["Imagine", "Prototype", "Iterate"], layout },
+					size,
+				);
+				for (const box of textBoxes(spec)) {
+					expect(box.left).toBeGreaterThanOrEqual(0);
+					expect(box.right).toBeLessThanOrEqual(size.width);
+				}
+			}
+		const long = buildTemplate(
+			"subscribe",
+			{ label: "Subscribe now", doneLabel: "Subscribed" },
+			canvas,
+		);
+		const boxes = textBoxes(long);
+		const button = JSON.stringify(long).match(
+			/"name":"Button","x":([\d.]+),"y":[\d.]+,"width":([\d.]+)/,
+		);
+		const right = Number(button?.[1]) + Number(button?.[2]) / 2;
+		for (const box of boxes) expect(box.right).toBeLessThan(right);
+	});
 
 	it("says which parameter is wrong", () => {
 		expect(() => buildTemplate("bar-chart", { items: [] }, canvas)).toThrow(/items/);
