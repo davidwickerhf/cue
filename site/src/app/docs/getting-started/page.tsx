@@ -56,13 +56,13 @@ export default function Page() {
 					Unzip it and move <strong className="text-white">Cue</strong> to <strong className="text-white">Applications</strong>.
 				</li>
 				<li>
-					The first time, right-click Cue and choose <strong className="text-white">Open</strong>. The app is signed but not
-					notarised yet, so macOS asks once.
+					Open it. Cue is signed with a Developer ID and notarised by Apple (from 0.2.2), so it opens like any other app.
 				</li>
 			</Ol>
 			<p>
-				Cue needs macOS on Apple Silicon. ffmpeg is bundled, and editing needs no account or API key. Cue does not update itself
-				yet: download new versions from the releases page.
+				Cue needs macOS on Apple Silicon. ffmpeg is bundled, and editing needs no account or API key. From 0.2.2 Cue updates itself:
+				it checks for new versions and asks before downloading one (or does it for you, in{" "}
+				<strong className="text-white">Settings → General → Updates</strong>). Older copies need 0.2.2 downloaded once by hand.
 			</p>
 
 			<H2 id="first-project">Your first project</H2>

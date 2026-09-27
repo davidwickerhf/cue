@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.2",
+		date: "2026-09-27",
+		summary: "Signed with a Developer ID and notarised by Apple, so Cue opens without a warning and updates itself.",
+		changes: [
+			"The Mac app is signed with a Developer ID and notarised: no right-click → Open the first time.",
+			"Automatic updates work on macOS from here on. Copies before 0.2.2 can't update themselves, so download this one once by hand.",
+		],
+	},
+	{
 		version: "0.2.1",
 		date: "2026-09-27",
 		summary: "Connect any agent, not only Claude Code.",

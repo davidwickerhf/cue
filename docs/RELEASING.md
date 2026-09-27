@@ -18,9 +18,10 @@ The `*.blockmap` files let the updater download only what changed. Upload them w
 
 1. **Apple Developer Program membership** (99 USD a year) at
    [developer.apple.com/programs](https://developer.apple.com/programs/). A free Apple ID
-   only gives "Apple Development" certificates, which is what builds are signed with today:
-   macOS warns about them and **the updater refuses them** (Squirrel.Mac only installs updates
-   signed with a Developer ID).
+   only gives "Apple Development" certificates: macOS warns about them and **the updater
+   refuses them** (Squirrel.Mac only installs updates signed with a Developer ID). Releases
+   from 0.2.2 on are signed with the team's Developer ID (team `SFV7BRH9JN`) and notarised
+   with the App Store Connect key "Cue Notarization"; the repository secrets below are set.
 2. **A "Developer ID Application" certificate** in your login keychain. In Xcode:
    Settings → Accounts → your team → Manage Certificates → + → Developer ID Application.
    (Or create one at developer.apple.com → Certificates with a CSR from Keychain Access.)
@@ -32,6 +33,9 @@ The `*.blockmap` files let the updater download only what changed. Upload them w
    - **App Store Connect API key** (recommended): [appstoreconnect.apple.com](https://appstoreconnect.apple.com)
      → Users and Access → Integrations → Team Keys → +, role *Developer*. Download the `.p8`
      (only possible once) and note the **Key ID** and **Issuer ID**.
+   - **A notarytool keychain profile** for releasing from your Mac:
+     `xcrun notarytool store-credentials cue-notary --key AuthKey_XXXXXXXXXX.p8 --key-id <Key ID> --issuer <Issuer ID>`,
+     then `APPLE_KEYCHAIN_PROFILE=cue-notary npm run release:mac`.
    - **App-specific password**: [appleid.apple.com](https://appleid.apple.com) → Sign-In and
      Security → App-Specific Passwords → +. Used with your Apple ID email and team ID.
 

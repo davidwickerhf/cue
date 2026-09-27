@@ -24,7 +24,7 @@ export const FAQ: FaqItem[] = [
 	},
 	{
 		q: "Why does macOS warn me the first time I open it?",
-		a: "Cue is signed but not notarised yet. Right-click Cue in Applications and choose Open, once.",
+		a: "It shouldn't any more: from 0.2.2 Cue is signed with a Developer ID and notarised by Apple, and it updates itself. Versions before 0.2.2 weren't, so they needed a right-click on Cue and Open the first time, and can't update: download 0.2.2 once by hand.",
 	},
 	{
 		q: "How can I help?",

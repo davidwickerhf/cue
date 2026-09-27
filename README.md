@@ -74,7 +74,7 @@ A fast, open-source video editor for macOS (Windows and Linux in preview). Edit 
 
 1. Download the latest release: [`Cue-mac-arm64.zip`](https://github.com/davidwickerhf/cue/releases/latest/download/Cue-mac-arm64.zip) for Apple Silicon, or `Cue-mac-x64.zip` for Intel Macs (from the next release on, along with `.dmg` disk images).
 2. Unzip it and move **Cue** to **Applications**.
-3. Releases signed with a Developer ID and notarised open normally and can update in the app. Cue checks automatically; you choose whether to download each update or opt into automatic downloads and installation in **Settings → General → Updates**. Builds that aren't notarised yet (0.1.x) need a right-click on Cue and **Open** the first time, and can't update themselves: download new versions from [Releases](https://github.com/davidwickerhf/cue/releases).
+3. Releases signed with a Developer ID and notarised open normally and can update in the app. Cue checks automatically; you choose whether to download each update or opt into automatic downloads and installation in **Settings → General → Updates**. Releases from 0.2.2 on are signed and notarised. Earlier builds (0.1.x to 0.2.1) need a right-click on Cue and **Open** the first time, and can't update themselves: download new versions from [Releases](https://github.com/davidwickerhf/cue/releases).
 
 **Requirements:** macOS 12 or later. Nothing else is needed to edit; ffmpeg is bundled.
 
