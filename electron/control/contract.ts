@@ -25,6 +25,18 @@ const ids = z.array(z.string()).min(1);
 
 export const contract = {
 	// --- Overview --------------------------------------------------------------
+	cut_out: {
+		description:
+			"Cut the subject (people, objects) out of a picture, or of a video frame at atMs, into a new image with a transparent background, a paper-white outline (px, 0 for none) and a soft shadow (0–1) — the collage cut-outs of explainer videos. Returns the new media; with trackId and startMs it is placed too. Turn it slightly (transform.rotation -3…3) and add a small wiggle for the hand-made look. macOS only.",
+		input: {
+			assetId: z.string(),
+			atMs: z.number().min(0).optional(),
+			outline: z.number().min(0).max(60).optional(),
+			shadow: z.number().min(0).max(1).optional(),
+			trackId: z.string().optional(),
+			startMs: z.number().min(0).optional(),
+		},
+	},
 	wait_for: {
 		description:
 			"Wait for a long call to finish. Calls that take longer than about 45 seconds (exports, voiceovers, transcripts) reply with {status: 'running', callId, progress} instead of their result; pass that callId here to wait again (up to about 45 seconds per call) and get the result. Never start the same work twice.",

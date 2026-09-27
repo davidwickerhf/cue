@@ -34,6 +34,46 @@ export function visionAvailable(): boolean {
 	return process.platform === "darwin" && visionBinary() !== null;
 }
 
+/**
+ * Cuts the subject out of a picture into a PNG with transparency, cropped to it,
+ * with an optional paper-white outline (pixels) and soft shadow (0–1): the
+ * collage look of explainer videos. Every foreground object on macOS 14 and
+ * later, people only on older systems.
+ */
+export function cutOut(
+	input: string,
+	output: string,
+	options: { outline?: number; shadow?: number } = {},
+): Promise<{ file: string; width: number; height: number }> {
+	const bin = visionBinary();
+	if (!bin) return Promise.reject(new Error("Cutting out needs on-device vision (macOS)."));
+	return new Promise((resolve, reject) => {
+		const child = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+		let out = "";
+		let err = "";
+		child.stdout.on("data", (d: Buffer) => {
+			out += d.toString("utf8");
+		});
+		child.stderr.on("data", (d: Buffer) => {
+			err += d.toString("utf8");
+		});
+		child.on("error", reject);
+		child.on("close", (code) => {
+			if (code !== 0) return reject(new Error(err.trim() || `cue-vision exited with ${code}`));
+			const result = JSON.parse(out.trim().split("\n").pop() ?? "{}") as {
+				file?: string;
+				width?: number;
+				height?: number;
+				error?: string;
+			};
+			if (result.error || !result.file)
+				return reject(new Error(result.error ?? "No cut-out made."));
+			resolve({ file: result.file, width: result.width ?? 0, height: result.height ?? 0 });
+		});
+		child.stdin.end(JSON.stringify({ cutout: { input, output, ...options } }));
+	});
+}
+
 /** Analyses images (JPEG/PNG paths); one result per image, in order. */
 export function analyseImages(
 	images: string[],

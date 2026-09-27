@@ -95,6 +95,7 @@ import type {
 import { type Aspect, reframeData, shortenData, variantLabel } from "./variants";
 import {
 	analyseImages,
+	cutOut,
 	followKeyframes,
 	labelsFor,
 	type ShotSample,
@@ -2735,6 +2736,50 @@ export class ProjectStore extends EventEmitter {
 		if (!a?.motionSource) throw new Error(`"${assetId}" is not a motion graphic made in Cue.`);
 		const spec = this.motionSpecOf(a.motionSource);
 		return { source: a.motionSource, spec, textBoxes: textBoxes(spec) };
+	}
+
+	/**
+	 * Cuts the subject out of a picture (or a video frame at `atMs`) into a new
+	 * image with transparency, with a paper-white outline and a soft shadow, as in
+	 * collage-style explainers. Optionally placed on a track.
+	 */
+	async cutOutMedia(
+		assetId: string,
+		options: {
+			atMs?: number;
+			outline?: number;
+			shadow?: number;
+			place?: { trackId: string; startMs: number };
+		},
+		actor: Actor,
+	): Promise<Asset> {
+		const source = this.current.assets.find((a) => a.id === assetId);
+		if (!source || (source.kind !== "image" && source.kind !== "video"))
+			throw new Error(`"${assetId}" is not a picture or video.`);
+		const folder = path.join(this.projectDir, "cutouts");
+		await fs.mkdir(folder, { recursive: true });
+		let input = this.assetPath(assetId);
+		const base = safeSegment(path.parse(source.name).name).slice(0, 50) || "cutout";
+		if (source.kind === "video") {
+			const at = Math.max(0, Math.min(source.durationMs - 1, options.atMs ?? 0));
+			input = path.join(folder, `${base}-${Math.round(at)}-frame.png`);
+			await ffmpeg([
+				"-ss",
+				(at / 1000).toFixed(3),
+				"-i",
+				this.assetPath(assetId),
+				"-frames:v",
+				"1",
+				"-y",
+				input,
+			]);
+		}
+		let output = path.join(folder, `${base}-cutout.png`);
+		for (let n = 2; existsSync(output); n++) output = path.join(folder, `${base}-cutout-${n}.png`);
+		await cutOut(input, output, { outline: options.outline ?? 12, shadow: options.shadow ?? 0.5 });
+		const [asset] = await this.importMedia([output], actor, options.place);
+		this.apply({ type: "renameAsset", id: asset.id, name: `${source.name} (cut out)` }, actor);
+		return this.current.assets.find((a) => a.id === asset.id) ?? asset;
 	}
 
 	/** Turns a finished microphone recording into a take for a line. */

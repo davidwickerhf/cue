@@ -1160,6 +1160,24 @@ export class Controller extends EventEmitter {
 				if (!this.hooks.appSettings) throw new Error("App settings are not available.");
 				return this.hooks.appSettings.set(parseInput("update_app_settings", params).patch);
 			}
+			case "cut_out": {
+				const input = parseInput("cut_out", params);
+				const asset = await this.job("Cutting out", () =>
+					this.store.cutOutMedia(
+						input.assetId,
+						{
+							atMs: input.atMs,
+							outline: input.outline,
+							shadow: input.shadow,
+							place: input.trackId
+								? { trackId: input.trackId, startMs: input.startMs ?? 0 }
+								: undefined,
+						},
+						actor,
+					),
+				);
+				return this.describeAsset(asset);
+			}
 			case "wait_for":
 				throw new Error("wait_for is answered by the control server for agents.");
 			case "get_guide": {
