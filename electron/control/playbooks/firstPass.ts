@@ -51,6 +51,11 @@ Both worked examples were judged "much lower quality" after their first pass, fo
 - Text clip style.x is the centre of the rendered text. To pin a label to a margin, estimate its width (monospaced: characters × (0.6 × size + letter spacing)) and set x = margin + width / 2.
 - In a motion-graphic spec, draw paper and backgrounds as shapes with gradients; image layers from local files may not render.
 
+## Second-pass findings
+- A shot or graphic held for more than 6–8 s with nothing new in it reads as a pause, even a typing document: cut away to a detail (a still, a punch-in) and come back.
+- Stamps and labels in a corner collide with a graphic's own corner text (a year stamp over a map's title): check the corners of every graphic you lay text over, and don't repeat what the graphic already says (a counter already showing the year).
+- Every fix made by hand on the timeline (a crop, a removed clip) goes back into the plan or build script too, or the next rebuild brings the mistake back.
+
 ## Before you call it finished
 1. render_frame at the start, middle and end of every scene; nothing black, no caption cards, no half-framed subjects, labels readable.
 2. Export, then check the file, not the viewer: a frame every 2 s as a contact sheet, black-frame detection (ffmpeg blackdetect), loudness per second (ebur128).
