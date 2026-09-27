@@ -152,14 +152,20 @@ export default function Page() {
 				their sound. Adding a transition to a clip that has one replaces it; removing a crossfade undoes the overlap.
 			</p>
 
+			<p>
+				For a designed transition in your own colours (panels, an iris, stripes or blocks that wipe across the cut), use a
+				transition template from the <A href="/docs/motion-graphics#templates">motion graphics library</A>: it sits on a track
+				above the cut and covers it, so a plain cut underneath is enough.
+			</p>
+
 			<H2 id="infographics">Infographics</H2>
 			<p>
-				Cue can create animated bars, donut charts, metric cards, trend lines and milestone timelines. Each is a single text clip with editable title, values, unit, palette and source in the inspector. Agents can create one with <C>add_infographic</C> and revise its data with <C>update_clip</C>.
+				Bars, donut charts, key numbers, trend lines, milestone timelines and callouts pinned to a point in the shot are motion
+				graphics made from templates, with editable titles, values, units, themes and sources. Agents can make them from plain
+				data with <C>add_infographic</C> and <C>add_data_callout</C>. See{" "}
+				<A href="/docs/motion-graphics#data">Charts and callouts from data</A>.
 			</p>
 			<p>Use verified values for a finished video. The <A href="/styles">style library</A> includes footage-backed studies with clearly labelled demo data.</p>
-			<p>
-				For facts tied to a person, object or place in the shot, an agent can use <C>add_data_callout</C> to position a target ring and leader line. The label, value, source and positions remain editable in the inspector.
-			</p>
 
 			<H2 id="scopes">Scopes and compare</H2>
 			<p>The Colour workspace (<Kbd>⌥3</Kbd>) docks scopes beside the viewer and opens the colour tools in the inspector.</p>

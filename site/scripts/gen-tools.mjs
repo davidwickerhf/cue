@@ -7,7 +7,8 @@
  *                               (name, description, inputs), grouped by the
  *                               section comments in that file
  *   src/content/app-data.json   keyboard shortcuts (src/lib/shortcuts.ts),
- *                               transitions, title templates and workspaces
+ *                               transitions, title templates, workspaces and
+ *                               motion graphic templates and themes
  *
  * Run it from site/ after changing any of those files, and commit the JSON:
  *
@@ -196,6 +197,25 @@ const workspaces = [...workspaceSource.matchAll(/(\w+): workspace\("([^"]+)", "(
 	(m) => ({ id: m[1], label: m[2], keys: m[3] }),
 );
 
+// Motion graphic templates and themes, read as text like contract.ts (they import zod).
+const motionSource = readFileSync(join(repo, "electron/core/motionTemplates.ts"), "utf8");
+const motionTemplates = [
+	...motionSource.matchAll(
+		/id: "([^"]+)",\s*name: "([^"]+)",\s*category: "([^"]+)",\s*description:\s*"((?:[^"\\]|\\.)*)",\s*overlay: (true|false)/g,
+	),
+].map((m) => ({
+	id: m[1],
+	name: m[2],
+	category: m[3],
+	description: m[4].replace(/\\(.)/g, "$1"),
+	overlay: m[5] === "true",
+}));
+const motionThemes = [...motionSource.matchAll(/id: "([^"]+)",\s*label: "([^"]+)",\s*bg: "([^"]+)"/g)].map(
+	(m) => ({ id: m[1], label: m[2] }),
+);
+if (!motionTemplates.length || !motionThemes.length)
+	throw new Error("motionTemplates.ts: no templates or themes found");
+
 const appData = {
 	shortcuts: SHORTCUTS,
 	transitions: TRANSITIONS.map((t) => ({ kind: t.kind, label: t.label })),
@@ -206,9 +226,11 @@ const appData = {
 		animationOut: TITLE_TEMPLATES[id].animationOut ?? null,
 	})),
 	workspaces,
+	motionTemplates,
+	motionThemes,
 };
 writeFileSync(join(site, "src/content/app-data.json"), `${JSON.stringify(appData, null, "\t")}\n`);
 
 console.log(
-	`tools.json: ${count} tools in ${groups.length} groups; app-data.json: ${SHORTCUTS.length} shortcut groups, ${appData.transitions.length} transitions, ${appData.titles.length} titles, ${workspaces.length} workspaces`,
+	`tools.json: ${count} tools in ${groups.length} groups; app-data.json: ${SHORTCUTS.length} shortcut groups, ${appData.transitions.length} transitions, ${appData.titles.length} titles, ${workspaces.length} workspaces, ${motionTemplates.length} motion templates`,
 );

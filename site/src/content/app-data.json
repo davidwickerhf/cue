@@ -487,5 +487,166 @@
 			"label": "Review",
 			"keys": "⌥7"
 		}
+	],
+	"motionTemplates": [
+		{
+			"id": "lower-third",
+			"name": "Lower third",
+			"category": "lower third",
+			"description": "A name and role over the video: an accent bar grows, the name rises out of a line and the role slides in; it holds and leaves the same way.",
+			"overlay": true
+		},
+		{
+			"id": "title-card",
+			"name": "Title card",
+			"category": "title",
+			"description": "A full-frame chapter or opening title: a kicker line, a headline that rises line by line, a rule that draws and a subtitle, over a softly moving backdrop.",
+			"overlay": false
+		},
+		{
+			"id": "bar-chart",
+			"name": "Bar chart",
+			"category": "chart",
+			"description": "Compares values: bars grow one after another with their numbers counting up; one bar can be highlighted. Horizontal bars suit long labels, columns suit time series.",
+			"overlay": false
+		},
+		{
+			"id": "donut-chart",
+			"name": "Donut chart",
+			"category": "chart",
+			"description": "Parts of a whole: each slice sweeps in after the last, the total counts up in the middle and a legend with shares rises beside it.",
+			"overlay": false
+		},
+		{
+			"id": "line-chart",
+			"name": "Line chart",
+			"category": "chart",
+			"description": "A trend over time: gridlines draw, the line traces left to right under a soft fill, points pop in as it passes and the last value is called out.",
+			"overlay": false
+		},
+		{
+			"id": "big-stat",
+			"name": "Big number",
+			"category": "stat",
+			"description": "One number that matters: it counts up large while a ring fills to the share (when it is a percentage), with a label and a line of context.",
+			"overlay": false
+		},
+		{
+			"id": "stat-row",
+			"name": "Key numbers",
+			"category": "stat",
+			"description": "Two to four figures side by side on cards that rise in turn, each counting up with its label.",
+			"overlay": false
+		},
+		{
+			"id": "callout",
+			"name": "Callout",
+			"category": "callout",
+			"description": "Points at something in the footage: a pulsing marker at the target, a leader line that draws to a label with a value. Place the target where the thing is (shares of the frame).",
+			"overlay": true
+		},
+		{
+			"id": "timeline",
+			"name": "Timeline",
+			"category": "list",
+			"description": "Milestones in order: a line draws across, each point pops in with its date above and a label below.",
+			"overlay": false
+		},
+		{
+			"id": "checklist",
+			"name": "Checklist",
+			"category": "list",
+			"description": "A titled list whose items slide in one by one, each ticked off as it lands.",
+			"overlay": false
+		},
+		{
+			"id": "quote",
+			"name": "Quote",
+			"category": "quote",
+			"description": "A pull quote: a large quotation mark drops in, the lines rise one by one and the attribution slides in under a short rule.",
+			"overlay": false
+		},
+		{
+			"id": "transition-panels",
+			"name": "Sliding panels",
+			"category": "transition",
+			"description": "Three coloured panels sweep across and off again; the cut happens underneath while the frame is covered. Place it centred on a cut.",
+			"overlay": true
+		},
+		{
+			"id": "transition-iris",
+			"name": "Iris",
+			"category": "transition",
+			"description": "Rings expand from a point to fill the frame, then open out from the centre onto the next shot.",
+			"overlay": true
+		},
+		{
+			"id": "transition-stripes",
+			"name": "Diagonal stripes",
+			"category": "transition",
+			"description": "Slanted stripes shoot across one after another until the frame is covered, then carry on off the other side.",
+			"overlay": true
+		},
+		{
+			"id": "transition-blocks",
+			"name": "Blocks",
+			"category": "transition",
+			"description": "A grid of squares pops in from one corner to cover the frame and shrinks away towards the other.",
+			"overlay": true
+		},
+		{
+			"id": "subscribe",
+			"name": "Subscribe reminder",
+			"category": "overlay",
+			"description": "A subscribe button in a corner: it pops in, a cursor glides over and clicks it, the button turns to Subscribed with a tick and the bell rings; it slides away at the end.",
+			"overlay": true
+		},
+		{
+			"id": "kinetic-words",
+			"name": "Kinetic words",
+			"category": "title",
+			"description": "Short words slam in one after another (a scale punch with a blur, a flash and a small shake), each ending in an accent mark; a rule draws under them and they lift away. For openers and slogans.",
+			"overlay": false
+		},
+		{
+			"id": "route-map",
+			"name": "Route map",
+			"category": "map",
+			"description": "A journey between two places on a map-style grid: the start pin drops, a dotted route draws across with a travelling dot, the destination pin lands and a distance label pops at the top of the arc.",
+			"overlay": false
+		},
+		{
+			"id": "progress-bar",
+			"name": "Chapter progress",
+			"category": "overlay",
+			"description": "Where the viewer is in the video: a bar split into chapters along the top (or bottom) edge, the chapters done filled, the current one filling, with its number and title beside it.",
+			"overlay": true
+		}
+	],
+	"motionThemes": [
+		{
+			"id": "midnight",
+			"label": "Midnight"
+		},
+		{
+			"id": "editorial",
+			"label": "Editorial"
+		},
+		{
+			"id": "signal",
+			"label": "Signal"
+		},
+		{
+			"id": "sunset",
+			"label": "Sunset"
+		},
+		{
+			"id": "ocean",
+			"label": "Ocean"
+		},
+		{
+			"id": "mono",
+			"label": "Mono"
+		}
 	]
 }
