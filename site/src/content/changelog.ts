@@ -9,6 +9,19 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.7",
+		date: "2026-09-28",
+		summary: "Show the agent what you mean: screenshots, pinned clips, a history of conversations, and messages while it works.",
+		changes: [
+			"Paste, drop or attach screenshots in the agent chat, or attach the frame at the playhead; the agent sees them with your message.",
+			"'Ask the agent about this…' pins the clips to your message, with their exact details, so the agent acts on those clips even if the selection changes.",
+			"Every project keeps its conversations (in .cue-chat next to the project, left out of shared packages): switch between them or delete them from the history list.",
+			"Keep writing while the agent works: Claude reads a new message at its next step; Codex and Gemini get it as soon as they finish, or right away with 'Send now'.",
+			"Sound effects with variety: generate_sfx makes whooshes, risers, impacts and more in different characters, each variant different; find_sfx and import_sfx bring in openly licensed sounds with their credits.",
+			"The speed badge on timeline clips is rounded (2.6×, not 2.5989…×).",
+		],
+	},
+	{
 		version: "0.2.6",
 		date: "2026-09-28",
 		summary: "Exports that don't freeze the editor, clips that never stack, and Cue's own font for motion graphics.",
