@@ -345,3 +345,76 @@ export function motionFrameAt(
 	const frame = info.inFrame + (source / 1000) * info.fps;
 	return Math.max(info.inFrame, Math.min(last, frame));
 }
+
+/**
+ * When a Lottie file's picture can change: the spans between a property's first and
+ * last keyframe, and the frames where a layer starts or ends. Between those the
+ * picture is still, so an export draws it once and repeats it (a 54-second backdrop
+ * is one frame, not 1,600). null when that can't be known from the file (expressions,
+ * time remapping, stretched precomps): then every frame is drawn.
+ */
+export function motionChanges(
+	json: LottieJson,
+): { spans: [number, number][]; cuts: number[] } | null {
+	const spans: [number, number][] = [];
+	const cuts: number[] = [];
+	const assets = new Map<string, LottieJson>();
+	for (const a of json.assets ?? []) if (a?.id && Array.isArray(a.layers)) assets.set(a.id, a);
+	let unsafe = false;
+	const scan = (node: unknown, offset: number) => {
+		if (unsafe || node === null || typeof node !== "object") return;
+		if (Array.isArray(node)) {
+			for (const n of node) scan(n, offset);
+			return;
+		}
+		const o = node as Record<string, unknown>;
+		if (typeof o.x === "string" && "k" in o) unsafe = true; // an expression
+		const k = o.k;
+		if (Array.isArray(k) && k.length && typeof (k[0] as Record<string, unknown>)?.t === "number") {
+			// Each pair of keyframes moves only if its values differ; a hold keyframe jumps at the next one.
+			const keys = k as Record<string, unknown>[];
+			if (keys.length === 1) cuts.push(Number(keys[0].t) + offset);
+			for (let i = 0; i + 1 < keys.length; i++) {
+				const a = keys[i];
+				const b = keys[i + 1];
+				const from = Number(a.t) + offset;
+				const to = Number(b.t) + offset;
+				const target = a.e ?? b.s;
+				if (a.h === 1) cuts.push(to);
+				else if (JSON.stringify(a.s) !== JSON.stringify(target)) spans.push([from, to]);
+			}
+		}
+		for (const [key, v] of Object.entries(o)) if (key !== "layers") scan(v, offset);
+	};
+	const layers = (list: unknown, offset: number, depth: number) => {
+		if (!Array.isArray(list) || depth > 8) return;
+		for (const layer of list as Record<string, unknown>[]) {
+			if (unsafe) return;
+			if (layer.tm) unsafe = true;
+			if (typeof layer.ip === "number") cuts.push(layer.ip + offset);
+			if (typeof layer.op === "number") cuts.push(layer.op + offset);
+			const { layers: _nested, ...rest } = layer;
+			scan(rest, offset);
+			if (typeof layer.refId === "string" && assets.has(layer.refId)) {
+				if (typeof layer.sr === "number" && layer.sr !== 1) unsafe = true;
+				layers(assets.get(layer.refId)?.layers, offset + (Number(layer.st) || 0), depth + 1);
+			}
+		}
+	};
+	layers(json.layers, 0, 0);
+	return unsafe ? null : { spans, cuts };
+}
+
+/** Whether the picture at frame `b` can differ from the one at frame `a` (a < b). */
+export function motionDiffers(
+	changes: ReturnType<typeof motionChanges>,
+	a: number,
+	b: number,
+): boolean {
+	if (!changes) return a !== b;
+	const [lo, hi] = a < b ? [a, b] : [b, a];
+	if (lo === hi) return false;
+	for (const [s, e] of changes.spans) if (s < hi && lo < e) return true;
+	for (const c of changes.cuts) if (lo < c && c <= hi) return true;
+	return false;
+}

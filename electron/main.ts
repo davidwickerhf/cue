@@ -190,15 +190,25 @@ async function renderText(
 			60000 + frames * 250,
 		);
 		for (const [id, image] of Object.entries(images)) {
-			if (image.frames?.length) {
+			// A graphic that never changes over the clip is a still, not hundreds of identical frames.
+			if (image.frames?.length && image.frames.every((f) => f === image.frames?.[0]))
+				image.still = image.frames[0];
+			if (image.frames?.length && !image.still) {
 				const dir = path.join(root, id);
 				await fs.rm(dir, { recursive: true, force: true });
 				await fs.mkdir(dir, { recursive: true });
-				await Promise.all(
-					image.frames.map((frame, i) =>
-						fs.writeFile(path.join(dir, `${String(i).padStart(5, "0")}.png`), Buffer.from(frame)),
-					),
-				);
+				// A still stretch of a graphic arrives as the same buffer repeated: write it
+				// once and link the other frame files to it.
+				const written = new Map<ArrayBuffer, string>();
+				for (const [i, frame] of image.frames.entries()) {
+					const file = path.join(dir, `${String(i).padStart(5, "0")}.png`);
+					const first = written.get(frame);
+					if (first) await fs.link(first, file).catch(() => fs.copyFile(first, file));
+					else {
+						await fs.writeFile(file, Buffer.from(frame));
+						written.set(frame, file);
+					}
+				}
 				out[id] = { kind: "sequence", pattern: path.join(dir, "%05d.png"), fps };
 			} else if (image.still) {
 				await fs.mkdir(root, { recursive: true });
@@ -215,7 +225,8 @@ async function renderText(
 
 async function captureFrame(atMs: number): Promise<string> {
 	// A minimised or hidden window draws nothing to capture: bring it back without taking focus.
-	if (win && !win.isDestroyed() && (win.isMinimized() || !win.isVisible())) {
+	// (Offscreen demo recording draws without a visible window: showing it would only show a placeholder.)
+	if (!recordFrames && win && !win.isDestroyed() && (win.isMinimized() || !win.isVisible())) {
 		if (win.isMinimized()) win.restore();
 		win.showInactive();
 	}

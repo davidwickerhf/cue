@@ -30,7 +30,7 @@ Types:
   arc {radius, thickness, from, to (turns 0–1 from 12 o'clock, clockwise), color, cap?: round | butt} — donuts, progress rings; "draw" sweeps it.
   line {points: [[x, y], …], stroke, strokeWidth, cap?, smooth?, closed?, fill?, dash?: [dash, gap]} — "draw" traces it. dash [0.1, 20] with cap round makes a dotted line.
   path {d: SVG path data (M L H V C S Q A Z, absolute or relative), fill?, stroke?} — icons, logos, arrows, pins. With x, y set, the path is drawn around that point and scales and turns around it; draw icons around 0, 0 and place them with x, y (and size them with scale).
-  text {text (\\n for lines), font: sans | display | serif | mono, weight (sans 400/600/800, display 500/700, serif 400, mono 500), size, color, align, tracking (px), lineHeight, uppercase, anchor: middle (default) | top | baseline,
+  text {text (\\n for lines), font: sans | display | serif | mono | ui, weight (sans 400/600/800, display 500/700, serif 400, mono 500, ui 400/500/700; ui is DM Sans, Cue's own interface font), size, color, align, tracking (px), lineHeight, uppercase, anchor: middle (default) | top | baseline,
         runs?: [{text, color?, weight?, font?, keys?, enter?, exit?, startMs?}] — one line in parts on one baseline: an accent word or full stop, a bold label then a light title, words that pop in one by one. The layer's text is ignored; its size, tracking, align and motion apply to all.
         count?: {from, to, atMs, durationMs, decimals?, prefix?, suffix?, separator?, ease?} — a number counting up}
         x is the left edge, centre or right edge (align); y the vertical middle (anchor). Text scales and turns around x, y.

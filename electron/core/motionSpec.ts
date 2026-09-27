@@ -246,7 +246,7 @@ const pathShape = z.object({
 	/** SVG path data (M, L, H, V, C, S, Q, A, Z; absolute or relative), in canvas pixels. */
 	d: z.string().max(20000),
 });
-const FONT_FAMILIES = ["sans", "display", "serif", "mono"] as const;
+const FONT_FAMILIES = ["sans", "display", "serif", "mono", "ui"] as const;
 const text = z.object({
 	type: z.literal("text"),
 	...base,
@@ -390,6 +390,9 @@ export const MOTION_FONTS: {
 	{ family: "sans", name: "Inter-600", weight: 600, face: "Inter" },
 	{ family: "sans", name: "Inter-800", weight: 800, face: "Inter" },
 	{ family: "sans", name: "Inter-600i", weight: 600, face: "Inter", italic: true },
+	{ family: "ui", name: "DMSans-400", weight: 400, face: "DM Sans" },
+	{ family: "ui", name: "DMSans-500", weight: 500, face: "DM Sans" },
+	{ family: "ui", name: "DMSans-700", weight: 700, face: "DM Sans" },
 	{ family: "display", name: "SpaceGrotesk-500", weight: 500, face: "Space Grotesk" },
 	{ family: "display", name: "SpaceGrotesk-700", weight: 700, face: "Space Grotesk" },
 	{ family: "serif", name: "InstrumentSerif-400", weight: 400, face: "Instrument Serif" },
@@ -415,7 +418,7 @@ function fontFor(family: (typeof FONT_FAMILIES)[number], weight: number, italic 
 }
 
 /** Rough advance widths (share of the size) for characters the fonts do not have. */
-const AVERAGE_WIDTH: Record<string, number> = { sans: 0.56, display: 0.58, serif: 0.46, mono: 0.6 };
+const AVERAGE_WIDTH: Record<string, number> = { sans: 0.56, display: 0.58, serif: 0.46, mono: 0.6, ui: 0.56 };
 
 /**
  * How wide a line (the widest line, for several) of text is, in pixels, from

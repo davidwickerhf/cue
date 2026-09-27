@@ -691,7 +691,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const t = clip.transform;
 		const c = t.crop;
 		const motion = a.kind === "lottie" ? rendered[clip.id] : undefined;
-		if (a.kind === "lottie" && motion?.kind !== "sequence") continue;
+		if (a.kind === "lottie" && !motion) continue;
 		const sw = a.kind === "lottie" ? motionSizes[clip.id].width : a.width || W;
 		const sh = a.kind === "lottie" ? motionSizes[clip.id].height : a.height || H;
 		const fitBase = Math.min(W / sw, H / sh);
@@ -821,6 +821,19 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				file,
 			]);
 			source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS`;
+		} else if (a.kind === "lottie" && motion?.kind === "still") {
+			// A graphic that doesn't change over the clip: one picture, held.
+			index = addInput([
+				"-loop",
+				"1",
+				"-framerate",
+				String(fps),
+				"-t",
+				s(clip.durationMs),
+				"-i",
+				motion.file,
+			]);
+			source = `[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS`;
 		} else if (a.kind === "lottie" && motion?.kind === "sequence") {
 			// Already one frame per output frame from the clip's start, speed and looping applied.
 			index = addInput(["-framerate", String(motion.fps), "-i", motion.pattern]);

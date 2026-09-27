@@ -289,6 +289,42 @@ describe("motion graphics in a project", () => {
 		const i = (90 * 320 + 160) * 3;
 		expect(stdout[i + 1]).toBeGreaterThan(200);
 		expect(stdout[i]).toBeLessThan(60);
+
+		// A graphic that never changes comes back as one still: it must still be in the export.
+		const still = path.join(dir, "still.png");
+		await ffmpeg([
+			"-f",
+			"lavfi",
+			"-i",
+			"color=c=0x00ff00:s=320x180,format=rgba",
+			"-frames:v",
+			"1",
+			still,
+		]);
+		const stillRender = async (clips: (TextClip | MediaClip)[]) =>
+			Object.fromEntries(clips.map((c) => [c.id, { kind: "still", file: still } as TextRender]));
+		const again = await store.export("video", "motion-still.mp4", "user", stillRender);
+		const frame = await run(
+			ffmpegPath(),
+			[
+				"-v",
+				"error",
+				"-ss",
+				"4",
+				"-i",
+				again.outputs[0],
+				"-frames:v",
+				"1",
+				"-f",
+				"rawvideo",
+				"-pix_fmt",
+				"rgb24",
+				"-",
+			],
+			{ encoding: "buffer", maxBuffer: 1 << 26 },
+		);
+		expect(frame.stdout[i + 1]).toBeGreaterThan(200);
+		expect(frame.stdout[i]).toBeLessThan(60);
 	}, 120000);
 });
 

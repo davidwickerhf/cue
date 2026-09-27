@@ -5,6 +5,8 @@ import {
 	type LottieJson,
 	type MotionInfo,
 	type MotionSettings,
+	motionChanges,
+	motionDiffers,
 	motionKey,
 } from "../../electron/core/motion";
 import { MOTION_FONTS } from "../../electron/core/motionSpec";
@@ -252,6 +254,15 @@ export async function motionReady(url: string, settings: MotionSettings | undefi
 	if (p.failed) throw new Error(p.failed);
 }
 
+/** Lets pending input and paint run (a macrotask, without setTimeout's 4 ms clamp). */
+function yieldToUi(): Promise<void> {
+	return new Promise((resolve) => {
+		const channel = new MessageChannel();
+		channel.port1.onmessage = () => resolve();
+		channel.port2.postMessage(0);
+	});
+}
+
 /**
  * Renders frames of a motion graphic as PNGs at `width` × `height`, for export.
  * `frames` are animation frame numbers; repeated frames reuse the last encode.
@@ -272,9 +283,16 @@ export async function rasteriseMotion(
 	const ctx = canvas.getContext("2d");
 	if (!ctx) throw new Error("Canvas is not available.");
 	const out: ArrayBuffer[] = [];
+	// Frames where nothing in the file can have changed repeat the last picture (the same
+	// buffer: it crosses to the main process once and is linked on disk, not rewritten).
+	const changes = frames.length > 1 ? motionChanges(await load(url)) : null;
 	let last: { frame: number; png: ArrayBuffer } | null = null;
+	let slice = performance.now();
 	for (const frame of frames) {
-		if (last && Math.abs(last.frame - frame) < 1e-3) {
+		if (
+			last &&
+			(Math.abs(last.frame - frame) < 1e-3 || !motionDiffers(changes, last.frame, frame))
+		) {
 			out.push(last.png);
 			continue;
 		}
@@ -284,6 +302,11 @@ export async function rasteriseMotion(
 		const png = await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer();
 		last = { frame, png };
 		out.push(png);
+		// Drawing runs on this window's thread: let the editor handle input between frames.
+		if (performance.now() - slice > 25) {
+			await yieldToUi();
+			slice = performance.now();
+		}
 	}
 	return out;
 }

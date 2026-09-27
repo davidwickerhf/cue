@@ -72,6 +72,11 @@ export function ffmpegWithProgress(
 				`ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n`,
 			);
 		const child = spawn(ffmpegPath(), ["-hide_banner", "-y", ...args]);
+		// A long encode uses every core: below normal priority, the editor stays responsive meanwhile.
+		if (child.pid)
+			try {
+				os.setPriority(child.pid, 10);
+			} catch {}
 		let log = "";
 		child.stderr.setEncoding("utf8");
 		child.stderr.on("data", (chunk: string) => {
