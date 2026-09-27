@@ -72,12 +72,19 @@ export async function materializeLibraryAsset(
 	const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
 	try {
 		if (asset.localPath) {
-			const developmentSource = path.join(process.cwd(), asset.localPath);
+			const local = asset.localPath;
+			// The repo (next to the built main process, or the working folder) in development,
+			// the app's resources when packaged.
+			const development = [
+				typeof __dirname === "string" && path.join(__dirname, "..", local),
+				path.join(process.cwd(), local),
+			].filter((p): p is string => !!p);
+			let found: string | undefined;
+			for (const candidate of development)
+				if (!found && (await fs.stat(candidate).catch(() => null))) found = candidate;
 			const source = options.originalRoot
-				? path.join(options.originalRoot, path.basename(asset.localPath))
-				: (await fs.stat(developmentSource).catch(() => null))
-					? developmentSource
-					: path.join(process.resourcesPath, "library-assets", path.basename(asset.localPath));
+				? path.join(options.originalRoot, path.basename(local))
+				: (found ?? path.join(process.resourcesPath, "library-assets", path.basename(local)));
 			await fs.copyFile(source, temporary);
 		} else if (asset.downloadUrl) {
 			const response = await (options.fetcher ?? fetch)(asset.downloadUrl, {
