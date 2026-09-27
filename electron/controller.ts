@@ -5,7 +5,13 @@ import path from "node:path";
 import { type MethodInput, type MethodName, parseInput } from "./control/contract";
 import { AGENT_GUIDE } from "./control/guide";
 import { MOTION_GUIDE } from "./control/motionGuide";
-import { findLibraryAsset, LIBRARY_ASSETS, materializeLibraryAsset } from "./core/assetLibrary";
+import {
+	findLibraryAsset,
+	LIBRARY_ASSETS,
+	libraryAssetKind,
+	materializeLibraryAsset,
+	planLibraryPlacement,
+} from "./core/assetLibrary";
 import { binPath, filterMedia, mediaUses, usedAssetIds } from "./core/bins";
 import {
 	type CaptureSources,
@@ -634,33 +640,72 @@ export class Controller extends EventEmitter {
 					.filter(
 						(asset) =>
 							!query ||
-							`${asset.name} ${asset.description} ${asset.tags.join(" ")}`
+							`${asset.name} ${asset.description} ${asset.category} ${asset.tags.join(" ")}`
 								.toLowerCase()
 								.includes(query.toLowerCase()),
 					)
 					.map((asset) => ({
 						...asset,
+						kind: libraryAssetKind(asset),
 						posterUrl: `https://cue.wicker.life/assets/${asset.id}.jpg`,
 					}));
 			}
 			case "show_library_asset": {
 				const asset = findLibraryAsset(parseInput("show_library_asset", params).id);
 				this.hooks.sendCommand({ type: "showLibraryAsset", id: asset.id });
-				return { ...asset, posterUrl: `https://cue.wicker.life/assets/${asset.id}.jpg` };
+				return {
+					...asset,
+					kind: libraryAssetKind(asset),
+					posterUrl: `https://cue.wicker.life/assets/${asset.id}.jpg`,
+				};
 			}
 			case "import_library_asset": {
-				const { id, trackId, startMs } = parseInput("import_library_asset", params);
+				const { id, ...place } = parseInput("import_library_asset", params);
 				const asset = findLibraryAsset(id);
 				const file = await this.job(`Getting ${asset.name}`, () =>
 					materializeLibraryAsset(asset, this.store.projectDir),
 				);
+				const placed =
+					place.trackId !== undefined || place.startMs !== undefined || place.atMs !== undefined;
 				const imported = await this.job(`Importing ${asset.name}`, () =>
-					this.store.importMedia([file], actor, trackId ? { trackId, startMs } : undefined),
+					this.store.importMedia([file], actor),
 				);
+				const media = imported[0];
+				let clipIds: string[] | undefined;
+				let trackId: string | undefined;
+				if (placed && media) {
+					const plan = planLibraryPlacement(this.store.current, asset, media.durationMs, place);
+					await this.store.transaction(actor, `Placed ${asset.name}`, () => {
+						const fresh = plan.newTrack;
+						trackId =
+							plan.trackId ??
+							(fresh &&
+								(this.store.apply({ type: "addTrack", ...fresh }, actor).created?.[0] as string));
+						const result = this.store.apply(
+							{
+								type: "addClips",
+								clips: plan.clips.map(({ opacity, ...clip }) => ({
+									type: "media" as const,
+									trackId: trackId as string,
+									assetId: media.id,
+									name: asset.name,
+									...clip,
+									...(opacity !== undefined ? { transform: { opacity } } : {}),
+								})),
+							},
+							actor,
+						);
+						clipIds = result.created;
+					});
+				}
 				return {
 					libraryId: id,
+					kind: libraryAssetKind(asset),
 					media: imported.map((item) => this.describeAsset(item)),
+					...(clipIds ? { clipIds, trackId } : {}),
+					...(asset.use ? { use: asset.use } : {}),
 					sourcePage: asset.sourcePage,
+					...(asset.credit ? { credit: asset.credit } : {}),
 					license: asset.license,
 					licenseUrl: asset.licenseUrl,
 				};

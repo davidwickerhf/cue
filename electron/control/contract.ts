@@ -3,6 +3,7 @@ import { WALLPAPERS } from "../core/capture";
 import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
+	BLEND_MODES,
 	curveSchema,
 	exportSchema,
 	lineInputSchema,
@@ -181,7 +182,7 @@ export const contract = {
 	// --- Media and tracks -----------------------------------------------------------
 	list_library_assets: {
 		description:
-			"Browse Cue's curated stock footage and original graphics. Returns ids, descriptions, tags, preview paths, source and license. Use import_library_asset to add one to the project.",
+			'Browse Cue\'s curated library: stock footage, original graphics, Textures (paper, kraft, cardboard, newsprint and construction-paper boards; film dust, light leak, halftone and vignette overlays) and Sound effects (whooshes, paper slaps and rustles, pop, tick, camera shutter, typewriter, riser, impacts, a title chime, room tone). category narrows it (e.g. "Textures", "Sound effects"); query searches names, descriptions and tags. Each result has its kind (video, image, audio), duration for sounds and loops, source, credit and license, and `use`: how to use it (blend, opacity, track: bottom for boards, top for overlays, audio; volume; loop; syncMs, the moment in a sound to line up with the event; and a note). Add one with import_library_asset.',
 		input: { query: z.string().optional(), category: z.string().optional() },
 	},
 	show_library_asset: {
@@ -191,11 +192,16 @@ export const contract = {
 	},
 	import_library_asset: {
 		description:
-			"Download or copy a curated asset into the open project and import it as media. Stock footage is downloaded from its credited source; the user must check the source license before publishing.",
+			'Copy (or, for stock footage, download) a curated asset into the open project and import it as media. Give trackId, startMs or atMs to also place it, following its `use`: without trackId, sounds go on a free "SFX" audio track (made when needed), paper boards on a new bottom picture track (under everything: put graphics and cut-outs above it), and overlays (dust, light leak, halftone, vignette) on a new top track, with the suggested blend mode (multiply for paper over footage, screen for dust and light leaks) and opacity. atMs lines the sound\'s sync point up with an event (a whoosh\'s peak on the cut): startMs = atMs - use.syncMs. durationMs sets the length (stills default to 5 s; loops repeat back to back to fill it). blend, opacity and volume override the suggestions. To lay paper over footage instead, pass a trackId above the footage and blend "multiply". Stock footage comes from its credited source; check the license before publishing.',
 		input: {
 			id: z.string(),
 			trackId: z.string().optional(),
-			startMs: z.number().min(0).default(0),
+			startMs: z.number().min(0).optional(),
+			atMs: z.number().min(0).optional(),
+			durationMs: z.number().min(1).optional(),
+			blend: z.enum(BLEND_MODES).optional(),
+			opacity: z.number().min(0).max(1).optional(),
+			volume: z.number().min(0).max(2).optional(),
 		},
 	},
 	import_media: {
