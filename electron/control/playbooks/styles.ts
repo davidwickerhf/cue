@@ -19,6 +19,27 @@ export const OTHER_STYLES: Playbook[] = [
 - Everything else as in vox-explainer (cut-outs, marks, source tags, sound).`,
 	}),
 	style({
+		id: "archive-history-documentary",
+		name: "Archive history documentary (Hoog)",
+		summary:
+			"Long-form city and history essays: a 2:1 frame, warm saturated film archive, glowing line maps on black, lamp-lit tabletop 'evidence', several voices, a dark drone score.",
+		useWhen:
+			"History of a place, a company or an infrastructure (transit, housing, water), investigations built on archive and records; read the worked example 'example-the-red-cars'.",
+		body: `# Archive history documentary
+
+Measured on a 19-minute reference: median shot 3.3 s, 10.9 cuts a minute (faster in montages, 0 for long map moves), brightness low with black about half of every frame, 56% black and white, -16 LUFS. A condensed version runs at about 13–15 cuts a minute.
+
+- Frame: 1920×960 (2:1). 4:3 archive fills it at scale 1.5 (use 1.55 so pushes never show an edge); 16:9 at 1.125; a 3:4 portrait at 2.67, or show it whole at scale 1 on black with the name beside it.
+- Five picture families, cut against each other: (1) modern aerials and freeways, clean grade (saturation 1.15, temperature -0.08); (2) colour film archive pushed warm and hot (temperature 0.45, saturation 1.35, contrast 1.3, grain 0.35, vignette 0.45); (3) black-and-white newsreel and photos (saturation 0, contrast 1.3, grain 0.4); (4) glowing line maps on near-black; (5) lamp-lit tabletop scenes (a desk, papers, cash, a single object in darkness) as generated stills with a slow push.
+- Maps: a dark background (#050403) with a faint grid, the coast or border in a muted brown, routes as line layers drawn with the draw preset outward from the centre, each doubled with a wide blurred copy at 20–25% for the glow; small mono labels in caps with tracking; a counter (text count) for the key number; 'SIMPLIFIED' in a corner. Make a second version where lines fade to a dim colour one by one for decline, and a year counter for passing time.
+- Records and money: a typed document on a lit page (reconstruction tagged in a corner), a red stamp that pops on the verdict word, then the numbers as big display text over the cash still ($5,000, then $1) with a heavy thud and silence after.
+- Every photo moves: scale +5–10% over the shot, or a vertical pan over tall images. Hard cuts; a camera-shutter sound on some cuts to stills; dust (film-dust via import_library_asset) over archive sections only.
+- Labels: small mono caps bottom left ('Place · year'), typewriter in, on a translucent black backing so they read on bright photos. Put a label on every archive picture so the viewer knows what and when.
+- Voices: a calm, low narrator; a flat records reader (track EQ low -12, mid +6, high -9, compressor 0.6) for charges, verdicts and fines; a brassy period announcer (low -12, mid +9, high -12, compressor 0.8) for optimism of the era. Anything not archival is tagged 'DRAMATISATION' on screen.
+- Score: a dark minor drone under most of it, dropping out a beat before the turn ('Then came a buyer.'), a low heartbeat pulse under the investigation, and a warmer major lift for the return. Duck under the voice; auto_mix lands it 8 dB under.
+- Structure: modern problem (cold open) → hard cut to the past on a vivid image → title card → rise → peak (the map) → decline → the villain or the turn → records → consequences → the return → a closing line over the city at night.`,
+	}),
+	style({
 		id: "flat-vector-explainer",
 		name: "Flat vector explainer (Kurzgesagt)",
 		summary:
