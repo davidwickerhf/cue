@@ -46,7 +46,7 @@ export const contract = {
 	},
 	list_playbooks: {
 		description:
-			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first, then 'before-your-first-pass': the mistakes earlier builds made), how to match a reference video ('match-a-reference', with analyze_reference), complete worked examples ('example-why-we-say-ok', 'example-the-red-cars'), editing craft, premium motion design, and recognisable styles (Vox explainer, archive history documentary, screen-recording demo, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
+			"Cue's playbooks: how to work in Cue (read 'working-in-cue' first, then 'before-your-first-pass': the mistakes earlier builds made), the editing techniques pros use and how to build each in Cue ('editing-techniques'), where to get footage, stills, music and sounds ('finding-assets'), how to match a reference video ('match-a-reference', with analyze_reference), complete worked examples ('example-why-we-say-ok', 'example-the-red-cars'), editing craft, premium motion design, and recognisable styles (Vox explainer, archive history documentary, screen-recording demo, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
 		input: { category: z.enum(["workflow", "craft", "style", "example"]).optional() },
 	},
 	get_playbook: {
@@ -1231,6 +1231,26 @@ export const contract = {
 		},
 	},
 
+	find_media: {
+		description:
+			"Find openly licensed pictures or footage outside the project when the library and your own media don't have what the edit needs: kind image (Openverse: Flickr, museums, Wikimedia and more; plus Wikimedia Commons) or video (Wikimedia Commons). Only CC0, public domain, CC BY and CC BY-SA (usable in any video with credit). Returns id, title, creator, size, length, licence and the credit line for the credits. Add one with import_found. Prefer specific queries ('1950s office typewriter', 'aerial city night timelapse').",
+		input: {
+			query: z.string().min(2),
+			kind: z.enum(["image", "video"]).default("image"),
+			minWidth: z.number().int().min(0).optional(),
+			limit: z.number().int().min(1).max(20).default(8),
+		},
+	},
+	import_found: {
+		description:
+			"Download something found with find_media (by id) into the project's found folder, add it to the media with its credit (video is converted to MP4), and optionally place it on trackId at startMs (images for durationMs, default 5 s). Put its credit line in the credits.",
+		input: {
+			id: z.string(),
+			trackId: z.string().optional(),
+			startMs: z.number().min(0).default(0),
+			durationMs: z.number().min(1).optional(),
+		},
+	},
 	find_music: {
 		description:
 			"Search openly licensed music (CC0, public domain, CC BY, CC BY-SA: usable in any video, commercial ones too) by mood, genre or instrument, e.g. 'calm piano', 'lo-fi study', 'cinematic tension'. Returns tracks with id, title, creator, length, licence and the credit line that must go in the video's credits or description. Add one with import_music. Cue's library has sound effects but no music: use this or generate_music whenever a video needs a bed.",

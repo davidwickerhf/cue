@@ -2,11 +2,13 @@ import { AGENT_WORKFLOW } from "./agentWorkflow";
 import { EDITING_CRAFT } from "./editingCraft";
 import { EXAMPLE_OK } from "./exampleOk";
 import { EXAMPLE_RED_CARS } from "./exampleRedCars";
+import { FINDING_ASSETS } from "./findingAssets";
 import { FIRST_PASS } from "./firstPass";
 import { MATCH_REFERENCE } from "./matchReference";
 import { MOTION_DESIGN } from "./motionDesign";
 import { SCREEN_DEMO } from "./screenDemo";
 import { OTHER_STYLES } from "./styles";
+import { TECHNIQUES } from "./techniques";
 import { VOX_EXPLAINER } from "./voxExplainer";
 
 /**
@@ -30,7 +32,9 @@ export interface Playbook {
 export const PLAYBOOKS: Playbook[] = [
 	AGENT_WORKFLOW,
 	FIRST_PASS,
+	FINDING_ASSETS,
 	MATCH_REFERENCE,
+	TECHNIQUES,
 	EDITING_CRAFT,
 	MOTION_DESIGN,
 	VOX_EXPLAINER,

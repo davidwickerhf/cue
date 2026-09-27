@@ -2567,8 +2567,12 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			const at = op.fromMs;
 			const delta = op.deltaMs < 0 ? Math.max(op.deltaMs, -at) : op.deltaMs;
 			const move = (t: number) => (t >= at ? Math.max(at + Math.min(0, delta), t + delta) : t);
-			const clips = data.clips.map((c) => (c.startMs >= at ? { ...c, startMs: move(c.startMs) } : c));
-			const lines = sortLines(data.lines.map((l) => (l.startMs >= at ? { ...l, startMs: move(l.startMs) } : l)));
+			const clips = data.clips.map((c) =>
+				c.startMs >= at ? { ...c, startMs: move(c.startMs) } : c,
+			);
+			const lines = sortLines(
+				data.lines.map((l) => (l.startMs >= at ? { ...l, startMs: move(l.startMs) } : l)),
+			);
 			const markers = data.markers.map((m) => (m.atMs >= at ? { ...m, atMs: move(m.atMs) } : m));
 			const moved = data.clips.filter((c) => c.startMs >= at).length;
 			return {

@@ -33,6 +33,7 @@ import {
 	studioDir,
 } from "./core/cursor";
 import type { Rasteriser } from "./core/exporter";
+import { downloadFound, type FoundMedia, findMedia } from "./core/findMedia";
 import { scanProjects, summarise } from "./core/library";
 import { ffmpeg } from "./core/media";
 import { fitToRegion } from "./core/motionFrames";
@@ -79,6 +80,8 @@ import type {
 
 /** Tracks found with find_music, by id, for import_music. */
 const foundMusic = new Map<string, MusicTrack>();
+/** Pictures and footage found with find_media, by id, for import_found. */
+const foundMedia = new Map<string, FoundMedia>();
 
 /** Calls that only read, so they never wait for a transaction. */
 const READ_ONLY =
@@ -1752,6 +1755,71 @@ export class Controller extends EventEmitter {
 				return this.describeAsset(asset);
 			}
 
+			case "find_media": {
+				const { query, kind, minWidth, limit } = parseInput("find_media", params);
+				const found = await this.job(
+					`Searching for ${kind === "video" ? "footage" : "pictures"}`,
+					() => findMedia({ query, kind, minWidth, limit }),
+				);
+				for (const f of found) foundMedia.set(f.id, f);
+				return {
+					results: found.map((f) => ({
+						id: f.id,
+						kind: f.kind,
+						title: f.title,
+						creator: f.creator,
+						size: `${f.width}x${f.height}`,
+						...(f.durationMs ? { seconds: Math.round(f.durationMs / 1000) } : {}),
+						licence: f.licence,
+						credit: f.credit,
+						source: f.sourceUrl,
+					})),
+					note: found.length
+						? "Add one with import_found {id}; its credit line goes in the credits. Look at an image with render_frame after placing it."
+						: "Nothing matched: try other words, the other kind, generate_image for a still, or the library (list_library_assets).",
+				};
+			}
+			case "import_found": {
+				const input = parseInput("import_found", params);
+				const item = foundMedia.get(input.id);
+				if (!item)
+					throw new Error(
+						"Unknown id: search with find_media first and use an id from its results.",
+					);
+				const file = await this.job(`Downloading ${item.title}`, () =>
+					downloadFound(item, this.store.projectDir),
+				);
+				const [asset] = await this.store.importMedia(
+					[file],
+					actor,
+					input.trackId ? { trackId: input.trackId, startMs: input.startMs } : undefined,
+				);
+				if (!asset) throw new Error("Could not import it.");
+				const patch = {
+					name: item.title.slice(0, 80),
+					credit: {
+						title: item.title,
+						creator: item.creator,
+						licence: item.licence,
+						sourceUrl: item.sourceUrl,
+						line: item.credit,
+					},
+				};
+				this.store.apply({ type: "updateAsset", id: asset.id, patch }, actor);
+				if (input.trackId && input.durationMs) {
+					const placed = [...this.store.current.clips]
+						.reverse()
+						.find(
+							(c) => c.type === "media" && c.assetId === asset.id && c.trackId === input.trackId,
+						);
+					if (placed)
+						this.store.apply(
+							{ type: "updateClip", id: placed.id, patch: { durationMs: input.durationMs } },
+							actor,
+						);
+				}
+				return { ...this.describeAsset({ ...asset, ...patch }), credit: item.credit };
+			}
 			case "find_music": {
 				const { query, minSeconds, maxSeconds, licences, limit } = parseInput("find_music", params);
 				const tracks = await this.job("Searching for music", () =>
