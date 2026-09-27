@@ -36,7 +36,7 @@ export const contract = {
 	},
 	list_motion_templates: {
 		description:
-			"Cue's motion graphic templates (lower thirds, titles, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
+			"Cue's motion graphic templates (lower thirds, titles, kinetic words, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, a subscribe reminder, a chapter progress bar, a route map, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
 		input: {
 			category: z
 				.enum([
@@ -47,6 +47,8 @@ export const contract = {
 					"callout",
 					"list",
 					"quote",
+					"overlay",
+					"map",
 					"transition",
 					"annotation",
 				])
@@ -830,7 +832,7 @@ export const contract = {
 	},
 	add_infographic: {
 		description:
-			"Create an editable animated data graphic over the video. bars compares values, donut shows parts of a whole, cards highlights key metrics, line shows a numerical trend, and timeline shows ordered milestones with values. Give real numbers and a source when available. The graphic is one text clip, so it can be moved, trimmed, undone, and edited with update_clip {infographic:{...}}. Palette: editorial (warm newsprint), electric (dark signal with lime), mono (black and white).",
+			"A quick way to make a data chart over the video: bars compares values, donut shows parts of a whole, cards shows up to four key numbers, line shows a trend, and timeline shows ordered milestones with a value each. Give real numbers and a source when available. It makes a motion graphic from the matching template (bar-chart, donut-chart, stat-row, line-chart, timeline) on a card over the footage and places it at startMs; it returns the assetId, template and params. Change it with update_motion_graphic {assetId, params} (e.g. new items, a theme or colors), or use create_motion_graphic directly for more options (columns, a highlighted bar, full-frame backdrops). Palette: editorial (warm paper, red accent), electric (the dark signal theme with lime), mono (black and white). Without durationMs the template's own length is used.",
 		input: {
 			kind: z.enum(["bars", "donut", "cards", "line", "timeline"]),
 			title: z.string().min(1).max(120),
@@ -842,12 +844,12 @@ export const contract = {
 			source: z.string().max(160).optional(),
 			palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
 			startMs: z.number().min(0),
-			durationMs: z.number().min(1000).default(4000),
+			durationMs: z.number().min(1000).max(60000).optional(),
 		},
 	},
 	add_data_callout: {
 		description:
-			"Pin an animated evidence callout to a point in the video. A target ring and leader line connect to a compact label and optional value/source. Positions are shares of the frame, 0–1. The result is one editable clip; use update_clip with a partial dataCallout patch to revise it. Use for a place, person, object, or sourced fact visible in the shot.",
+			"Pin an animated callout to a point in the video: a pulsing marker on the target (targetX, targetY), a leader line and a label box with an optional value and source at x, y. Positions are shares of the frame, 0–1. It makes a motion graphic from the callout template and places it at startMs; it returns the assetId, template and params. Move or reword it with update_motion_graphic {assetId, params: {targetX, targetY, labelX, labelY, label, value, source, theme}}. Use for a place, person, object, or sourced fact visible in the shot.",
 		input: {
 			label: z.string().min(1).max(80),
 			value: z.string().max(40).optional(),
@@ -858,7 +860,7 @@ export const contract = {
 			targetY: z.number().min(0).max(1),
 			palette: z.enum(["editorial", "electric", "mono"]).default("editorial"),
 			startMs: z.number().min(0),
-			durationMs: z.number().min(1000).default(3500),
+			durationMs: z.number().min(1000).max(60000).optional(),
 		},
 	},
 	review_changes: {

@@ -20,6 +20,7 @@ const CATEGORIES = [
 	"Annotate",
 	"Callouts",
 	"Lists",
+	"Overlays",
 	"Transitions",
 ] as const;
 const GROUP: Record<MotionTemplate["category"], (typeof CATEGORIES)[number]> = {
@@ -30,6 +31,8 @@ const GROUP: Record<MotionTemplate["category"], (typeof CATEGORIES)[number]> = {
 	stat: "Charts",
 	callout: "Callouts",
 	list: "Lists",
+	overlay: "Overlays",
+	map: "Charts",
 	transition: "Transitions",
 	annotation: "Annotate",
 };

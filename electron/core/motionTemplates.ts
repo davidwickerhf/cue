@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ANNOTATION_TEMPLATES } from "./motionAnnotations";
-import { type MotionLayer, type MotionSpec, textWidth } from "./motionSpec";
+import { type Ease, type MotionLayer, type MotionSpec, textWidth } from "./motionSpec";
 
 /**
  * Cue's own motion graphics: templates that build a motion spec from a few
@@ -236,6 +236,8 @@ export interface MotionTemplate<P extends z.ZodRawShape = z.ZodRawShape> {
 		| "callout"
 		| "list"
 		| "quote"
+		| "overlay"
+		| "map"
 		| "transition"
 		| "annotation";
 	description: string;
@@ -1496,6 +1498,8 @@ const callout = template({
 		...common,
 		label: z.string().max(40),
 		value: z.string().max(30).default(""),
+		/** Where a factual value comes from, in small type under the label. */
+		source: z.string().max(80).default(""),
 		/** The point to mark, as shares of the frame (0–1). */
 		targetX: z.number().min(0).max(1).default(0.4),
 		targetY: z.number().min(0).max(1).default(0.55),
@@ -1521,13 +1525,18 @@ const callout = template({
 		const ly = p.labelY * f.H;
 		const size = 34 * f.u;
 		const valueSize = 26 * f.u;
+		const sourceSize = 18 * f.u;
+		const sourceText = p.source ? `Source: ${p.source}` : "";
 		const w =
 			Math.max(
 				textWidth(p.label.toUpperCase(), size, "sans", 1.5 * f.u),
 				textWidth(p.value, valueSize),
+				textWidth(sourceText, sourceSize),
 			) +
 			90 * f.u;
-		const h = (p.value ? 112 : 72) * f.u;
+		const h = ((p.value ? 112 : 72) + (p.source ? 34 : 0)) * f.u;
+		// Label and value sit higher when a source line is under them.
+		const shift = p.source ? -17 * f.u : 0;
 		const right = lx >= tx;
 		const boxX = right ? lx : lx - w;
 		const elbow: [number, number] = [lx, ty + (ly - ty) * 0.001];
@@ -1623,7 +1632,7 @@ const callout = template({
 						uppercase: true,
 						tracking: 1.5 * f.u,
 						x: boxX + 30 * f.u,
-						y: ly - (p.value ? 20 : 0) * f.u,
+						y: ly - (p.value ? 20 : 0) * f.u + shift,
 						size,
 						color: t.text,
 						weight: 700,
@@ -1639,11 +1648,27 @@ const callout = template({
 								name: "Value",
 								text: p.value,
 								x: boxX + 30 * f.u,
-								y: ly + 26 * f.u,
+								y: ly + 26 * f.u + shift,
 								size: valueSize,
 								weight: 600,
 								color: t.accent,
 								enter: { preset: "type" as const, atMs: 1250, durationMs: 450 },
+								exit: { preset: "fade" as const, atMs: out, durationMs: 250 },
+							},
+						]
+					: []),
+				...(p.source
+					? [
+							{
+								type: "text" as const,
+								name: "Source",
+								text: sourceText,
+								x: boxX + 30 * f.u,
+								y: ly + h / 2 - 24 * f.u,
+								size: sourceSize,
+								weight: 400,
+								color: t.muted,
+								enter: { preset: "fade" as const, atMs: 1450, durationMs: 400 },
 								exit: { preset: "fade" as const, atMs: out, durationMs: 250 },
 							},
 						]
@@ -2262,6 +2287,832 @@ const blocksTransition = template({
 	},
 });
 
+// --- Overlays, kinetic type and maps ----------------------------------------------
+
+/** A keyframe as specs write it: [ms, value, ease]. */
+type Key = [number, number, ...Ease[]];
+
+const subscribe = template({
+	id: "subscribe",
+	name: "Subscribe reminder",
+	category: "overlay",
+	description:
+		"A subscribe button in a corner: it pops in, a cursor glides over and clicks it, the button turns to Subscribed with a tick and the bell rings; it slides away at the end.",
+	overlay: true,
+	params: z.object({
+		...common,
+		label: z.string().max(24).default("Subscribe"),
+		doneLabel: z.string().max(24).default("Subscribed"),
+		corner: z
+			.enum(["bottom-right", "bottom-left", "top-right", "top-left"])
+			.default("bottom-right"),
+		bell: z.boolean().default(true),
+		cursor: z.boolean().default(true),
+		/** The button's colour (default a strong red); colors.accent does the same. */
+		color: hex.optional(),
+	}),
+	example: { corner: "bottom-right" },
+	build: (p, c) => {
+		const f = frameOf(c.width, c.height);
+		const D = p.durationMs ?? 5000;
+		const out = D - 600;
+		const red = p.color ?? p.colors?.accent ?? "#e8261c";
+		const size = 30 * f.u;
+		const tracking = 2 * f.u;
+		const labels = [p.label, p.doneLabel].map((s) => s.toUpperCase());
+		const textW = Math.max(...labels.map((s) => textWidth(s, size, "sans", tracking, 800)));
+		const bh = 84 * f.u;
+		const bw = 78 * f.u + textW + 40 * f.u;
+		const gap = 16 * f.u;
+		const total = bw + (p.bell ? gap + bh : 0);
+		const right = p.corner.endsWith("right");
+		const bottom = p.corner.startsWith("bottom");
+		const left = right ? f.W - f.m - total : f.m;
+		const by = bottom ? f.H - f.m - bh / 2 : f.m + bh / 2;
+		const bx = left + bw / 2;
+		const cx = left + bw + gap + bh / 2;
+		const click = 1950;
+		const iconX = left + 46 * f.u;
+		const textX = left + 78 * f.u;
+		const done = "#2a2a2a";
+		const doneText = "#c4c4c4";
+		// Where the cursor ends up: on the label, a little right of centre.
+		const tipX = bx + 30 * f.u;
+		const tipY = by + 10 * f.u;
+		const layers: MotionLayer[] = [
+			{
+				type: "rect",
+				name: "Button",
+				x: bx,
+				y: by,
+				width: bw,
+				height: bh,
+				radius: bh / 2,
+				fill: red,
+				shadow: { opacity: 0.35, distance: 8 * f.u, blur: 24 * f.u },
+				keys: p.cursor
+					? {
+							color: [
+								[click, red, "outCubic"],
+								[click + 200, done],
+							],
+							scale: [
+								[click - 80, 1, "out"],
+								[click, 0.94, "outBack"],
+								[click + 220, 1],
+							],
+						}
+					: undefined,
+				enter: { preset: "pop", atMs: 0, durationMs: 600 },
+			},
+			{
+				type: "path",
+				name: "Play",
+				x: iconX,
+				y: by,
+				d: `M ${-11 * f.u} ${-15 * f.u} L ${15 * f.u} 0 L ${-11 * f.u} ${15 * f.u} Z`,
+				fill: "#ffffff",
+				...(p.cursor ? { endMs: click + 100 } : {}),
+				enter: { preset: "pop", atMs: 250, durationMs: 500 },
+			},
+			{
+				type: "text",
+				name: "Label",
+				text: labels[0],
+				x: textX,
+				y: by,
+				size,
+				weight: 800,
+				tracking,
+				color: "#ffffff",
+				...(p.cursor ? { endMs: click + 100 } : {}),
+				enter: { preset: "fade", atMs: 250, durationMs: 300 },
+			},
+		];
+		if (p.cursor)
+			layers.push(
+				{
+					type: "line",
+					name: "Tick",
+					points: [
+						[iconX - 12 * f.u, by + f.u],
+						[iconX - 3 * f.u, by + 10 * f.u],
+						[iconX + 14 * f.u, by - 9 * f.u],
+					],
+					stroke: doneText,
+					strokeWidth: 5 * f.u,
+					startMs: click + 100,
+					enter: { preset: "draw", atMs: click + 120, durationMs: 300 },
+				},
+				{
+					type: "text",
+					name: "Label done",
+					text: labels[1],
+					x: textX,
+					y: by,
+					size,
+					weight: 800,
+					tracking,
+					color: doneText,
+					startMs: click + 100,
+					enter: { preset: "fade", atMs: click + 100, durationMs: 200 },
+				},
+			);
+		if (p.bell)
+			layers.push(
+				{
+					type: "ellipse",
+					name: "Bell circle",
+					x: cx,
+					y: by,
+					width: bh,
+					height: bh,
+					fill: "#ffffff",
+					shadow: { opacity: 0.35, distance: 8 * f.u, blur: 24 * f.u },
+					enter: { preset: "pop", atMs: 120, durationMs: 600 },
+				},
+				{
+					type: "path",
+					name: "Bell",
+					x: cx,
+					y: by,
+					scale: f.u,
+					d: "M -14 8 C -14 -8 -10 -16 0 -16 C 10 -16 14 -8 14 8 L 18 12 L -18 12 Z M -5 15 A 5 5 0 0 0 5 15 Z M -2 -16 A 2 2 0 0 1 2 -16 Z",
+					fill: "#111111",
+					keys: {
+						rotation: [
+							[2500, 0, "inOut"],
+							[2600, 20, "inOut"],
+							[2700, -16, "inOut"],
+							[2800, 12, "inOut"],
+							[2900, -7, "inOut"],
+							[3000, 0],
+						],
+					},
+					enter: { preset: "pop", atMs: 220, durationMs: 600 },
+				},
+			);
+		if (p.cursor)
+			layers.push(
+				{
+					type: "ellipse",
+					name: "Ripple",
+					x: tipX,
+					y: tipY,
+					width: 110 * f.u,
+					height: 110 * f.u,
+					fill: null,
+					stroke: "#ffffff",
+					strokeWidth: 4 * f.u,
+					startMs: click,
+					keys: {
+						scale: [
+							[click, 0.1, "outCubic"],
+							[click + 500, 1.3],
+						],
+						opacity: [
+							[click, 0.9, "in"],
+							[click + 500, 0],
+						],
+					},
+				},
+				{
+					type: "path",
+					name: "Cursor",
+					x: tipX,
+					y: tipY,
+					scale: f.u,
+					d: "M 0 0 L 0 38 L 10 29 L 17 44 L 24 41 L 17 26 L 30 26 Z",
+					fill: "#ffffff",
+					stroke: "#111111",
+					strokeWidth: 2.5,
+					keys: {
+						x: [
+							[500, right ? f.W + 40 * f.u : tipX + 400 * f.u, "outCubic"],
+							[1650, tipX],
+						],
+						y: [
+							[500, bottom ? f.H + 50 * f.u : tipY + 250 * f.u, "outCubic"],
+							[1650, tipY],
+						],
+						scale: [
+							[click - 80, f.u, "out"],
+							[click, 0.82 * f.u, "outBack"],
+							[click + 200, f.u],
+						],
+						opacity: [
+							[3100, 1, "inCubic"],
+							[3500, 0],
+						],
+					},
+				},
+			);
+		return {
+			width: c.width,
+			height: c.height,
+			fps: c.fps,
+			durationMs: D,
+			markers: [{ name: "outro", atMs: out, durationMs: 600 }],
+			layers: [
+				{
+					type: "group",
+					name: "Reminder",
+					pivot: [bx, by],
+					layers,
+					exit: [
+						{
+							preset: right ? "slideRight" : "slideLeft",
+							atMs: out,
+							durationMs: 500,
+							amount: 120 * f.u,
+						},
+						{ preset: "fade", atMs: out + 100, durationMs: 400 },
+					],
+				},
+			],
+		};
+	},
+});
+
+const kineticWords = template({
+	id: "kinetic-words",
+	name: "Kinetic words",
+	category: "title",
+	description:
+		"Short words slam in one after another (a scale punch with a blur, a flash and a small shake), each ending in an accent mark; a rule draws under them and they lift away. For openers and slogans.",
+	overlay: false,
+	params: z.object({
+		...common,
+		words: z.array(z.string().min(1).max(24)).min(1).max(6),
+		/** Shown after each word in the accent colour ("" for none). */
+		mark: z.string().max(2).default("."),
+		/** One word under another, or all on one line. */
+		layout: z.enum(["stack", "line"]).default("stack"),
+		/** Time between words. */
+		staggerMs: z.number().min(150).max(2000).default(500),
+		uppercase: z.boolean().default(true),
+		backdrop: z.enum(["full", "none"]).default("full"),
+	}),
+	example: { words: ["Build", "Ship", "Repeat"], theme: "signal" },
+	build: (p, c) => {
+		const f = frameOf(c.width, c.height);
+		const t = themeOf(p.theme, p.colors);
+		const words = p.words.map((w) => (p.uppercase ? w.toUpperCase() : w));
+		const n = words.length;
+		const firstAt = 150;
+		const lastAt = firstAt + (n - 1) * p.staggerMs;
+		const D = p.durationMs ?? Math.max(3000, lastAt + 2600);
+		const out = D - 700;
+		const font = t.display === "serif" ? "serif" : "display";
+		const weight = font === "serif" ? 400 : 700;
+		// Tight tracking, in proportion to the size (so widths scale with it).
+		const widths = (s: number) =>
+			words.map((w) => textWidth(w + p.mark, s, font, -0.01 * s, weight));
+		const room = f.W - 2 * f.m;
+		const ruleGap = 70 * f.u;
+		let size: number;
+		if (p.layout === "stack") {
+			const byWidth = room / Math.max(...widths(1));
+			const byHeight = (f.H - 2 * f.m - ruleGap) / (n * 1.02);
+			size = Math.min(260 * f.u, byWidth, byHeight);
+		} else {
+			const gap = 0.3;
+			const total = widths(1).reduce((a, b) => a + b, 0) + gap * (n - 1);
+			size = Math.min(220 * f.u, room / total);
+		}
+		const lh = size * 1.02;
+		const tracking = -0.01 * size;
+		const slam = (at: number) => ({
+			scale: [
+				[at, 2.4, "outExpo"],
+				[at + 280, 1],
+			] as Key[],
+			opacity: [
+				[at, 0],
+				[at + 50, 1],
+			] as Key[],
+			blur: [
+				[at, 30 * f.u, "outCubic"],
+				[at + 220, 0],
+			] as Key[],
+		});
+		const times = words.map((_, i) => firstAt + i * p.staggerMs);
+		const layers: MotionLayer[] = times.map((at) => ({
+			type: "rect",
+			name: "Flash",
+			width: f.W,
+			height: f.H,
+			fill: t.accent,
+			opacity: 0,
+			keys: {
+				opacity: [
+					[at, 0, "linear"],
+					[at + 40, 0.14, "outCubic"],
+					[at + 320, 0],
+				],
+			},
+		}));
+		const kids: MotionLayer[] = [];
+		let ruleY: number;
+		let ruleW: number;
+		if (p.layout === "stack") {
+			const top = f.H / 2 - (n * lh + ruleGap) / 2 + lh / 2;
+			words.forEach((w, i) => {
+				kids.push({
+					type: "text",
+					name: `Word ${i + 1}`,
+					runs: [{ text: w }, ...(p.mark ? [{ text: p.mark, color: t.accent }] : [])],
+					font,
+					weight,
+					size,
+					tracking,
+					align: "center",
+					x: f.W / 2,
+					y: top + i * lh,
+					color: t.text,
+					keys: slam(times[i]),
+					exit: {
+						preset: "rise",
+						atMs: out + i * 70,
+						durationMs: 450,
+						amount: 90 * f.u,
+						ease: "inCubic",
+					},
+				});
+			});
+			ruleY = top + (n - 1) * lh + lh / 2 + ruleGap / 2;
+			ruleW = Math.min(room, Math.max(...widths(size)) * 0.8);
+		} else {
+			kids.push({
+				type: "text",
+				name: "Words",
+				runs: words.flatMap((w, i) => [
+					{ text: w, keys: slam(times[i]) },
+					{
+						text: `${p.mark}${i < n - 1 ? " " : ""}`,
+						color: t.accent,
+						keys: slam(times[i]),
+					},
+				]),
+				font,
+				weight,
+				size,
+				tracking,
+				align: "center",
+				x: f.W / 2,
+				y: f.H / 2 - ruleGap / 2,
+				color: t.text,
+				exit: { preset: "rise", atMs: out, durationMs: 450, amount: 90 * f.u, ease: "inCubic" },
+			});
+			ruleY = f.H / 2 + size / 2 + ruleGap / 4;
+			ruleW = Math.min(room, widths(size).reduce((a, b) => a + b, 0) * 0.6);
+		}
+		const shake: Key[] = [[0, f.W / 2]];
+		for (const at of times)
+			shake.push(
+				[at + 60, f.W / 2, "linear"],
+				[at + 100, f.W / 2 + 16 * f.u, "linear"],
+				[at + 140, f.W / 2 - 12 * f.u, "linear"],
+				[at + 180, f.W / 2 + 8 * f.u, "linear"],
+				[at + 230, f.W / 2],
+			);
+		layers.push(
+			{
+				type: "group",
+				name: "Words",
+				pivot: [f.W / 2, f.H / 2],
+				keys: { x: shake },
+				layers: kids,
+			},
+			{
+				type: "rect",
+				name: "Rule",
+				x: f.W / 2 - ruleW / 2,
+				y: ruleY,
+				origin: "left",
+				width: ruleW,
+				height: 10 * f.u,
+				fill: t.accent,
+				enter: { preset: "grow", atMs: lastAt + 450, durationMs: 700 },
+				exit: { preset: "fade", atMs: out + 100, durationMs: 300 },
+			},
+		);
+		return {
+			width: c.width,
+			height: c.height,
+			fps: c.fps,
+			durationMs: D,
+			...(p.backdrop === "full" ? { background: t.bg } : {}),
+			markers: [{ name: "outro", atMs: out, durationMs: 700 }],
+			layers,
+		};
+	},
+});
+
+const place = z.object({
+	label: z.string().max(40),
+	/** A second line under the name, e.g. coordinates or a date. */
+	detail: z.string().max(40).default(""),
+	/** Where on the frame, as shares (0–1). */
+	x: z.number().min(0).max(1),
+	y: z.number().min(0).max(1),
+});
+
+const routeMap = template({
+	id: "route-map",
+	name: "Route map",
+	category: "map",
+	description:
+		"A journey between two places on a map-style grid: the start pin drops, a dotted route draws across with a travelling dot, the destination pin lands and a distance label pops at the top of the arc.",
+	overlay: false,
+	params: z.object({
+		...common,
+		from: place,
+		to: place,
+		/** Shown in a chip over the middle of the route, e.g. "577 km". */
+		distance: z.string().max(24).default(""),
+		/** How much the route bows upwards (0 = straight, negative bows down). */
+		bend: z.number().min(-1).max(1).default(0.45),
+		/** Seconds the route takes to draw. */
+		travelMs: z.number().min(500).max(20000).default(1800),
+		backdrop: z.enum(["full", "none"]).default("full"),
+	}),
+	example: {
+		from: { label: "Amsterdam", detail: "52.37° N  4.90° E", x: 0.23, y: 0.65 },
+		to: { label: "Berlin", detail: "52.52° N  13.40° E", x: 0.77, y: 0.52 },
+		distance: "577 km",
+		theme: "midnight",
+	},
+	build: (p, c) => {
+		const f = frameOf(c.width, c.height);
+		const t = themeOf(p.theme, p.colors);
+		const travelAt = 900;
+		const arrive = travelAt + p.travelMs;
+		const D = p.durationMs ?? Math.max(4500, arrive + 3300);
+		const out = D - 700;
+		const A: [number, number] = [p.from.x * f.W, p.from.y * f.H];
+		const B: [number, number] = [p.to.x * f.W, p.to.y * f.H];
+		const span = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1;
+		// The route bows sideways from the straight line, towards the top of the frame.
+		let normal: [number, number] = [(A[1] - B[1]) / span, (B[0] - A[0]) / span];
+		if (normal[1] > 0 || (normal[1] === 0 && normal[0] < 0)) normal = [-normal[0], -normal[1]];
+		const bow = p.bend * span * 0.25;
+		const mid: [number, number] = [
+			(A[0] + B[0]) / 2 + normal[0] * bow,
+			(A[1] + B[1]) / 2 + normal[1] * bow,
+		];
+		// An even arc: points along a quadratic curve whose top is mid.
+		const control = [2 * mid[0] - (A[0] + B[0]) / 2, 2 * mid[1] - (A[1] + B[1]) / 2];
+		const route: [number, number][] = Array.from({ length: 9 }, (_, i) => {
+			const k = i / 8;
+			return [
+				(1 - k) ** 2 * A[0] + 2 * (1 - k) * k * control[0] + k * k * B[0],
+				(1 - k) ** 2 * A[1] + 2 * (1 - k) * k * control[1] + k * k * B[1],
+			];
+		});
+		const exit = (d = 400) => ({ preset: "fade" as const, atMs: out, durationMs: d });
+		const layers: MotionLayer[] = [];
+		if (p.backdrop === "full") {
+			const step = 120 * f.u;
+			for (let y = step * 1.5, i = 0; y < f.H; y += step, i++)
+				layers.push({
+					type: "line",
+					name: `Latitude ${i + 1}`,
+					points: [
+						[0, y],
+						[f.W, y],
+					],
+					stroke: `${t.text}1c`,
+					strokeWidth: 2 * f.u,
+					dash: [2 * f.u, 10 * f.u],
+					enter: { preset: "fade", atMs: i * 40, durationMs: 600 },
+					exit: exit(),
+				});
+			for (let x = step, i = 0; x < f.W; x += step * 1.33, i++)
+				layers.push({
+					type: "line",
+					name: `Longitude ${i + 1}`,
+					points: [
+						[x, 0],
+						[x, f.H],
+					],
+					stroke: `${t.text}1c`,
+					strokeWidth: 2 * f.u,
+					dash: [2 * f.u, 10 * f.u],
+					enter: { preset: "fade", atMs: i * 30, durationMs: 600 },
+					exit: exit(),
+				});
+			const reach = Math.max(f.W, f.H);
+			layers.push({
+				type: "ellipse",
+				name: "Vignette",
+				width: reach * 1.6,
+				height: reach * 1.6,
+				fill: null,
+				gradient: {
+					kind: "radial",
+					from: [0, 0],
+					to: [reach * 0.8, 0],
+					stops: [
+						[0.5, `${t.bg}00`],
+						[1, `${t.bg}ff`],
+					],
+				},
+			});
+		}
+		layers.push(
+			{
+				type: "line",
+				name: "Route",
+				points: route,
+				smooth: true,
+				stroke: t.accent,
+				strokeWidth: 7 * f.u,
+				cap: "round",
+				dash: [0.1, 20 * f.u],
+				enter: { preset: "draw", atMs: travelAt, durationMs: p.travelMs, ease: "inOutCubic" },
+				exit: exit(),
+			},
+			{
+				type: "ellipse",
+				name: "Traveller glow",
+				width: 60 * f.u,
+				height: 60 * f.u,
+				fill: `${t.accent}40`,
+				startMs: travelAt,
+				endMs: arrive + 50,
+				follow: { line: "Route", atMs: travelAt, durationMs: p.travelMs, ease: "inOutCubic" },
+			},
+			{
+				type: "ellipse",
+				name: "Traveller",
+				width: 22 * f.u,
+				height: 22 * f.u,
+				fill: t.accent,
+				stroke: t.bg,
+				strokeWidth: 4 * f.u,
+				startMs: travelAt,
+				endMs: arrive + 50,
+				follow: { line: "Route", atMs: travelAt, durationMs: p.travelMs, ease: "inOutCubic" },
+			},
+		);
+		const pinScale = 1.35 * f.u;
+		const pin = "M 0 0 C -6 -14 -24 -26 -24 -44 A 24 24 0 1 1 24 -44 C 24 -26 6 -14 0 0 Z";
+		const places: [z.output<typeof place>, [number, number], string, number][] = [
+			[p.from, A, t.text, 200],
+			[p.to, B, t.accent, arrive - 50],
+		];
+		places.forEach(([pl, [x, y], color, at], i) => {
+			const name = i === 0 ? "From" : "To";
+			layers.push(
+				{
+					type: "ellipse",
+					name: `${name} shadow`,
+					x,
+					y,
+					width: 36 * f.u,
+					height: 10 * f.u,
+					fill: "#00000066",
+					enter: { preset: "pop", atMs: at, durationMs: 500 },
+					exit: exit(),
+				},
+				{
+					type: "path",
+					name: `${name} pin`,
+					x,
+					y,
+					scale: pinScale,
+					d: pin,
+					fill: color,
+					shadow: { opacity: 0.4, distance: 6 * f.u, blur: 14 * f.u },
+					enter: { preset: "pop", atMs: at, durationMs: 550, amount: 0 },
+					exit: exit(),
+				},
+				{
+					type: "ellipse",
+					name: `${name} hole`,
+					x,
+					y: y - 44 * pinScale,
+					width: 18 * pinScale,
+					height: 18 * pinScale,
+					fill: t.bg,
+					enter: { preset: "pop", atMs: at + 80, durationMs: 450, amount: 0 },
+					exit: exit(),
+				},
+				{
+					type: "text",
+					name: `${name} name`,
+					text: pl.label,
+					uppercase: true,
+					x,
+					y: y + 50 * f.u,
+					size: 40 * f.u,
+					weight: 800,
+					tracking: 4 * f.u,
+					align: "center",
+					color: t.text,
+					clip: { x: x - f.W / 2, y: y + 18 * f.u, width: f.W, height: 64 * f.u },
+					enter: { preset: "rise", atMs: at + 150, durationMs: 700, amount: 64 * f.u },
+					exit: exit(300),
+				},
+			);
+			if (pl.detail)
+				layers.push({
+					type: "text",
+					name: `${name} detail`,
+					text: pl.detail,
+					font: "mono",
+					weight: 500,
+					x,
+					y: y + 94 * f.u,
+					size: 20 * f.u,
+					align: "center",
+					color: t.muted,
+					enter: { preset: "fade", atMs: at + 350, durationMs: 500 },
+					exit: exit(300),
+				});
+		});
+		if (p.distance) {
+			const size = 26 * f.u;
+			const w = textWidth(p.distance.toUpperCase(), size, "sans", 2 * f.u, 800) + 60 * f.u;
+			const h = 52 * f.u;
+			// The chip sits just off the top of the route's arc, on the side it bows to.
+			const side = p.bend >= 0 ? 1 : -1;
+			const off = 18 * f.u + (Math.abs(normal[0]) * w) / 2 + (Math.abs(normal[1]) * h) / 2;
+			const chipX = mid[0] + normal[0] * off * side;
+			const chipY = mid[1] + normal[1] * off * side;
+			layers.push(
+				{
+					type: "rect",
+					name: "Distance chip",
+					x: chipX,
+					y: chipY,
+					width: w,
+					height: h,
+					radius: 26 * f.u,
+					fill: t.surface,
+					stroke: `${t.accent}88`,
+					strokeWidth: 2 * f.u,
+					enter: { preset: "pop", atMs: travelAt + p.travelMs * 0.5, durationMs: 500 },
+					exit: exit(),
+				},
+				{
+					type: "text",
+					name: "Distance",
+					text: p.distance,
+					uppercase: true,
+					x: chipX,
+					y: chipY,
+					size,
+					weight: 800,
+					tracking: 2 * f.u,
+					align: "center",
+					color: t.text,
+					enter: { preset: "fade", atMs: travelAt + p.travelMs * 0.5 + 100, durationMs: 400 },
+					exit: exit(300),
+				},
+			);
+		}
+		return {
+			width: c.width,
+			height: c.height,
+			fps: c.fps,
+			durationMs: D,
+			...(p.backdrop === "full" ? { background: t.bg } : {}),
+			markers: [{ name: "outro", atMs: out, durationMs: 700 }],
+			layers,
+		};
+	},
+});
+
+const progressBar = template({
+	id: "progress-bar",
+	name: "Chapter progress",
+	category: "overlay",
+	description:
+		"Where the viewer is in the video: a bar split into chapters along the top (or bottom) edge, the chapters done filled, the current one filling, with its number and title beside it.",
+	overlay: true,
+	params: z.object({
+		...common,
+		chapters: z.number().int().min(2).max(12).default(5),
+		current: z.number().int().min(1).max(12).default(2),
+		/** The current chapter's title. */
+		title: z.string().max(60).default(""),
+		/** How far the current chapter fills (0–1). */
+		within: z.number().min(0).max(1).default(1),
+		/** The small label; {current} and {chapters} are filled in. */
+		label: z.string().max(40).default("Chapter {current} of {chapters}"),
+		edge: z.enum(["top", "bottom"]).default("top"),
+		/** A soft shade behind the bar, so it reads over bright footage. */
+		shade: z.boolean().default(true),
+	}),
+	example: { chapters: 5, current: 2, title: "Designing the prototype", theme: "sunset" },
+	build: (p, c) => {
+		const f = frameOf(c.width, c.height);
+		const t = themeOf(p.theme, p.colors);
+		const D = p.durationMs ?? 5000;
+		const out = D - 700;
+		const n = p.chapters;
+		const current = Math.min(p.current, n);
+		const gap = 10 * f.u;
+		const barH = 8 * f.u;
+		const seg = (f.W - 2 * f.m - gap * (n - 1)) / n;
+		const top = p.edge === "top";
+		const barY = top ? f.m : f.H - f.m;
+		const textY = top ? barY + 44 * f.u : barY - 44 * f.u;
+		const exit = (d = 400) => ({ preset: "fade" as const, atMs: out, durationMs: d });
+		const layers: MotionLayer[] = [];
+		if (p.shade)
+			layers.push({
+				type: "rect",
+				name: "Shade",
+				x: f.W / 2,
+				y: top ? 0 : f.H,
+				origin: top ? "top" : "bottom",
+				width: f.W,
+				height: f.m + 140 * f.u,
+				gradient: {
+					kind: "linear",
+					from: [0, top ? -(f.m + 140 * f.u) / 2 : (f.m + 140 * f.u) / 2],
+					to: [0, top ? (f.m + 140 * f.u) / 2 : -(f.m + 140 * f.u) / 2],
+					stops: [
+						[0, "#00000080"],
+						[1, "#00000000"],
+					],
+				},
+				enter: { preset: "fade", atMs: 0, durationMs: 500 },
+				exit: exit(),
+			});
+		for (let i = 0; i < n; i++) {
+			const x = f.m + i * (seg + gap);
+			layers.push({
+				type: "rect",
+				name: `Chapter ${i + 1}`,
+				x,
+				y: barY,
+				origin: "left",
+				width: seg,
+				height: barH,
+				radius: barH / 2,
+				fill: `${t.text}40`,
+				enter: { preset: "grow", atMs: 100 + i * 70, durationMs: 600 },
+				exit: exit(),
+			});
+		}
+		for (let i = 0; i < current; i++) {
+			const x = f.m + i * (seg + gap);
+			const last = i === current - 1;
+			const at = 500 + i * 250;
+			const w = last ? Math.max(barH, seg * p.within) : seg;
+			layers.push({
+				type: "rect",
+				name: `Done ${i + 1}`,
+				x,
+				y: barY,
+				origin: "left",
+				width: w,
+				height: barH,
+				radius: barH / 2,
+				fill: t.accent,
+				keys: {
+					width: [
+						[at, 0, "outCubic"],
+						[last ? at + 1100 : at + 500, w],
+					],
+				},
+				exit: exit(),
+			});
+		}
+		const label = p.label
+			.replace("{current}", String(current))
+			.replace("{chapters}", String(n))
+			.toUpperCase();
+		layers.push({
+			type: "text",
+			name: "Label",
+			runs: [
+				{ text: label, color: t.accent, weight: 800 },
+				...(p.title ? [{ text: `   ${p.title}`, weight: 400 }] : []),
+			],
+			x: f.m,
+			y: textY,
+			size: 24 * f.u,
+			tracking: 1 * f.u,
+			color: t.text,
+			enter: { preset: top ? "fall" : "rise", atMs: 700, durationMs: 600, amount: 16 * f.u },
+			exit: exit(300),
+		});
+		return {
+			width: c.width,
+			height: c.height,
+			fps: c.fps,
+			durationMs: D,
+			markers: [{ name: "outro", atMs: out, durationMs: 700 }],
+			layers,
+		};
+	},
+});
+
 export const MOTION_TEMPLATES: MotionTemplate[] = [
 	...ANNOTATION_TEMPLATES,
 	lowerThird,
@@ -2275,6 +3126,10 @@ export const MOTION_TEMPLATES: MotionTemplate[] = [
 	timeline,
 	checklist,
 	quote,
+	kineticWords,
+	subscribe,
+	progressBar,
+	routeMap,
 	panelsTransition,
 	irisTransition,
 	stripesTransition,

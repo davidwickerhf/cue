@@ -1210,11 +1210,20 @@ export class Controller extends EventEmitter {
 					},
 					actor,
 				);
-				return { ...this.describeAsset(asset), ...(clipId ? { clipId } : {}) };
+				return {
+					...this.describeAsset(asset),
+					...(clipId ? { clipId } : {}),
+					// Where the words landed, to line other things up with them.
+					...(input.spec ? { textBoxes: this.store.motionGraphicSource(asset.id).textBoxes } : {}),
+				};
 			}
 			case "update_motion_graphic": {
 				const { assetId, ...change } = parseInput("update_motion_graphic", params);
-				return this.describeAsset(await this.store.updateMotionGraphic(assetId, change, actor));
+				const asset = await this.store.updateMotionGraphic(assetId, change, actor);
+				return {
+					...this.describeAsset(asset),
+					...(change.spec ? { textBoxes: this.store.motionGraphicSource(asset.id).textBoxes } : {}),
+				};
 			}
 			case "get_motion_graphic": {
 				const { assetId } = parseInput("get_motion_graphic", params);

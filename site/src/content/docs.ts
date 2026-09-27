@@ -26,6 +26,12 @@ export const DOCS_GROUPS: { title: string; pages: DocLink[] }[] = [
 				description: "Transform, keyframes, zooms, colour, LUTs, effects, masks, chroma key, adjustment layers, transitions and scopes.",
 			},
 			{
+				href: "/docs/motion-graphics",
+				title: "Motion graphics",
+				description:
+					"Import After Effects (Lottie) graphics, edit their text and colours, use the template library, and have agents design graphics from a brief.",
+			},
+			{
 				href: "/docs/titles-and-captions",
 				title: "Titles and captions",
 				description: "Title templates, text styles and animations, word-by-word captions and automatic captions.",

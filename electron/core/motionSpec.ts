@@ -1,6 +1,6 @@
 import { z } from "zod";
-import fontMetrics from "./fontMetrics.json";
 import type { LottieJson } from "./motion";
+import { FONT_METRICS, METRIC_CHARS } from "./motionFontMetrics";
 
 /**
  * Motion specs: a compact way for people and agents to describe a motion graphic
@@ -152,6 +152,28 @@ const base = {
 	blend: z.enum(["normal", "multiply", "screen", "overlay", "add", "darken", "lighten"]).optional(),
 	shadow: shadow.optional(),
 	blur: z.number().min(0).max(400).optional(),
+	/**
+	 * Travels along a route (a motion path): canvas points, or the points of a line
+	 * layer by name (so a dot rides a route as it draws). Sets x and y (and rotation
+	 * with orient) over the time given.
+	 */
+	follow: z
+		.object({
+			points: z
+				.array(z.tuple([z.number(), z.number()]))
+				.min(2)
+				.max(400)
+				.optional(),
+			line: z.string().max(80).optional(),
+			smooth: z.boolean().optional(),
+			atMs: z.number().min(0),
+			durationMs: z.number().min(1).max(60000),
+			ease: easeSchema.optional(),
+			/** Turn to face the way it travels (added to rotation). */
+			orient: z.boolean().optional(),
+		})
+		.refine((f) => f.points || f.line, "Give follow points or the name of a line layer.")
+		.optional(),
 };
 
 const paint = {
@@ -221,14 +243,14 @@ const pathShape = z.object({
 	type: z.literal("path"),
 	...base,
 	...paint,
-	/** SVG path data (M, L, H, V, C, S, Q, Z; absolute or relative), in canvas pixels. */
+	/** SVG path data (M, L, H, V, C, S, Q, A, Z; absolute or relative), in canvas pixels. */
 	d: z.string().max(20000),
 });
 const FONT_FAMILIES = ["sans", "display", "serif", "mono"] as const;
 const text = z.object({
 	type: z.literal("text"),
 	...base,
-	text: z.string().max(2000),
+	text: z.string().max(2000).default(""),
 	font: z.enum(FONT_FAMILIES).default("sans"),
 	weight: z.number().min(100).max(900).default(600),
 	size: z.number().min(4).max(1000),
@@ -242,6 +264,29 @@ const text = z.object({
 	italic: z.boolean().optional(),
 	/** x, y is the middle of the text block (default), or the first line's baseline. */
 	anchor: z.enum(["middle", "baseline", "top"]).optional(),
+	/**
+	 * One line in parts, side by side on one baseline: each part can have its own
+	 * colour, weight, font and motion (a word that pops in, an accent full stop).
+	 * The layer's text is then ignored; its size, tracking, align and motion apply to all.
+	 */
+	runs: z
+		.array(
+			z.object({
+				text: z.string().max(400),
+				color: hex.optional(),
+				font: z.enum(FONT_FAMILIES).optional(),
+				weight: z.number().min(100).max(900).optional(),
+				opacity: z.number().min(0).max(1).optional(),
+				startMs: z.number().min(0).optional(),
+				endMs: z.number().min(0).optional(),
+				keys: base.keys,
+				enter: base.enter,
+				exit: base.exit,
+			}),
+		)
+		.min(1)
+		.max(40)
+		.optional(),
 	/** Counts a number up: the text shows prefix + value + suffix. */
 	count: z
 		.object({
@@ -369,33 +414,41 @@ function fontFor(family: (typeof FONT_FAMILIES)[number], weight: number, italic 
 	);
 }
 
-/** Advance widths of the bundled fonts (share of the size), read by scripts/build-font-metrics.mjs. */
-const METRICS = fontMetrics as Record<string, Record<string, number>>;
-/** For characters a font does not have. */
-const AVERAGE_WIDTH: Record<string, number> = { sans: 0.52, display: 0.52, serif: 0.37, mono: 0.6 };
-const DEFAULT_WEIGHT: Record<string, number> = { sans: 600, display: 500, serif: 400, mono: 500 };
+/** Rough advance widths (share of the size) for characters the fonts do not have. */
+const AVERAGE_WIDTH: Record<string, number> = { sans: 0.56, display: 0.58, serif: 0.46, mono: 0.6 };
 
 /**
- * How wide text is set in a bundled font, in pixels (the widest line when it has
- * several), for laying out boxes, labels and letters that line up with text.
+ * How wide a line (the widest line, for several) of text is, in pixels, from
+ * the bundled fonts' own advance widths. Kerning is left out, so it can be a
+ * little wider than drawn. Templates use it for layout; specs for runs and boxes.
  */
 export function textWidth(
 	value: string,
 	size: number,
 	font: (typeof FONT_FAMILIES)[number] = "sans",
 	tracking = 0,
-	weight?: number,
+	weight = 600,
 	italic = false,
 ) {
-	const face = fontFor(font, weight ?? DEFAULT_WEIGHT[font], italic);
-	const table = METRICS[face.name] ?? {};
-	return Math.max(
+	const metrics = FONT_METRICS[fontFor(font, weight, italic).name];
+	const widest = Math.max(
+		0,
 		...value.split("\n").map((line) => {
-			let w = 0;
-			for (const ch of line) w += (table[ch] ?? AVERAGE_WIDTH[font]) * size + tracking;
-			return w;
+			let em = 0;
+			for (const ch of line) {
+				const at = METRIC_CHARS.indexOf(ch);
+				const w = at >= 0 ? (metrics?.widths[at] ?? -1) : -1;
+				em += w >= 0 ? w / 1000 : AVERAGE_WIDTH[font];
+			}
+			return em * size + [...line].length * tracking;
 		}),
 	);
+	return widest;
+}
+
+/** The cap height of a family at a weight, as a share of the size. */
+function capHeight(font: (typeof FONT_FAMILIES)[number], weight: number) {
+	return (FONT_METRICS[fontFor(font, weight).name]?.cap ?? 720) / 1000;
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +521,8 @@ interface Context {
 	nextIndex: () => number;
 	resolveImage?: (src: string) => string | null;
 	chars: number;
+	/** Line layers by name, as canvas points (for follow). */
+	lines: Map<string, { points: [number, number][]; smooth: boolean }>;
 }
 
 /** Where a layer's own motion (enter, exit, keys) goes, with its resting values. */
@@ -509,7 +564,26 @@ function presets(layer: Layer, tl: Timeline, rest: Rest, growAxis: "x" | "y" | "
 	} = {
 		draw: false,
 	};
-	const own = new Set(Object.keys(layer.keys ?? {}));
+	// When the layer's own keys (or its route) move a property: presets leave that
+	// stretch of time alone, and combine with the keys before or after it.
+	const own = new Map<string, [number, number]>();
+	const claim = (prop: string, from: number, to: number) => {
+		const had = own.get(prop);
+		own.set(prop, had ? [Math.min(had[0], from), Math.max(had[1], to)] : [from, to]);
+	};
+	for (const [prop, ks] of Object.entries(layer.keys ?? {})) {
+		const times = (ks ?? []).map((k) => k[0]);
+		claim(
+			prop === "scaleX" || prop === "scaleY" ? "scale" : prop,
+			Math.min(...times),
+			Math.max(...times),
+		);
+	}
+	if (layer.follow) {
+		const { atMs, durationMs, orient } = layer.follow;
+		for (const prop of orient ? ["x", "y", "rotation"] : ["x", "y"])
+			claim(prop, atMs, atMs + durationMs);
+	}
 	const apply = (m: MotionPreset, entering: boolean) => {
 		const d = m.durationMs ?? PRESET_MS[m.preset];
 		const a = entering ? m.atMs : m.atMs;
@@ -518,7 +592,8 @@ function presets(layer: Layer, tl: Timeline, rest: Rest, growAxis: "x" | "y" | "
 			m.ease ?? (entering ? (m.preset === "pop" ? "outBack" : "outExpo") : "inCubic");
 		/** Adds a from→to move for a property, entering or leaving. */
 		const move = (prop: string, away: number[], home: number[]) => {
-			if (own.has(prop)) return;
+			const taken = own.get(prop);
+			if (taken && a <= taken[1] && b >= taken[0]) return;
 			if (entering) {
 				tl.add(prop, a, away, ease);
 				tl.add(prop, b, home);
@@ -586,8 +661,73 @@ function presets(layer: Layer, tl: Timeline, rest: Rest, growAxis: "x" | "y" | "
 	return out;
 }
 
-/** The layer's own keys, converted to Lottie units. */
-function ownKeys(layer: Layer, tl: Timeline) {
+/** Points along a route, close enough together to measure and travel it. */
+function routeSamples(points: [number, number][], smooth: boolean): [number, number][] {
+	const b = polyline(points, smooth, false);
+	const out: [number, number][] = [b.v[0] as [number, number]];
+	for (let k = 0; k < b.v.length - 1; k++) {
+		const p0 = b.v[k];
+		const p3 = b.v[k + 1];
+		const c1 = [p0[0] + b.o[k][0], p0[1] + b.o[k][1]];
+		const c2 = [p3[0] + b.i[k + 1][0], p3[1] + b.i[k + 1][1]];
+		for (let s = 1; s <= 32; s++) {
+			const t = s / 32;
+			const at = (a: number, b1: number, c: number, d: number) =>
+				(1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b1 + 3 * (1 - t) * t * t * c + t ** 3 * d;
+			out.push([at(p0[0], c1[0], c2[0], p3[0]), at(p0[1], c1[1], c2[1], p3[1])]);
+		}
+	}
+	return out;
+}
+
+/** x, y (and rotation) keys, one per frame, that move a layer along its follow route. */
+function followKeys(layer: Layer, tl: Timeline, ctx: Context) {
+	const f = layer.follow;
+	if (!f) return;
+	const named = f.line ? ctx.lines.get(f.line) : undefined;
+	if (f.line && !named) throw new Error(`Motion spec: follow: no line layer named "${f.line}".`);
+	const route = routeSamples(
+		named?.points ?? (f.points as [number, number][]),
+		named?.smooth ?? !!f.smooth,
+	);
+	const lengths = [0];
+	for (let i = 1; i < route.length; i++)
+		lengths.push(
+			lengths[i - 1] + Math.hypot(route[i][0] - route[i - 1][0], route[i][1] - route[i - 1][1]),
+		);
+	const total = lengths[lengths.length - 1] || 1;
+	const pointAt = (d: number) => {
+		let i = 1;
+		while (i < route.length - 1 && lengths[i] < d) i++;
+		const span = lengths[i] - lengths[i - 1] || 1;
+		const t = Math.min(1, Math.max(0, (d - lengths[i - 1]) / span));
+		const [a, b] = [route[i - 1], route[i]];
+		return {
+			x: a[0] + (b[0] - a[0]) * t,
+			y: a[1] + (b[1] - a[1]) * t,
+			angle: (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI,
+		};
+	};
+	const frames = Math.max(1, Math.round((f.durationMs / 1000) * tl.fps));
+	let lastAngle: number | undefined;
+	for (let i = 0; i <= frames; i++) {
+		const ms = f.atMs + (i / frames) * f.durationMs;
+		const p = pointAt(easeAt(f.ease ?? "inOutCubic", i / frames) * total);
+		tl.add("x", ms, [p.x]);
+		tl.add("y", ms, [p.y]);
+		if (f.orient) {
+			// Turn the short way round, so the angle never jumps a full circle.
+			let angle = p.angle;
+			if (lastAngle !== undefined) angle += Math.round((lastAngle - angle) / 360) * 360;
+			lastAngle = angle;
+			tl.add("rotation", ms, [angle + (layer.rotation ?? 0)]);
+		}
+	}
+}
+
+/** The layer's own keys, converted to Lottie units, and its route when it follows one. */
+function ownKeys(layer: Layer, tl: Timeline, ctx: Context) {
+	followKeys(layer, tl, ctx);
 	for (const [prop, ks] of Object.entries(layer.keys ?? {})) {
 		for (const [ms, value, ease] of ks as [number, number | string, Ease?][]) {
 			if (prop === "color") {
@@ -883,6 +1023,22 @@ export function parsePath(d: string): Bezier[] {
 				lastCtrl = null;
 				break;
 			}
+			case "A": {
+				const rx = num();
+				const ry = num();
+				const turn = num();
+				const large = num();
+				const sweep = num();
+				const px = ox + num();
+				const py = oy + num();
+				for (const c of arcCurves(x, y, rx, ry, turn, !!large, !!sweep, px, py))
+					curveTo(c[0], c[1], c[2], c[3], c[4], c[5]);
+				if (rx === 0 || ry === 0) lineTo(px, py);
+				x = px;
+				y = py;
+				lastCtrl = null;
+				break;
+			}
 			case "Z":
 				if (cur) {
 					const b = cur as Bezier;
@@ -902,11 +1058,76 @@ export function parsePath(d: string): Bezier[] {
 				lastCtrl = null;
 				break;
 			default:
-				// Arcs and anything unknown: skip the command's numbers.
+				// Anything unknown (T): skip the command's numbers.
 				i++;
 		}
 	}
 	return out.filter((b) => b.v.length > 1);
+}
+
+/**
+ * An SVG elliptical arc as cubic curves (at most a quarter turn each):
+ * [c1x, c1y, c2x, c2y, x, y] per curve. Follows the SVG spec's endpoint to
+ * centre conversion, including radii too small to reach the end point.
+ */
+function arcCurves(
+	x1: number,
+	y1: number,
+	rx: number,
+	ry: number,
+	turnDeg: number,
+	large: boolean,
+	sweep: boolean,
+	x2: number,
+	y2: number,
+): number[][] {
+	if (rx === 0 || ry === 0 || (x1 === x2 && y1 === y2)) return [];
+	rx = Math.abs(rx);
+	ry = Math.abs(ry);
+	const phi = (turnDeg * Math.PI) / 180;
+	const cos = Math.cos(phi);
+	const sin = Math.sin(phi);
+	const dx = (x1 - x2) / 2;
+	const dy = (y1 - y2) / 2;
+	const x1p = cos * dx + sin * dy;
+	const y1p = -sin * dx + cos * dy;
+	const grow = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+	if (grow > 1) {
+		rx *= Math.sqrt(grow);
+		ry *= Math.sqrt(grow);
+	}
+	const num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+	const den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+	const k = (large === sweep ? -1 : 1) * Math.sqrt(Math.max(0, num / den));
+	const cxp = (k * rx * y1p) / ry;
+	const cyp = (-k * ry * x1p) / rx;
+	const cx = cos * cxp - sin * cyp + (x1 + x2) / 2;
+	const cy = sin * cxp + cos * cyp + (y1 + y2) / 2;
+	const angle = (ux: number, uy: number, vx: number, vy: number) =>
+		Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+	const t1 = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+	let dt = angle((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+	if (!sweep && dt > 0) dt -= 2 * Math.PI;
+	if (sweep && dt < 0) dt += 2 * Math.PI;
+	const n = Math.max(1, Math.ceil(Math.abs(dt) / (Math.PI / 2) - 1e-9));
+	const step = dt / n;
+	const h = (4 / 3) * Math.tan(step / 4);
+	// A point on the unit circle, stretched to the ellipse, turned and moved to the centre.
+	const place = (ux: number, uy: number) => {
+		const px = rx * ux;
+		const py = ry * uy;
+		return [cx + cos * px - sin * py, cy + sin * px + cos * py];
+	};
+	const out: number[][] = [];
+	for (let i = 0; i < n; i++) {
+		const a = t1 + i * step;
+		const b = a + step;
+		const c1 = place(Math.cos(a) - h * Math.sin(a), Math.sin(a) + h * Math.cos(a));
+		const c2 = place(Math.cos(b) + h * Math.sin(b), Math.sin(b) - h * Math.cos(b));
+		const end = i === n - 1 ? [x2, y2] : place(Math.cos(b), Math.sin(b));
+		out.push([...c1, ...c2, ...end]);
+	}
+	return out;
 }
 
 /** Points joined by straight lines, or smoothed into a curve through them. */
@@ -962,7 +1183,7 @@ function shapeLayer(
 	ctx: Context,
 ): LottieJson {
 	const tl = new Timeline(ctx.spec.fps);
-	ownKeys(layer, tl);
+	ownKeys(layer, tl, ctx);
 	const W = ctx.spec.width;
 	const H = ctx.spec.height;
 	let items: LottieJson[] = [];
@@ -1119,7 +1340,7 @@ function formatCount(value: number, c: NonNullable<z.infer<typeof text>["count"]
 
 function textLayer(layer: z.infer<typeof text>, ctx: Context): LottieJson {
 	const tl = new Timeline(ctx.spec.fps);
-	ownKeys(layer, tl);
+	ownKeys(layer, tl, ctx);
 	const W = ctx.spec.width;
 	const H = ctx.spec.height;
 	const rest = restOf(layer, { x: W / 2, y: H / 2 });
@@ -1130,14 +1351,7 @@ function textLayer(layer: z.infer<typeof text>, ctx: Context): LottieJson {
 	const lines = content.split("\n");
 	const lh = layer.size * (layer.lineHeight ?? 1.2);
 	// Lottie places text by the first line's baseline; move it so x, y is the middle (or top).
-	const capHeight = layer.size * 0.72;
-	const anchor = layer.anchor ?? "middle";
-	const baselineShift =
-		anchor === "baseline"
-			? 0
-			: anchor === "top"
-				? capHeight
-				: capHeight / 2 - ((lines.length - 1) * lh) / 2;
+	const shift = baselineShift(layer, lines.length);
 	const [r, g, b] = rgba(layer.color);
 	const doc = (t: string) => ({
 		s: layer.size,
@@ -1183,14 +1397,11 @@ function textLayer(layer: z.infer<typeof text>, ctx: Context): LottieJson {
 		docs.sort((a, b) => a.t - b.t);
 	} else docs.push({ t: 0, s: doc(content) });
 	ctx.chars += content.length;
-	const yRest = rest.y + baselineShift;
-	// The baseline shift applies to every y key too.
-	const yTrack = tl.tracks.get("y");
-	if (yTrack) yTrack.keys = yTrack.keys.map(([f, v, e]) => [f, [v[0] + baselineShift], e]);
 	return {
 		...common(layer, ctx, ctx.nextIndex()),
 		ty: 5,
-		ks: transform(tl, { ...rest, y: yRest }),
+		// The anchor sits on x, y (the middle of the block by default), so text scales and turns around it.
+		ks: transform(tl, rest, [0, -shift]),
 		t: {
 			d: { k: docs },
 			p: {},
@@ -1207,7 +1418,7 @@ function imageLayer(layer: z.infer<typeof image>, ctx: Context): LottieJson | nu
 	const id = `image_${ctx.assets.length}`;
 	ctx.assets.push({ id, w: layer.width, h: layer.height, u: "", p: data, e: 1 });
 	const tl = new Timeline(ctx.spec.fps);
-	ownKeys(layer, tl);
+	ownKeys(layer, tl, ctx);
 	const rest = restOf(layer, { x: ctx.spec.width / 2, y: ctx.spec.height / 2 });
 	presets(layer, tl, rest, "both");
 	return {
@@ -1228,7 +1439,7 @@ function groupLayer(layer: MotionGroup, ctx: Context): LottieJson {
 	ctx.assets.push(asset);
 	asset.layers = compileLayers(layer.layers, ctx);
 	const tl = new Timeline(ctx.spec.fps);
-	ownKeys(layer, tl);
+	ownKeys(layer, tl, ctx);
 	const rest = restOf(layer, { x: pivot[0], y: pivot[1] });
 	presets(layer, tl, rest, "both");
 	return {
@@ -1248,7 +1459,9 @@ function compileLayers(layers: Layer[], ctx: Context): LottieJson[] {
 	for (const l of layers) {
 		const compiled =
 			l.type === "text"
-				? textLayer(l, ctx)
+				? l.runs?.length
+					? groupLayer(runsGroup(l, ctx), ctx)
+					: textLayer(l, ctx)
 				: l.type === "image"
 					? imageLayer(l, ctx)
 					: l.type === "group"
@@ -1303,6 +1516,164 @@ function compileLayers(layers: Layer[], ctx: Context): LottieJson[] {
 	return out;
 }
 
+/** Every line layer with a name, anywhere in the spec, as canvas points. */
+function namedLines(
+	layers: Layer[],
+	into = new Map<string, { points: [number, number][]; smooth: boolean }>(),
+) {
+	for (const l of layers) {
+		if (l.type === "group") namedLines(l.layers, into);
+		else if (l.type === "line" && l.name && !into.has(l.name)) {
+			const [dx, dy] = [l.x ?? 0, l.y ?? 0];
+			into.set(l.name, {
+				points: l.points.map(([x, y]) => [x + dx, y + dy] as [number, number]),
+				smooth: !!l.smooth,
+			});
+		}
+	}
+	return into;
+}
+
+type TextLayer = z.infer<typeof text>;
+
+/** Where the first line's baseline is, below y, for a text layer's anchor. */
+function baselineShift(layer: TextLayer, lines: number) {
+	const cap = layer.size * capHeight(layer.font, layer.weight);
+	const lh = layer.size * (layer.lineHeight ?? 1.2);
+	const anchor = layer.anchor ?? "middle";
+	return anchor === "baseline" ? 0 : anchor === "top" ? cap : cap / 2 - ((lines - 1) * lh) / 2;
+}
+
+/**
+ * Text in runs becomes a group of text layers set side by side on one baseline;
+ * the group carries the layer's own motion, each run its own.
+ */
+function runsGroup(layer: TextLayer, ctx: Context): MotionGroup {
+	const W = ctx.spec.width;
+	const H = ctx.spec.height;
+	const x = layer.x ?? W / 2;
+	const y = layer.y ?? H / 2;
+	const tracking = layer.tracking ?? 0;
+	const runs = (layer.runs ?? []).map((r) => ({
+		...r,
+		text: (layer.uppercase ? r.text.toUpperCase() : r.text).replace(/\n/g, " "),
+		font: r.font ?? layer.font,
+		weight: r.weight ?? layer.weight,
+	}));
+	const widths = runs.map((r) => textWidth(r.text, layer.size, r.font, tracking, r.weight));
+	const total = widths.reduce((a, b) => a + b, 0);
+	let left = x - (layer.align === "center" ? total / 2 : layer.align === "right" ? total : 0);
+	const baseline = y + baselineShift(layer, 1);
+	const children: Layer[] = runs.map((r, i) => {
+		const child: TextLayer = {
+			type: "text",
+			name: `${layer.name ?? "Text"} ${i + 1}`,
+			text: r.text,
+			font: r.font,
+			weight: r.weight,
+			size: layer.size,
+			color: r.color ?? layer.color,
+			// Centred on its own middle, so a run pops and turns around itself.
+			align: "center",
+			tracking: layer.tracking,
+			x: left + widths[i] / 2,
+			y: baseline - (layer.size * capHeight(r.font, r.weight)) / 2,
+			opacity: r.opacity,
+			startMs: r.startMs,
+			endMs: r.endMs,
+			keys: r.keys,
+			enter: r.enter,
+			exit: r.exit,
+		};
+		left += widths[i];
+		return child;
+	});
+	return {
+		type: "group",
+		name: layer.name,
+		x,
+		y,
+		pivot: [x, y],
+		scale: layer.scale,
+		rotation: layer.rotation,
+		opacity: layer.opacity,
+		startMs: layer.startMs,
+		endMs: layer.endMs,
+		keys: layer.keys,
+		enter: layer.enter,
+		exit: layer.exit,
+		follow: layer.follow,
+		blend: layer.blend,
+		shadow: layer.shadow,
+		blur: layer.blur,
+		layers: children,
+	};
+}
+
+/** A text layer's box on the canvas at rest (from the fonts' widths; kerning left out). */
+export interface TextBox {
+	name: string;
+	text: string;
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+}
+
+/**
+ * Where each text layer sits at rest, so agents can line other things up with
+ * words (an underline, a pin label, the next run). Positions inside groups are
+ * as written, before the group's own move or scale.
+ */
+export function textBoxes(input: unknown): TextBox[] {
+	const spec = parseMotionSpec(input);
+	const out: TextBox[] = [];
+	const walk = (layers: Layer[]) => {
+		for (const l of layers) {
+			if (l.type === "group") walk(l.layers);
+			if (l.type !== "text") continue;
+			const content = l.runs?.length
+				? l.runs.map((r) => r.text).join("")
+				: l.count
+					? `${l.count.prefix ?? ""}${l.count.to}${l.count.suffix ?? ""}`
+					: l.text;
+			const shown = l.uppercase ? content.toUpperCase() : content;
+			const lines = shown.split("\n");
+			const width = l.runs?.length
+				? l.runs.reduce(
+						(sum, r) =>
+							sum +
+							textWidth(
+								l.uppercase ? r.text.toUpperCase() : r.text,
+								l.size,
+								r.font ?? l.font,
+								l.tracking ?? 0,
+								r.weight ?? l.weight,
+							),
+						0,
+					)
+				: textWidth(shown, l.size, l.font, l.tracking ?? 0, l.weight);
+			const x = l.x ?? spec.width / 2;
+			const y = l.y ?? spec.height / 2;
+			const left = x - (l.align === "center" ? width / 2 : l.align === "right" ? width : 0);
+			const cap = l.size * capHeight(l.font, l.weight);
+			const lh = l.size * (l.lineHeight ?? 1.2);
+			const top = y + baselineShift(l, lines.length) - cap;
+			const round = (v: number) => Math.round(v);
+			out.push({
+				name: l.name ?? "text",
+				text: shown,
+				left: round(left),
+				top: round(top),
+				right: round(left + width),
+				bottom: round(top + cap + (lines.length - 1) * lh),
+			});
+		}
+	};
+	walk(spec.layers);
+	return out;
+}
+
 /** Validates a spec and gives a readable error for the first problem. */
 export function parseMotionSpec(input: unknown): Spec {
 	const result = motionSpecSchema.safeParse(input);
@@ -1328,6 +1699,7 @@ export function compileMotion(
 		nextIndex: () => ++index,
 		resolveImage: options.resolveImage,
 		chars: 0,
+		lines: namedLines(spec.layers),
 	};
 	const layers = spec.background
 		? [
