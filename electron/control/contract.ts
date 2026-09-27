@@ -34,7 +34,8 @@ export const contract = {
 			"Cue's motion graphic templates (lower thirds, titles, bar/donut/line charts, big numbers, callouts, timelines, checklists, quotes, and transitions that cover a cut), each with its parameters and an example, plus the colour themes. Use one with create_motion_graphic {template, params}.",
 		input: {
 			category: z
-				.enum(["lower third", "title", "chart", "stat", "callout", "list", "quote", "transition"])
+				.enum(["lower third", "title", "chart", "stat", "callout", "list", "quote", "transition",
+					"annotation"])
 				.optional(),
 		},
 	},

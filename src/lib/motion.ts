@@ -30,14 +30,25 @@ const fontFiles = import.meta.glob("../assets/motion-fonts/*.ttf", {
 const fontsReady: Promise<unknown> = Promise.all(
 	MOTION_FONTS.map((f) => {
 		const url = Object.entries(fontFiles).find(([file]) => file.endsWith(`/${f.name}.ttf`))?.[1];
-		return url ? DotLottie.registerFont(f.name, url).catch(() => false) : false;
+		const ok = url
+			? DotLottie.registerFont(f.name, url).catch(() => false)
+			: Promise.resolve(false);
+		return ok.then((registered) => {
+			if (!registered) console.warn(`[motion] Could not register the font ${f.name}.`);
+			return registered;
+		});
 	}),
 );
 
 interface Player {
 	/** Made once the file is read (the player takes its data when created). */
 	dot: DotLottie | null;
-	canvas: OffscreenCanvas;
+	/**
+	 * What the engine renders into: just a size. Its pixels are copied straight into
+	 * the canvas that shows them, so graphics hold no GPU surfaces of their own
+	 * (dozens of offscreen canvases exhausted the GPU process).
+	 */
+	surface: { width: number; height: number };
 	ready: Promise<void>;
 	loaded: boolean;
 	failed?: string;
@@ -68,6 +79,15 @@ function load(url: string): Promise<LottieJson> {
 	return doc;
 }
 
+/** Frees the player for `key` (a gallery preview that has drawn its still). */
+export function releaseMotion(key: string) {
+	for (const [k, p] of players)
+		if (k.startsWith(`${key}|`)) {
+			p.dot?.destroy();
+			players.delete(k);
+		}
+}
+
 /** Gives a document to play under `key` without a file (gallery previews). */
 export function provideMotion(key: string, json: LottieJson) {
 	if (!documents.has(key)) documents.set(key, Promise.resolve(json));
@@ -84,8 +104,11 @@ export function forgetMotion(url: string) {
 }
 
 /** Whether any graphic is still loading: stills wait for them. */
-export async function motionSettled(): Promise<void> {
-	await Promise.all([...players.values()].map((p) => p.ready));
+export async function motionSettled(timeoutMs = 8000): Promise<void> {
+	await Promise.race([
+		Promise.all([...players.values()].map((p) => p.ready)),
+		new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+	]);
 }
 
 /** The player for one file with one clip's changes, made on first use. */
@@ -96,14 +119,14 @@ function player(url: string, settings: MotionSettings | undefined): Player {
 		existing.usedAt = performance.now();
 		return existing;
 	}
-	const canvas = new OffscreenCanvas(2, 2);
+	const surface = { width: 2, height: 2 };
 	let resolveReady: () => void = () => {};
 	const ready = new Promise<void>((resolve) => {
 		resolveReady = resolve;
 	});
 	const p: Player = {
 		dot: null,
-		canvas,
+		surface,
 		ready,
 		loaded: false,
 		frame: -1,
@@ -117,7 +140,7 @@ function player(url: string, settings: MotionSettings | undefined): Player {
 		.then(([json]) => {
 			if (players.get(key) !== p) return resolveReady();
 			const dot = new DotLottie({
-				canvas,
+				canvas: surface,
 				data: JSON.stringify(applyMotion(json, settings)),
 				autoplay: false,
 				loop: false,
@@ -125,11 +148,15 @@ function player(url: string, settings: MotionSettings | undefined): Player {
 				layout: { fit: "fill", align: [0.5, 0.5] },
 			});
 			p.dot = dot;
-			dot.addEventListener("load", () => {
+			const loaded = () => {
+				if (p.loaded) return;
 				p.loaded = true;
 				resolveReady();
 				for (const l of listeners) l();
-			});
+			};
+			dot.addEventListener("load", loaded);
+			// Without a real canvas the engine can finish loading before this line.
+			if (dot.isLoaded) loaded();
 			dot.addEventListener("loadError", (event) =>
 				fail(String((event as { error?: Error }).error?.message ?? "Could not play the graphic.")),
 			);
@@ -140,29 +167,27 @@ function player(url: string, settings: MotionSettings | undefined): Player {
 	return p;
 }
 
-/** Keeps at most a few dozen players (each holds a frame buffer). */
+/** Keeps at most a dozen players (each holds a frame buffer as big as the viewer). */
+const MAX_PLAYERS = 12;
 function prune() {
-	if (players.size <= 24) return;
-	const oldest = [...players.entries()].sort((a, b) => a[1].usedAt - b[1].usedAt);
-	for (const [key, p] of oldest.slice(0, players.size - 24)) {
+	// Gallery previews free themselves once drawn; only the edit's graphics count here.
+	const own = [...players.entries()].filter(([key]) => !key.startsWith("preview:"));
+	if (own.length <= MAX_PLAYERS) return;
+	const oldest = own.sort((a, b) => a[1].usedAt - b[1].usedAt);
+	for (const [key, p] of oldest.slice(0, own.length - MAX_PLAYERS)) {
 		p.dot?.destroy();
 		players.delete(key);
 	}
 }
 
-/** Renders a frame at `width` × `height` into the player's canvas; null until loaded. */
-function renderFrame(
-	p: Player,
-	frame: number,
-	width: number,
-	height: number,
-): OffscreenCanvas | null {
+/** Renders a frame at `width` × `height`; its pixels (RGBA), or null until loaded. */
+function renderFrame(p: Player, frame: number, width: number, height: number): ImageData | null {
 	if (!p.loaded || !p.dot) return null;
 	const w = Math.max(2, Math.round(width));
 	const h = Math.max(2, Math.round(height));
-	if (p.canvas.width !== w || p.canvas.height !== h) {
-		p.canvas.width = w;
-		p.canvas.height = h;
+	if (p.surface.width !== w || p.surface.height !== h) {
+		p.surface.width = w;
+		p.surface.height = h;
 		p.dot.resize();
 		p.frame = -1;
 	}
@@ -170,7 +195,10 @@ function renderFrame(
 		p.dot.setFrame(frame);
 		p.frame = frame;
 	}
-	return p.canvas;
+	const buffer = p.dot.buffer;
+	if (!buffer || buffer.byteLength !== w * h * 4) return null;
+	// Copied: the engine's memory may move when it renders again.
+	return new ImageData(new Uint8ClampedArray(buffer), w, h);
 }
 
 /**
@@ -178,17 +206,19 @@ function renderFrame(
  * file is still loading (the viewer is told when it is ready).
  */
 export function drawMotion(
-	ctx: CanvasRenderingContext2D,
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
 	url: string,
 	settings: MotionSettings | undefined,
 	frame: number,
 ): boolean {
 	const p = player(url, settings);
 	const { width, height } = ctx.canvas;
-	const source = renderFrame(p, frame, width, height);
-	ctx.clearRect(0, 0, width, height);
-	if (!source) return false;
-	ctx.drawImage(source, 0, 0);
+	const pixels = renderFrame(p, frame, width, height);
+	if (!pixels) {
+		ctx.clearRect(0, 0, width, height);
+		return false;
+	}
+	ctx.putImageData(pixels, 0, 0);
 	return true;
 }
 
@@ -225,9 +255,9 @@ export async function rasteriseMotion(
 			out.push(last.png);
 			continue;
 		}
-		const source = renderFrame(p, frame, canvas.width, canvas.height);
+		const pixels = renderFrame(p, frame, canvas.width, canvas.height);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		if (source) ctx.drawImage(source, 0, 0);
+		if (pixels) ctx.putImageData(pixels, 0, 0);
 		const png = await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer();
 		last = { frame, png };
 		out.push(png);

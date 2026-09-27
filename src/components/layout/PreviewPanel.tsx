@@ -712,8 +712,9 @@ function EmptyProject({ project }: { project: ProjectSnapshot }) {
 		// biome-ignore lint/a11y/noStaticElementInteractions: a drop zone; the button inside imports by click
 		<div
 			className={cn(
-				"absolute inset-6 z-20 flex flex-col items-center justify-center gap-6 rounded-2xl border-2 border-dashed transition-colors",
-				over ? "border-accent bg-accent/10" : "border-white/10 bg-black/30",
+				// Opaque, so the empty picture frame behind doesn't show through it.
+				"@container absolute inset-6 z-20 flex flex-col items-center justify-center gap-6 overflow-hidden rounded-2xl border-2 border-dashed bg-[#0b0b0d] px-6 transition-colors",
+				over ? "border-accent" : "border-white/10",
 			)}
 			onDragOver={(e) => {
 				e.preventDefault();
@@ -742,7 +743,7 @@ function EmptyProject({ project }: { project: ProjectSnapshot }) {
 			>
 				Import media… <span className="ml-1 opacity-70">{keyLabel("⌘I")}</span>
 			</button>
-			<ol className="grid max-w-xl grid-cols-2 gap-x-8 gap-y-2 text-[12px] text-white/65">
+			<ol className="hidden max-w-xl grid-cols-2 gap-x-8 gap-y-2 text-[12px] text-white/65 @[480px]:grid">
 				<li>
 					<b className="text-white/90">1. Arrange.</b> Drag clips from Media onto the timeline.
 				</li>

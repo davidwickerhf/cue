@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ANNOTATION_TEMPLATES } from "./motionAnnotations";
 import { type MotionLayer, type MotionSpec, textWidth } from "./motionSpec";
 
 /**
@@ -235,7 +236,8 @@ export interface MotionTemplate<P extends z.ZodRawShape = z.ZodRawShape> {
 		| "callout"
 		| "list"
 		| "quote"
-		| "transition";
+		| "transition"
+		| "annotation";
 	description: string;
 	/** Full frame, or drawn over the video (transparent). */
 	overlay: boolean;
@@ -2261,6 +2263,7 @@ const blocksTransition = template({
 });
 
 export const MOTION_TEMPLATES: MotionTemplate[] = [
+	...ANNOTATION_TEMPLATES,
 	lowerThird,
 	titleCard,
 	barChart,

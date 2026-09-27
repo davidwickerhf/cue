@@ -1,4 +1,5 @@
 import { z } from "zod";
+import fontMetrics from "./fontMetrics.json";
 import type { LottieJson } from "./motion";
 
 /**
@@ -238,6 +239,7 @@ const text = z.object({
 	/** Line height as a multiple of the size. */
 	lineHeight: z.number().min(0.5).max(3).optional(),
 	uppercase: z.boolean().optional(),
+	italic: z.boolean().optional(),
 	/** x, y is the middle of the text block (default), or the first line's baseline. */
 	anchor: z.enum(["middle", "baseline", "top"]).optional(),
 	/** Counts a number up: the text shows prefix + value + suffix. */
@@ -337,34 +339,63 @@ export const MOTION_FONTS: {
 	name: string;
 	weight: number;
 	face: string;
+	italic?: boolean;
 }[] = [
 	{ family: "sans", name: "Inter-400", weight: 400, face: "Inter" },
 	{ family: "sans", name: "Inter-600", weight: 600, face: "Inter" },
 	{ family: "sans", name: "Inter-800", weight: 800, face: "Inter" },
+	{ family: "sans", name: "Inter-600i", weight: 600, face: "Inter", italic: true },
 	{ family: "display", name: "SpaceGrotesk-500", weight: 500, face: "Space Grotesk" },
 	{ family: "display", name: "SpaceGrotesk-700", weight: 700, face: "Space Grotesk" },
 	{ family: "serif", name: "InstrumentSerif-400", weight: 400, face: "Instrument Serif" },
+	{
+		family: "serif",
+		name: "InstrumentSerif-400i",
+		weight: 400,
+		face: "Instrument Serif",
+		italic: true,
+	},
 	{ family: "mono", name: "JetBrainsMono-500", weight: 500, face: "JetBrains Mono" },
 ];
 
-function fontFor(family: (typeof FONT_FAMILIES)[number], weight: number) {
-	const options = MOTION_FONTS.filter((f) => f.family === family);
+function fontFor(family: (typeof FONT_FAMILIES)[number], weight: number, italic = false) {
+	// Italic when the family has one (sans and serif do), otherwise upright.
+	const slanted = MOTION_FONTS.filter((f) => f.family === family && !!f.italic === italic);
+	const options = slanted.length
+		? slanted
+		: MOTION_FONTS.filter((f) => f.family === family && !f.italic);
 	return options.reduce((best, f) =>
 		Math.abs(f.weight - weight) < Math.abs(best.weight - weight) ? f : best,
 	);
 }
 
-/** Rough advance widths (share of the size) to place text without measuring. */
-const AVERAGE_WIDTH: Record<string, number> = { sans: 0.56, display: 0.58, serif: 0.46, mono: 0.6 };
+/** Advance widths of the bundled fonts (share of the size), read by scripts/build-font-metrics.mjs. */
+const METRICS = fontMetrics as Record<string, Record<string, number>>;
+/** For characters a font does not have. */
+const AVERAGE_WIDTH: Record<string, number> = { sans: 0.52, display: 0.52, serif: 0.37, mono: 0.6 };
+const DEFAULT_WEIGHT: Record<string, number> = { sans: 600, display: 500, serif: 400, mono: 500 };
 
-/** An estimate of how wide a line of text is, in pixels (templates use it for layout). */
+/**
+ * How wide text is set in a bundled font, in pixels (the widest line when it has
+ * several), for laying out boxes, labels and letters that line up with text.
+ */
 export function textWidth(
 	value: string,
 	size: number,
 	font: (typeof FONT_FAMILIES)[number] = "sans",
 	tracking = 0,
+	weight?: number,
+	italic = false,
 ) {
-	return value.length * (size * AVERAGE_WIDTH[font] + tracking);
+	const face = fontFor(font, weight ?? DEFAULT_WEIGHT[font], italic);
+	const table = METRICS[face.name] ?? {};
+	return Math.max(
+		...value.split("\n").map((line) => {
+			let w = 0;
+			for (const ch of line) w += (table[ch] ?? AVERAGE_WIDTH[font]) * size + tracking;
+			return w;
+		}),
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -1093,7 +1124,7 @@ function textLayer(layer: z.infer<typeof text>, ctx: Context): LottieJson {
 	const H = ctx.spec.height;
 	const rest = restOf(layer, { x: W / 2, y: H / 2 });
 	const p = presets(layer, tl, rest, "both");
-	const font = fontFor(layer.font, layer.weight);
+	const font = fontFor(layer.font, layer.weight, layer.italic);
 	ctx.fonts.add(font.name);
 	const content = layer.uppercase ? layer.text.toUpperCase() : layer.text;
 	const lines = content.split("\n");
@@ -1328,7 +1359,7 @@ export function compileMotion(
 						list: fonts.map((f) => ({
 							fName: f.name,
 							fFamily: f.face,
-							fStyle: f.weight >= 700 ? "Bold" : f.weight >= 600 ? "SemiBold" : "Regular",
+							fStyle: `${f.weight >= 700 ? "Bold" : f.weight >= 600 ? "SemiBold" : "Regular"}${f.italic ? " Italic" : ""}`,
 							fWeight: String(f.weight),
 							ascent: 72,
 							origin: 3,

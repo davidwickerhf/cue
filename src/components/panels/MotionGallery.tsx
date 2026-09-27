@@ -8,12 +8,20 @@ import {
 	type MotionTemplate,
 } from "../../../electron/core/motionTemplates";
 import { notify, run } from "../../lib/api";
-import { drawMotion, provideMotion } from "../../lib/motion";
+import { drawMotion, provideMotion, releaseMotion } from "../../lib/motion";
 import { playback } from "../../lib/playback";
 import { useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 
-const CATEGORIES = ["All", "Titles", "Charts", "Callouts", "Lists", "Transitions"] as const;
+const CATEGORIES = [
+	"All",
+	"Titles",
+	"Charts",
+	"Annotate",
+	"Callouts",
+	"Lists",
+	"Transitions",
+] as const;
 const GROUP: Record<MotionTemplate["category"], (typeof CATEGORIES)[number]> = {
 	"lower third": "Titles",
 	title: "Titles",
@@ -23,6 +31,7 @@ const GROUP: Record<MotionTemplate["category"], (typeof CATEGORIES)[number]> = {
 	callout: "Callouts",
 	list: "Lists",
 	transition: "Transitions",
+	annotation: "Annotate",
 };
 
 /**
@@ -158,21 +167,22 @@ function TemplatePreview({
 		const settled = doc.ip + frames * (template.category === "transition" ? 0.35 : 0.6);
 		let raf = 0;
 		let start = performance.now();
-		let drawn = false;
 		const tick = () => {
 			const frame = hover
 				? doc.ip + ((((performance.now() - start) / 1000) * doc.fr) % frames)
 				: settled;
 			// Until the player is ready drawMotion returns false; keep trying.
 			const ok = drawMotion(ctx, key, undefined, frame);
-			if (hover || !ok || !drawn) {
-				drawn = ok;
-				raf = requestAnimationFrame(tick);
-			}
+			if (hover || !ok) raf = requestAnimationFrame(tick);
+			// The still stays on the canvas; its player is freed for the viewer's graphics.
+			else releaseMotion(key);
 		};
 		start = performance.now();
 		tick();
-		return () => cancelAnimationFrame(raf);
+		return () => {
+			cancelAnimationFrame(raf);
+			releaseMotion(key);
+		};
 	}, [doc, key, hover, template.category]);
 	return (
 		<span

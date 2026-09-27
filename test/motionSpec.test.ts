@@ -128,9 +128,10 @@ describe("motion templates", () => {
 				expect(json.w).toBe(size.width);
 				const info = motionInfo(json);
 				if (t.category === "transition") expect(info.markers.map((m) => m.name)).toContain("cut");
-				else expect(info.markers.map((m) => m.name)).toContain("outro");
+				else if (t.category !== "annotation")
+					expect(info.markers.map((m) => m.name)).toContain("outro");
 			}
-			expect(Object.keys(describeParams(t))).toContain("theme");
+			if (t.category !== "annotation") expect(Object.keys(describeParams(t))).toContain("theme");
 		},
 	);
 

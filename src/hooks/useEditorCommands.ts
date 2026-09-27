@@ -178,8 +178,16 @@ export function useEditorCommands() {
 						document.body.dataset.capturing = "";
 						if (capturing.scale !== 1) viewerZoom.set({ scale: 1 });
 						await playback.seekAndSettle(command.atMs);
-						// Motion graphics still loading are drawn once ready (the viewer redraws itself).
+						// Motion graphics still loading are drawn once ready (the viewer redraws itself),
+						// and pictures must have decoded, or the still would miss them.
 						await motionSettled();
+						await Promise.all(
+							[...document.querySelectorAll<HTMLImageElement>("[data-stage-frame] img")]
+								.filter((img) => img.src && img.style.display !== "none")
+								.map((img) => img.decode().catch(() => {})),
+						);
+						// Big pictures take a few frames to be drawn in full after decoding.
+						for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r));
 						await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 						const frame = document.querySelector<HTMLElement>("[data-stage-frame]");
 						if (!frame) throw new Error("The preview is not visible.");
