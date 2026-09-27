@@ -395,8 +395,15 @@ export const contract = {
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: {
-		description: "Move clips by deltaMs, optionally onto another track.",
-		input: { ids, deltaMs: z.number(), trackId: z.string().optional() },
+		description:
+			"Move clips by deltaMs (linked picture and sound move together). trackId puts all the listed clips on that track; tracks {clipId: trackId or 'new'} moves single clips to other tracks ('new' makes a new track of that kind) while their linked clips keep theirs. overwrite: true makes the moved clips replace what they land on (trimming, splitting or removing it) instead of overlapping it, as dragging does in the timeline.",
+		input: {
+			ids,
+			deltaMs: z.number(),
+			trackId: z.string().optional(),
+			tracks: z.record(z.string(), z.string()).optional(),
+			overwrite: z.boolean().optional(),
+		},
 	},
 	trim_clip: {
 		description:

@@ -61,6 +61,7 @@ import type {
 	ProjectData,
 	TextClip,
 	Track,
+	TrackKind,
 	WordStyle,
 } from "./types";
 
@@ -235,7 +236,12 @@ export const opSchema = z.discriminatedUnion("type", [
 		type: z.literal("moveClips"),
 		ids: z.array(z.string()).min(1),
 		deltaMs: ms,
+		/** All the listed clips (and only them, not their linked clips) go to this track. */
 		trackId: z.string().optional(),
+		/** Per clip: the track it goes to, or "new" for a new track of its kind. Others keep theirs. */
+		tracks: z.record(z.string(), z.string()).optional(),
+		/** Moved clips replace what they land on (trimming, splitting or removing it), as in other editors. */
+		overwrite: z.boolean().optional(),
 	}),
 	z.object({
 		type: z.literal("trimClip"),
@@ -805,6 +811,30 @@ function mergeMotion(
 	return Object.keys(next).length ? next : undefined;
 }
 
+/** Adds a track: picture and text tracks go on top of the stack, sound tracks at the bottom. */
+function withTrack(
+	data: ProjectData,
+	kind: TrackKind,
+	name?: string,
+	index?: number,
+): { data: ProjectData; track: Track } {
+	const prefix = { video: "V", audio: "A", text: "T" }[kind];
+	let n = 1;
+	while (data.tracks.some((t) => t.id === `${prefix}${n}`)) n++;
+	const t: Track = {
+		id: `${prefix}${n}`,
+		kind,
+		name: name ?? `${kind[0].toUpperCase()}${kind.slice(1)} ${n}`,
+		muted: false,
+		locked: false,
+		hidden: false,
+		volume: 1,
+	};
+	const tracks = [...data.tracks];
+	tracks.splice(index ?? (kind === "audio" ? tracks.length : 0), 0, t);
+	return { data: { ...data, tracks: groupTracks(tracks) }, track: t };
+}
+
 /** Adds every clip that shares a group with one of `ids`. */
 export function withGroups(data: ProjectData, ids: string[]): string[] {
 	const groups = new Set(
@@ -1256,23 +1286,9 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 		}
 
 		case "addTrack": {
-			const prefix = { video: "V", audio: "A", text: "T" }[op.kind];
-			let n = 1;
-			while (data.tracks.some((t) => t.id === `${prefix}${n}`)) n++;
-			const t: Track = {
-				id: `${prefix}${n}`,
-				kind: op.kind,
-				name: op.name ?? `${op.kind[0].toUpperCase()}${op.kind.slice(1)} ${n}`,
-				muted: false,
-				locked: false,
-				hidden: false,
-				volume: 1,
-			};
-			const tracks = [...data.tracks];
-			// New picture tracks go on top of the stack, new sound tracks at the bottom.
-			tracks.splice(op.index ?? (op.kind === "audio" ? tracks.length : 0), 0, t);
+			const { data: next, track: t } = withTrack(data, op.kind, op.name, op.index);
 			return {
-				data: { ...data, tracks: groupTracks(tracks) },
+				data: next,
 				summary: `Added ${op.kind} track "${t.name}"`,
 				created: [t.id],
 			};
@@ -1466,19 +1482,53 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			// One shared delta, limited by the earliest clip, so grouped clips stay in sync at 0.
 			const earliest = Math.min(...ids.map((id) => clip(data, id).startMs));
 			const deltaMs = Math.round(Math.max(op.deltaMs, -earliest));
+			// "new" makes one new track per kind (picture tracks on top, sound at the bottom).
+			const fresh = new Map<TrackKind, string>();
+			const created: string[] = [];
+			const destination = (c: Clip): string => {
+				const wanted = op.tracks?.[c.id] ?? op.trackId ?? c.trackId;
+				if (wanted !== "new") return wanted;
+				const kind = track(next, c.trackId).kind;
+				let id = fresh.get(kind);
+				if (!id) {
+					const added = withTrack(next, kind);
+					next = added.data;
+					id = added.track.id;
+					fresh.set(kind, id);
+					created.push(id);
+				}
+				return id;
+			};
+			const moved: Clip[] = [];
 			for (const id of ids) {
-				const c = clip(next, id);
-				unlocked(next, c.trackId);
-				const moved = validateClip(next, {
+				const c = clip(data, id);
+				unlocked(data, c.trackId);
+				const trackId = destination(c);
+				unlocked(next, trackId);
+				moved.push({
 					...c,
 					startMs: Math.max(0, Math.round(c.startMs + deltaMs)),
-					trackId: op.trackId ?? c.trackId,
+					trackId,
 				} as Clip);
-				next = replaceClip(next, moved);
 			}
+			const movedIds = new Set(ids);
+			if (op.overwrite) {
+				// Clear the places they land in, not counting the moved clips themselves.
+				let rest: ProjectData = { ...next, clips: next.clips.filter((c) => !movedIds.has(c.id)) };
+				for (const c of moved) {
+					// A transition into the clip overlaps the clip before it on purpose.
+					const tr = c.type === "media" ? c.transitionIn : undefined;
+					const from = c.startMs + (tr && overlaps(tr) ? tr.durationMs : 0);
+					rest = clearRange(rest, from, clipEnd(c), new Set([c.trackId]));
+				}
+				next = { ...rest, clips: [...rest.clips, ...next.clips.filter((c) => movedIds.has(c.id))] };
+			}
+			for (const c of moved) next = replaceClip(next, validateClip(next, c));
+			const target = op.trackId ?? (created.length ? "a new track" : undefined);
 			return {
 				data: next,
-				summary: `Moved ${ids.length} clip(s) by ${sec(op.deltaMs)}${op.trackId ? ` to ${op.trackId}` : ""}`,
+				summary: `Moved ${ids.length} clip(s) by ${sec(op.deltaMs)}${target ? ` to ${target}` : ""}`,
+				...(created.length ? { created } : {}),
 			};
 		}
 		case "trimClip": {

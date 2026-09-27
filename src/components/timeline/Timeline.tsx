@@ -76,6 +76,8 @@ import { SequenceTabs } from "./SequenceTabs";
 /** Width of the track headers (resizable, remembered with the layout). */
 const headerW = () => layout.get().headerWidth;
 const RULER_H = 28;
+/** How far the pointer travels before a press on a clip becomes a move. */
+const DRAG_START_PX = 4;
 const SCRIPT_H = 34;
 const TRACK_H: Record<Track["kind"], number> = { video: 64, audio: 60, text: 40 };
 
@@ -122,9 +124,15 @@ type Drag =
 			primary: string;
 			x0: number;
 			y0: number;
+			/** Nothing moves until the pointer has travelled a few pixels (a click only selects). */
+			started: boolean;
 			deltaMs: number;
-			dy: number;
-			targetTrack: string | null;
+			/** Clips changing track: clip id → track id, or "new" for a new track of its kind. */
+			tracks: Record<string, string> | null;
+			/** How far each of those clips is drawn up or down, to sit on its new row. */
+			dys: Record<string, number>;
+			/** A new track would be made above the top track or below the bottom one. */
+			newTrack: "top" | "bottom" | null;
 			snapTo: number | null;
 			copy: boolean;
 	  }
@@ -168,6 +176,7 @@ export function Timeline() {
 	const scroller = useRef<HTMLDivElement>(null);
 	const [liveDrag, setDrag] = useState<Drag | null>(null);
 	const dragRef = useRef<Drag | null>(null);
+	const frameRef = useRef(0);
 	// A dropped edit stays drawn where it was dropped until the project confirms it, so nothing flickers back.
 	const [committed, setCommitted] = useState<{ drag: Drag; revision: number } | null>(null);
 	// A committed drag is shown until the edit arrives; never on top of the new positions
@@ -364,9 +373,11 @@ export function Timeline() {
 				primary: clip.id,
 				x0: e.clientX,
 				y0: e.clientY,
+				started: false,
 				deltaMs: 0,
-				dy: 0,
-				targetTrack: null,
+				tracks: null,
+				dys: {},
+				newTrack: null,
 				snapTo: null,
 				copy: e.altKey,
 			},
@@ -413,6 +424,73 @@ export function Timeline() {
 		begin({ kind: "line", id: line.id, x0: e.clientX, deltaMs: 0 }, e);
 	};
 
+	/**
+	 * Which tracks a move lands on. The clip under the pointer goes to the track the
+	 * pointer is over, and clips of the same kind shift by as many tracks; linked
+	 * clips of the other kind (picture and its sound) keep their tracks. Above the
+	 * top track (or below the bottom one for sound) a new track is made.
+	 */
+	const moveTarget = (
+		primary: Clip,
+		moving: Clip[],
+		y: number,
+	): {
+		tracks: Record<string, string> | null;
+		dys: Record<string, number>;
+		newTrack: "top" | "bottom" | null;
+	} => {
+		const none = { tracks: null, dys: {}, newTrack: null };
+		const from = tracks.find((t) => t.id === primary.trackId);
+		if (!from) return none;
+		const rowOf = (id: string) =>
+			scroller.current
+				?.querySelector<HTMLElement>(`[data-track-id="${id}"]`)
+				?.getBoundingClientRect();
+		const sameKind = tracks.filter((t) => t.kind === from.kind);
+		const first = rowOf(tracks[0].id);
+		const last = rowOf(tracks[tracks.length - 1].id);
+		const own = moving.filter((c) => tracks.find((t) => t.id === c.trackId)?.kind === from.kind);
+		const onOneTrack = own.every((c) => c.trackId === from.id);
+		// Past the edge of the stack: a new track (picture and text on top, sound at the bottom).
+		const newTrack =
+			onOneTrack && from.kind !== "audio" && first && y < first.top
+				? "top"
+				: onOneTrack && from.kind === "audio" && last && y > last.bottom
+					? "bottom"
+					: null;
+		const fromRow = rowOf(from.id);
+		if (newTrack && fromRow) {
+			// Drawn just outside the stack, where the new track will appear.
+			const dy =
+				newTrack === "top"
+					? (first?.top ?? 0) - fromRow.height - fromRow.top
+					: (last?.bottom ?? 0) - fromRow.top;
+			return {
+				tracks: Object.fromEntries(own.map((c) => [c.id, "new"])),
+				dys: Object.fromEntries(own.map((c) => [c.id, dy])),
+				newTrack,
+			};
+		}
+		// The track under the pointer, of the same kind.
+		const over = sameKind.find((t) => {
+			const r = rowOf(t.id);
+			return r && y >= r.top && y < r.bottom;
+		});
+		if (!over || over.id === from.id) return none;
+		const shift = sameKind.indexOf(over) - sameKind.indexOf(from);
+		const result: Record<string, string> = {};
+		const dys: Record<string, number> = {};
+		for (const c of own) {
+			const at = sameKind.findIndex((t) => t.id === c.trackId);
+			const dest = sameKind[at + shift];
+			// Every clip must have somewhere unlocked to go, or none moves across.
+			if (!dest || dest.locked) return none;
+			result[c.id] = dest.id;
+			dys[c.id] = (rowOf(dest.id)?.top ?? 0) - (rowOf(c.trackId)?.top ?? 0);
+		}
+		return { tracks: result, dys, newTrack: null };
+	};
+
 	const onMove = (e: ReactPointerEvent) => {
 		if (marqueeRef.current) {
 			const m = { ...marqueeRef.current, x1: e.clientX, y1: e.clientY };
@@ -431,14 +509,13 @@ export function Timeline() {
 		if (d.kind === "move") {
 			const primary = project.data.clips.find((c) => c.id === d.primary);
 			if (!primary) return;
+			// Below a few pixels it is a click, not a move.
+			if (!d.started && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_START_PX) return;
 			let delta = (e.clientX - d.x0) / pxPerMs;
-			const earliest = Math.min(
-				...project.data.clips.filter((c) => d.ids.includes(c.id)).map((c) => c.startMs),
-			);
+			const moving = project.data.clips.filter((c) => d.ids.includes(c.id));
+			const earliest = Math.min(...moving.map((c) => c.startMs));
 			delta = Math.max(-earliest, delta);
-			const exclude = new Set(
-				project.data.clips.filter((c) => d.ids.includes(c.id)).flatMap((c) => [c.startMs, end(c)]),
-			);
+			const exclude = new Set(moving.flatMap((c) => [c.startMs, end(c)]));
 			const s = snap(primary.startMs + delta, exclude);
 			const e2 = snap(end(primary) + delta, exclude);
 			let snapTo: number | null = null;
@@ -449,21 +526,8 @@ export function Timeline() {
 				delta = e2 - end(primary);
 				snapTo = e2;
 			}
-			// Moving to another track of the same kind (single-track selections).
-			const row = (
-				document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
-			)?.closest<HTMLElement>("[data-track-id]");
-			const hovered = row?.dataset.trackId ?? null;
-			const sameTrack =
-				new Set(project.data.clips.filter((c) => d.ids.includes(c.id)).map((c) => c.trackId))
-					.size === 1;
-			const from = tracks.find((t) => t.id === primary.trackId);
-			const to = tracks.find((t) => t.id === hovered);
-			const targetTrack =
-				sameTrack && to && from && to.id !== from.id && to.kind === from.kind && !to.locked
-					? to.id
-					: null;
-			next = { ...d, deltaMs: delta, dy: targetTrack ? e.clientY - d.y0 : 0, targetTrack, snapTo };
+			const target = moveTarget(primary, moving, e.clientY);
+			next = { ...d, started: true, deltaMs: delta, ...target, snapTo };
 		}
 		if (d.kind === "trim") {
 			const clip = project.data.clips.find((c) => c.id === d.id);
@@ -527,7 +591,12 @@ export function Timeline() {
 			next = { ...d, deltaMs: Math.max(-line.startMs, delta) };
 		}
 		dragRef.current = next;
-		setDrag(next);
+		// Drawn at most once a frame, however fast the pointer events come.
+		if (!frameRef.current)
+			frameRef.current = requestAnimationFrame(() => {
+				frameRef.current = 0;
+				setDrag(dragRef.current);
+			});
 	};
 
 	const onUp = () => {
@@ -556,6 +625,8 @@ export function Timeline() {
 		}
 		const d = dragRef.current;
 		dragRef.current = null;
+		cancelAnimationFrame(frameRef.current);
+		frameRef.current = 0;
 		setDrag(null);
 		if (!d || d.kind === "scrub") return;
 		const commit = (promise: Promise<unknown>) => {
@@ -564,19 +635,23 @@ export function Timeline() {
 				if (result === undefined) setCommitted(null);
 			});
 		};
-		if (d.kind === "move" && (Math.abs(d.deltaMs) >= 1 || d.targetTrack)) {
+		if (d.kind === "move" && d.started && (Math.abs(d.deltaMs) >= 1 || d.tracks)) {
+			const single = d.tracks ? Object.values(d.tracks) : [];
 			if (d.copy)
 				void run("duplicate_clips", {
 					ids: d.ids,
 					offsetMs: Math.round(d.deltaMs),
-					trackId: d.targetTrack ?? undefined,
+					// Copies go to one other track (not a new one).
+					trackId: single.length && !single.includes("new") ? single[0] : undefined,
 				});
 			else
 				commit(
 					run("move_clips", {
 						ids: d.ids,
 						deltaMs: Math.round(d.deltaMs),
-						trackId: d.targetTrack ?? undefined,
+						...(d.tracks ? { tracks: d.tracks } : {}),
+						// Like other editors: a moved clip replaces what it lands on.
+						overwrite: true,
 					}),
 				);
 		}
@@ -618,7 +693,7 @@ export function Timeline() {
 		if (!d) return { left, width };
 		if (d.kind === "move" && d.ids.includes(clip.id)) {
 			left += d.deltaMs;
-			dy = d.dy || undefined;
+			dy = d.dys[clip.id] || undefined;
 		}
 		if (d.kind === "trim" && d.id === clip.id) {
 			if (d.edge === "start") {
@@ -686,6 +761,48 @@ export function Timeline() {
 				trackId: track.kind === "text" ? undefined : track.id,
 				startMs: at,
 			});
+	};
+
+	/** Media dropped under the tracks goes on a new track of its kind. */
+	const onDropNewTrack = async (e: React.DragEvent) => {
+		e.preventDefault();
+		// Read everything now: a drop's data is gone once this handler returns.
+		const at = Math.round(timeAt(e.clientX));
+		const range = e.dataTransfer.getData(SOURCE_MIME);
+		const r = range
+			? (JSON.parse(range) as { assetId: string; inMs: number | null; outMs: number | null })
+			: null;
+		const assetId = r?.assetId ?? e.dataTransfer.getData(ASSET_MIME);
+		const files = [...e.dataTransfer.files].map((f) => window.cue.pathForFile(f)).filter(Boolean);
+		const asset = project.data.assets.find((a) => a.id === assetId);
+		const kind = asset
+			? asset.kind === "audio"
+				? "audio"
+				: "video"
+			: files.length
+				? "video"
+				: null;
+		if (!kind) return;
+		const added = await run<{ created?: string[] }>("add_track", { kind });
+		const trackId = added?.created?.[0];
+		if (!trackId) return;
+		const startMs = snap(at) ?? at;
+		if (asset) {
+			const inMs = r?.inMs ?? 0;
+			const durationMs = r && r.outMs !== null && r.outMs > inMs ? r.outMs - inMs : undefined;
+			void run("add_clips", {
+				clips: [
+					{
+						type: "media",
+						trackId,
+						assetId: asset.id,
+						startMs,
+						...(inMs ? { inMs } : {}),
+						...(durationMs ? { durationMs } : {}),
+					},
+				],
+			});
+		} else void run("import_media", { files, trackId, startMs: at });
 	};
 
 	const snapLine =
@@ -812,6 +929,15 @@ export function Timeline() {
 									/>
 								}
 								dim={track.hidden || track.muted}
+								newTrack={
+									drag?.kind === "move" && drag.newTrack
+										? drag.newTrack === "top" && i === 0
+											? "above"
+											: drag.newTrack === "bottom" && i === tracks.length - 1
+												? "below"
+												: undefined
+										: undefined
+								}
 								onDragOver={(e) => {
 									e.preventDefault();
 									e.dataTransfer.dropEffect = "copy";
@@ -886,7 +1012,7 @@ export function Timeline() {
 							/>
 						</Fragment>
 					))}
-					<AddTrackRow />
+					<AddTrackRow onDropMedia={(e) => void onDropNewTrack(e)} />
 
 					{/* Snap guide and playhead */}
 					{snapLine !== null && <SnapGuide x={headerW() + toX(snapLine)} scroller={scroller} />}
@@ -1088,6 +1214,7 @@ function Row({
 	onDragOver,
 	onDrop,
 	onResize,
+	newTrack,
 }: {
 	header: React.ReactNode;
 	children: React.ReactNode;
@@ -1098,6 +1225,8 @@ function Row({
 	onDrop?: (e: React.DragEvent) => void;
 	/** Drag the header's bottom edge to change the height; null resets it. */
 	onResize?: (height: number | null) => void;
+	/** A move would make a new track just above or below this one. */
+	newTrack?: "above" | "below";
 }) {
 	const drop = trackDrag.use((d) =>
 		d.overId === trackId && d.id !== trackId ? (d.after ? "after" : "before") : null,
@@ -1149,6 +1278,24 @@ function Row({
 			>
 				{children}
 			</div>
+			{newTrack && (
+				<div
+					className={cn(
+						"pointer-events-none absolute inset-x-0 z-30 h-0.5 bg-accent",
+						newTrack === "above" ? "-top-px" : "-bottom-px",
+					)}
+				>
+					<span
+						className={cn(
+							"absolute rounded bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white",
+							newTrack === "above" ? "bottom-1" : "top-1",
+						)}
+						style={{ left: headerW() + 8 }}
+					>
+						New track
+					</span>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -1406,6 +1553,11 @@ function TrackHeader({
 					<Dropdown.Menu
 						aria-label="Track options"
 						onAction={(key) => {
+							if (key === "add-above" || key === "add-below")
+								void run("add_track", {
+									kind: track.kind,
+									index: key === "add-above" ? index : index + 1,
+								});
 							if (key === "up")
 								void run("move_track", { id: track.id, index: Math.max(0, index - 1) });
 							if (key === "down") void run("move_track", { id: track.id, index: index + 1 });
@@ -1417,6 +1569,12 @@ function TrackHeader({
 							if (key === "delete") void run("remove_track", { id: track.id });
 						}}
 					>
+						<Dropdown.Item id="add-above" textValue="Add track above">
+							Add {track.kind} track above
+						</Dropdown.Item>
+						<Dropdown.Item id="add-below" textValue="Add track below">
+							Add {track.kind} track below
+						</Dropdown.Item>
 						<Dropdown.Item id="up" textValue="Move up">
 							Move up
 						</Dropdown.Item>
@@ -1515,36 +1673,45 @@ function TrackHeader({
 	);
 }
 
-function AddTrackRow() {
+/** Buttons for new tracks under the stack; media dropped here goes on a new track. */
+function AddTrackRow({ onDropMedia }: { onDropMedia: (e: React.DragEvent) => void }) {
+	const [over, setOver] = useState(false);
+	const add = (kind: "video" | "audio" | "text") => void run("add_track", { kind });
 	return (
-		<div className="flex h-9">
+		// biome-ignore lint/a11y/noStaticElementInteractions: a drop target for media
+		<div
+			className={cn("flex h-9", over && "bg-accent/10")}
+			onDragOver={(e) => {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = "copy";
+				setOver(true);
+			}}
+			onDragLeave={() => setOver(false)}
+			onDrop={(e) => {
+				setOver(false);
+				onDropMedia(e);
+			}}
+		>
 			<div
-				className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-separator bg-surface px-2"
+				className="sticky left-0 z-20 flex shrink-0 items-center gap-0.5 border-r border-separator bg-surface px-1.5"
 				style={{ width: headerW() }}
 			>
-				<Dropdown>
-					<Dropdown.Trigger className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-muted hover:bg-default hover:text-foreground">
-						<Plus className="size-3.5" /> Add track
-					</Dropdown.Trigger>
-					<Dropdown.Popover placement="top start">
-						<Dropdown.Menu
-							aria-label="Add track"
-							onAction={(key) => void run("add_track", { kind: key as "video" })}
-						>
-							<Dropdown.Item id="video" textValue="Video">
-								Video track
-							</Dropdown.Item>
-							<Dropdown.Item id="audio" textValue="Audio">
-								Audio track
-							</Dropdown.Item>
-							<Dropdown.Item id="text" textValue="Text">
-								Text track
-							</Dropdown.Item>
-						</Dropdown.Menu>
-					</Dropdown.Popover>
-				</Dropdown>
+				<Plus className="mx-1 size-3.5 shrink-0 text-muted" />
+				{(["video", "audio", "text"] as const).map((kind) => (
+					<button
+						key={kind}
+						type="button"
+						onClick={() => add(kind)}
+						title={`Add a ${kind} track`}
+						className="flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-muted capitalize hover:bg-default hover:text-foreground"
+					>
+						{kind}
+					</button>
+				))}
 			</div>
-			<div className="flex-1" />
+			<div className="flex flex-1 items-center px-3 text-[11px] text-muted/60">
+				{over ? "Drop to put it on a new track" : "Drag media or clips here for a new track"}
+			</div>
 		</div>
 	);
 }
@@ -2097,7 +2264,7 @@ function ClipView({
 						: review === "changed"
 							? "outline outline-2 -outline-offset-1 outline-amber-400"
 							: "outline outline-1 -outline-offset-1 outline-black/25",
-				dragging && "opacity-85 shadow-lg shadow-black/40",
+				dragging && "z-10 opacity-85 shadow-lg shadow-black/40",
 				clip.disabled && "opacity-35 grayscale",
 				cursor,
 			)}
