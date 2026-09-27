@@ -27,6 +27,7 @@ import { appSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { AgentConnect } from "../AgentConnect";
 import { Section, Segmented } from "../ui/controls";
+import { Markdown } from "../ui/Markdown";
 
 const SUGGESTIONS = [
 	"Tighten the edit: cut pauses longer than a second.",
@@ -332,7 +333,10 @@ function Message({ item }: { item: ChatItem }) {
 		);
 	if (item.role === "assistant")
 		return (
-			<p className="text-[12px] leading-relaxed whitespace-pre-wrap select-text">{item.text}</p>
+			<Markdown
+				text={item.text}
+				className="flex flex-col gap-1.5 text-[12px] leading-relaxed select-text [&_li]:mt-0.5"
+			/>
 		);
 	if (item.role === "error")
 		return (

@@ -11,11 +11,16 @@ export const CHANGELOG: Release[] = [
 	{
 		version: "0.2.3",
 		date: "2026-09-27",
-		summary: "Big projects stay light and export reliably, and a second worked example: The Red Cars.",
+		summary: "Music found or made, a proper review of every voiceover take, big projects that stay light and export reliably, and a second worked example.",
 		changes: [
 			"Pictures in the media panel and timeline use small thumbnails instead of the full-size files, and silent clips' sound isn't decoded: a 150-clip project went from 2.1 GB to about 740 MB.",
 			"Exports of large, layered edits no longer fail: inputs decode on one thread each, animated text gets time for its frames, the Mac's hardware encoder falls back to software when it won't start, and a failed export leaves no half-written file.",
 			"Agents connecting to a second copy of Cue reach that copy (the MCP bridge honours CUE_USER_DATA).",
+			"Music: agents can find openly licensed music (CC0, CC BY) with its credit line, or compose an original, royalty-free bed made to measure (calm, lo-fi, ambient, tension, uplifting, documentary), laid on the music track and ducked under the voice.",
+			"Recording a voiceover take: a big 3-2-1 countdown, a live timer against the line's target and maximum, and recording runs until you stop it. Afterwards Cue shows how the take fits and suggests what to do: use it, keep the previous take, discard it, or fit the edit around it (make room or close the gap). It also warns when a video under the line has its own sound playing with the take.",
+			"Every take stays in the project: the selected line lists them right under it in the Voiceover panel, with how many there are on each line.",
+			"The Agent panel shows replies formatted (bold, lists, code, links) instead of raw markdown.",
+			"ripple_from moves everything after a point (clips on every track, lines and markers) in one step.",
 			"New example: The Red Cars, an archive history documentary in the style of Hoog, with its project, prompt and a worked-example playbook.",
 			"New playbooks: 'before-your-first-pass' (the mistakes earlier builds made, as rules and a checklist) and 'archive-history-documentary'.",
 			"Releases can no longer split into two drafts: the draft is created before the builds start.",

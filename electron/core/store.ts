@@ -3517,6 +3517,78 @@ export class ProjectStore extends EventEmitter {
 		return asset;
 	}
 
+	/** Where the timeline's last clip ends. */
+	timelineEndMs(): number {
+		return this.current.clips.reduce((end, c) => Math.max(end, c.startMs + c.durationMs), 0);
+	}
+
+	/**
+	 * Adds music (found or made) to the library with its credit or generation, and lays it
+	 * on the music track (made if missing) with fades, ducked under the voiceover.
+	 */
+	async addMusic(
+		file: string,
+		actor: Actor,
+		extra: {
+			name: string;
+			credit?: Asset["credit"];
+			generation?: Asset["generation"];
+			place?: {
+				trackId?: string;
+				startMs: number;
+				durationMs?: number;
+				fadeInMs: number;
+				fadeOutMs: number;
+			};
+		},
+	): Promise<{ asset: Asset; clipId?: string; trackId?: string }> {
+		const [imported] = await this.importMedia([file], actor);
+		if (!imported) throw new Error("Could not import the music.");
+		const patch: Partial<Asset> = {
+			name: extra.name,
+			...(extra.credit ? { credit: extra.credit } : {}),
+			...(extra.generation ? { generation: extra.generation, origin: "generated" as const } : {}),
+		};
+		this.apply({ type: "updateAsset", id: imported.id, patch }, actor);
+		const asset = { ...imported, ...patch };
+		const place = extra.place;
+		if (!place) return { asset };
+		let trackId = place.trackId;
+		let clipId: string | undefined;
+		await this.transaction(actor, `Placed ${extra.name}`, () => {
+			if (!trackId) {
+				const music = this.current.tracks.find(
+					(t) => t.kind === "audio" && !t.voiceover && /music|score|bed/i.test(t.name),
+				);
+				trackId =
+					music?.id ??
+					(this.apply({ type: "addTrack", kind: "audio", name: "Music" }, actor)
+						.created?.[0] as string);
+			}
+			this.apply({ type: "updateTrack", id: trackId, patch: { duck: true } }, actor);
+			const durationMs = Math.min(asset.durationMs, place.durationMs ?? asset.durationMs);
+			clipId = this.apply(
+				{
+					type: "addClips",
+					clips: [
+						{
+							type: "media",
+							trackId,
+							assetId: asset.id,
+							startMs: place.startMs,
+							durationMs,
+							fadeInMs: Math.min(place.fadeInMs, durationMs / 3),
+							fadeOutMs: Math.min(place.fadeOutMs, durationMs / 3),
+							name: extra.name,
+						},
+					],
+				},
+				actor,
+			).created?.[0];
+		});
+		return { asset, clipId, trackId };
+	}
+
 	/** Generates a still image and adds it to the library (optionally on a track). */
 	async generateImage(
 		prompt: string,

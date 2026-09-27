@@ -203,6 +203,11 @@ function LineRow({
 					<div className="flex items-center gap-1.5 text-[11px] text-muted">
 						<span className="font-semibold text-foreground/80">{line.id}</span>
 						<span className="tabular-nums">{formatTime(line.startMs)}</span>
+						{line.takes.length > 1 && (
+							<span title="Every take is kept; pick the one to use below the line">
+								· {line.takes.length} takes
+							</span>
+						)}
 						{line.speechMs !== null && (
 							<span className={cn("ml-auto tabular-nums", status.text)}>
 								{formatSeconds(line.speechMs)} / {formatSeconds(line.maxMs)}
@@ -242,7 +247,23 @@ function LineRow({
 					)}
 				</div>
 			</div>
+			{/* Every take stays in the project: a new recording is added and used, never
+			    written over the last one. The selected line lists them right here, so an
+			    earlier take is one click away. */}
+			{selected && line.takes.length > 1 && <InlineTakes line={line} />}
 		</li>
+	);
+}
+
+function InlineTakes({ line }: { line: LineView }) {
+	const project = useProject();
+	if (!project) return null;
+	return (
+		<div className="mb-1 ml-6 mr-1 flex flex-col gap-0.5 border-l border-separator pl-2">
+			{[...line.takes].reverse().map((take) => (
+				<TakeRow key={take.id} take={take} line={line} url={project.assetUrls[take.id]} />
+			))}
+		</div>
 	);
 }
 

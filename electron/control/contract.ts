@@ -277,7 +277,7 @@ export const contract = {
 	// --- Media and tracks -----------------------------------------------------------
 	list_library_assets: {
 		description:
-			'Browse Cue\'s curated library: stock footage, original graphics, Textures (paper, kraft, cardboard, newsprint and construction-paper boards; film dust, light leak, halftone and vignette overlays) and Sound effects (whooshes, paper slaps and rustles, pop, tick, camera shutter, typewriter, riser, impacts, a title chime, room tone). category narrows it (e.g. "Textures", "Sound effects"); query searches names, descriptions and tags. Each result has its kind (video, image, audio), duration for sounds and loops, source, credit and license, and `use`: how to use it (blend, opacity, track: bottom for boards, top for overlays, audio; volume; loop; syncMs, the moment in a sound to line up with the event; and a note). Add one with import_library_asset.',
+			'Browse Cue\'s curated library: stock footage, original graphics, Textures (paper, kraft, cardboard, newsprint and construction-paper boards; film dust, light leak, halftone and vignette overlays) and Sound effects (whooshes, paper slaps and rustles, pop, tick, camera shutter, typewriter, riser, impacts, a title chime, room tone). category narrows it (e.g. "Textures", "Sound effects"); query searches names, descriptions and tags. Each result has its kind (video, image, audio), duration for sounds and loops, source, credit and license, and `use`: how to use it (blend, opacity, track: bottom for boards, top for overlays, audio; volume; loop; syncMs, the moment in a sound to line up with the event; and a note). Add one with import_library_asset. There is no music in the library: find openly licensed music with find_music, or compose an original bed with generate_music.',
 		input: { query: z.string().optional(), category: z.string().optional() },
 	},
 	show_library_asset: {
@@ -848,6 +848,11 @@ export const contract = {
 		description: "Move lines starting at or after fromMs by deltaMs, with their clips.",
 		input: { fromMs: z.number(), deltaMs: z.number() },
 	},
+	ripple_from: {
+		description:
+			"Move everything that starts at or after fromMs (clips on every track, script lines and markers) by deltaMs, in one undoable step: positive makes room (a take that runs long, an inserted scene), negative closes a gap. Pictures, music and voice stay in sync with each other.",
+		input: { fromMs: z.number().min(0), deltaMs: z.number() },
+	},
 	select_line: {
 		description: "Focus a line in the editor (teleprompter and takes).",
 		input: { id: z.string() },
@@ -1203,6 +1208,47 @@ export const contract = {
 			orientation: z.enum(["landscape", "portrait", "square"]).default("landscape"),
 			trackId: z.string().optional(),
 			startMs: z.number().min(0).default(0),
+		},
+	},
+
+	find_music: {
+		description:
+			"Search openly licensed music (CC0, public domain, CC BY, CC BY-SA: usable in any video, commercial ones too) by mood, genre or instrument, e.g. 'calm piano', 'lo-fi study', 'cinematic tension'. Returns tracks with id, title, creator, length, licence and the credit line that must go in the video's credits or description. Add one with import_music. Cue's library has sound effects but no music: use this or generate_music whenever a video needs a bed.",
+		input: {
+			query: z.string().min(2),
+			minSeconds: z.number().min(0).optional(),
+			maxSeconds: z.number().min(1).optional(),
+			licences: z
+				.array(z.enum(["cc0", "pdm", "by", "by-sa"]))
+				.min(1)
+				.optional(),
+			limit: z.number().int().min(1).max(20).default(8),
+		},
+	},
+	import_music: {
+		description:
+			"Download a track found with find_music (by id), add it to the media with its credit, and lay it on the music track (made if missing) from startMs with fades, ducked under the voiceover. durationMs trims it (default: the whole track). Put the returned credit line in the credits. place false only adds it to the media.",
+		input: {
+			id: z.string(),
+			startMs: z.number().min(0).default(0),
+			durationMs: z.number().min(1).optional(),
+			trackId: z.string().optional(),
+			fadeInMs: z.number().min(0).default(1500),
+			fadeOutMs: z.number().min(0).default(3000),
+			place: z.boolean().default(true),
+		},
+	},
+	generate_music: {
+		description:
+			"Compose an original, royalty-free music bed made to measure (no credit needed): mood calm (soft piano arpeggios over a pad: explainers, tutorials, study or assignment videos), lofi (jazzy chords, soft beat, vinyl), ambient (slow open chords), tension (dark minor pulse), uplifting (bright arpeggios, light beat) or documentary (dark drone). It is exactly durationMs long (default: to the end of the timeline), with fades and loudness set for ducking under a voice, and is laid on the music track unless place is false. Optional key (C, D, E, F, G, A, B and sharps) and bpm.",
+		input: {
+			mood: z.enum(["calm", "lofi", "ambient", "tension", "uplifting", "documentary"]),
+			durationMs: z.number().min(2000).max(3600000).optional(),
+			startMs: z.number().min(0).default(0),
+			key: z.string().optional(),
+			bpm: z.number().min(40).max(180).optional(),
+			trackId: z.string().optional(),
+			place: z.boolean().default(true),
 		},
 	},
 

@@ -432,6 +432,7 @@ export const opSchema = z.discriminatedUnion("type", [
 		deltaMs: ms,
 		withClips: z.boolean().default(true),
 	}),
+	z.object({ type: z.literal("rippleFrom"), fromMs: z.number().min(0), deltaMs: z.number() }),
 	z.object({ type: z.literal("chooseTake"), lineId: z.string(), assetId: z.string().nullable() }),
 	z.object({ type: z.literal("deleteTake"), assetId: z.string() }),
 	// Markers and settings
@@ -2558,6 +2559,21 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			return {
 				data: { ...data, lines, clips },
 				summary: `Shifted ${moved.size} line(s) by ${sec(op.deltaMs)}`,
+			};
+		}
+		case "rippleFrom": {
+			// Everything from fromMs on moves together: clips on every track, script lines and
+			// markers. Pulled earlier, nothing moves before fromMs + deltaMs's room: it stops at fromMs.
+			const at = op.fromMs;
+			const delta = op.deltaMs < 0 ? Math.max(op.deltaMs, -at) : op.deltaMs;
+			const move = (t: number) => (t >= at ? Math.max(at + Math.min(0, delta), t + delta) : t);
+			const clips = data.clips.map((c) => (c.startMs >= at ? { ...c, startMs: move(c.startMs) } : c));
+			const lines = sortLines(data.lines.map((l) => (l.startMs >= at ? { ...l, startMs: move(l.startMs) } : l)));
+			const markers = data.markers.map((m) => (m.atMs >= at ? { ...m, atMs: move(m.atMs) } : m));
+			const moved = data.clips.filter((c) => c.startMs >= at).length;
+			return {
+				data: { ...data, clips, lines, markers },
+				summary: `${delta >= 0 ? "Made room" : "Closed the gap"}: moved ${moved} clip(s) from ${sec(at)} by ${sec(delta)}`,
 			};
 		}
 		case "chooseTake": {

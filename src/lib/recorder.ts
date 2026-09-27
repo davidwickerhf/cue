@@ -21,7 +21,20 @@ class Recorder {
 		deviceId: "" as string,
 		devices: [] as MediaDeviceInfo[],
 		error: null as string | null,
+		/** Time spoken so far, from the line's start (for the live timer). */
+		elapsedMs: 0,
+		/** A take just saved from the dialog, waiting for the user's decision. */
+		review: null as null | {
+			lineId: string;
+			takeId: string;
+			/** The take in use before this one, to go back to. */
+			previousId: string | null;
+			speechMs: number;
+			peakDb: number | null;
+		},
 	});
+	/** The take in use when recording started. */
+	private previousId: string | null = null;
 	private stream: MediaStream | null = null;
 	private meterCtx: AudioContext | null = null;
 	private meterRaf = 0;
@@ -103,7 +116,15 @@ class Recorder {
 		if (this.status.get().phase !== "idle") return;
 		this.requestId = options.requestId;
 		const token = ++this.startToken;
-		this.status.set({ phase: "countdown", lineId: line.id, countdown: 0, error: null });
+		this.previousId = line.chosenAssetId ?? null;
+		this.status.set({
+			phase: "countdown",
+			lineId: line.id,
+			countdown: 0,
+			error: null,
+			elapsedMs: 0,
+			review: null,
+		});
 		window.cue.reportRecorder({ recordingLineId: line.id });
 		try {
 			const stream = await this.ensureMic();
@@ -142,10 +163,16 @@ class Recorder {
 				recorder.start(250);
 			});
 			const stopAt = line.startMs + line.maxMs + settings.postrollMs;
+			// A take the user started runs until they stop it: reading on past the line's time
+			// is theirs to judge afterwards. Only an agent's take (nobody at the Stop button)
+			// stops by itself at the line's end.
+			const autoStop = settings.autoStop && !!this.requestId;
 			const unsubscribe = playback.onTick((ms) => {
 				if (ms >= line.startMs && this.status.get().phase === "countdown")
 					this.status.set({ phase: "recording" });
-				if (settings.autoStop && ms >= stopAt) void this.stop();
+				if (this.status.get().phase === "recording")
+					this.status.set({ elapsedMs: Math.max(0, ms - line.startMs) });
+				if (autoStop && ms >= stopAt) void this.stop();
 			});
 			this.stopTimer = unsubscribe;
 		} catch (error) {
@@ -175,15 +202,32 @@ class Recorder {
 		await stopped;
 		const blob = new Blob(this.chunks, { type: recorder.mimeType });
 		const extension = recorder.mimeType.includes("mp4") ? "m4a" : "webm";
+		const fromDialog = !this.requestId;
+		const previousId = this.previousId;
 		try {
-			await window.cue.saveRecording({
+			const take = (await window.cue.saveRecording({
 				lineId,
 				audio: await blob.arrayBuffer(),
 				extension,
 				recordedAtMs: this.recordedAtMs,
 				requestId: this.requestId,
-			});
-			notify(`Saved a take for ${lineId}`, "success");
+			})) as {
+				id: string;
+				speechStartMs?: number;
+				speechEndMs?: number;
+				durationMs: number;
+				peakDb?: number | null;
+			};
+			if (fromDialog) {
+				// The dialog asks what to do with it (use, keep the previous one, discard, fit).
+				this.pendingReview = {
+					lineId,
+					takeId: take.id,
+					previousId,
+					speechMs: (take.speechEndMs ?? take.durationMs) - (take.speechStartMs ?? 0),
+					peakDb: take.peakDb ?? null,
+				};
+			} else notify(`Saved a take for ${lineId}`, "success");
 		} catch (error) {
 			notify(`Could not save the take: ${(error as Error).message}`, "danger");
 		} finally {
@@ -205,13 +249,24 @@ class Recorder {
 		this.reset();
 	}
 
+	private pendingReview: (typeof this.status extends { get(): infer S } ? S : never)["review"] =
+		null;
+
+	/** Close the review of a take (after the user decided). */
+	closeReview() {
+		this.status.set({ review: null });
+	}
+
 	private reset() {
+		const review = this.pendingReview;
+		this.pendingReview = null;
+		this.previousId = null;
 		this.startToken++;
 		playback.setFilter(editor.get().previewMode);
 		this.recorder = null;
 		this.chunks = [];
 		this.requestId = undefined;
-		this.status.set({ phase: "idle", lineId: null, countdown: 0 });
+		this.status.set({ phase: "idle", lineId: null, countdown: 0, elapsedMs: 0, review });
 		window.cue.reportRecorder({ recordingLineId: null });
 	}
 }

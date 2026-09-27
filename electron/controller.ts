@@ -42,6 +42,7 @@ import {
 	MOTION_THEMES,
 	templateRegions,
 } from "./core/motionTemplates";
+import { downloadMusic, generateMusic, type MusicTrack, searchMusic } from "./core/music";
 import { reviewEdit } from "./core/notes";
 import { activeSequence, allSequences } from "./core/ops";
 import { resolveInProject } from "./core/paths";
@@ -74,6 +75,9 @@ import type {
 	RecentProject,
 	RecorderStatus,
 } from "./core/types";
+
+/** Tracks found with find_music, by id, for import_music. */
+const foundMusic = new Map<string, MusicTrack>();
 
 /** Calls that only read, so they never wait for a transaction. */
 const READ_ONLY =
@@ -1238,6 +1242,8 @@ export class Controller extends EventEmitter {
 					{ type: "shiftLines", ...parseInput("shift_lines", params), withClips: true },
 					actor,
 				);
+			case "ripple_from":
+				return this.store.apply({ type: "rippleFrom", ...parseInput("ripple_from", params) }, actor);
 			case "select_line": {
 				const { id } = parseInput("select_line", params);
 				this.requireLine(id);
@@ -1651,6 +1657,98 @@ export class Controller extends EventEmitter {
 					}),
 				);
 				return this.describeAsset(asset);
+			}
+
+			case "find_music": {
+				const { query, minSeconds, maxSeconds, licences, limit } = parseInput("find_music", params);
+				const tracks = await this.job("Searching for music", () =>
+					searchMusic({ query, minSeconds, maxSeconds, licences, limit }),
+				);
+				for (const t of tracks) foundMusic.set(t.id, t);
+				return {
+					tracks: tracks.map((t) => ({
+						id: t.id,
+						title: t.title,
+						creator: t.creator,
+						seconds: Math.round(t.durationMs / 1000),
+						licence: t.licence,
+						tags: t.tags,
+						credit: t.credit,
+						source: t.sourceUrl,
+					})),
+					note: tracks.length
+						? "Add one with import_music {id}. Its credit line must go in the video's credits or description."
+						: "Nothing matched: try broader words (a mood or an instrument), or compose one with generate_music.",
+				};
+			}
+			case "import_music": {
+				const input = parseInput("import_music", params);
+				const track = foundMusic.get(input.id);
+				if (!track)
+					throw new Error(
+						"Unknown track id: search with find_music first and use an id from its results.",
+					);
+				const file = await this.job(`Downloading ${track.title}`, () =>
+					downloadMusic(track, this.store.projectDir),
+				);
+				const { asset, clipId, trackId } = await this.store.addMusic(file, actor, {
+					name: `${track.title} — ${track.creator}`.slice(0, 80),
+					credit: {
+						title: track.title,
+						creator: track.creator,
+						licence: track.licence,
+						licenceUrl: track.licenceUrl,
+						sourceUrl: track.sourceUrl,
+						line: track.credit,
+					},
+					place: input.place
+						? {
+								trackId: input.trackId,
+								startMs: input.startMs,
+								durationMs: input.durationMs,
+								fadeInMs: input.fadeInMs,
+								fadeOutMs: input.fadeOutMs,
+							}
+						: undefined,
+				});
+				return { ...this.describeAsset(asset), clipId, trackId, credit: track.credit };
+			}
+			case "generate_music": {
+				const input = parseInput("generate_music", params);
+				const end = this.store.timelineEndMs();
+				const durationMs = input.durationMs ?? Math.max(10000, end - input.startMs);
+				const file = path.join(
+					this.store.projectDir,
+					"generated",
+					`music-${input.mood}-${Date.now().toString(36)}.m4a`,
+				);
+				const made = await this.job(`Composing ${input.mood} music`, () =>
+					generateMusic({ mood: input.mood, durationMs, key: input.key, bpm: input.bpm }, file),
+				);
+				const { asset, clipId, trackId } = await this.store.addMusic(file, actor, {
+					name: `Music: ${made.mood}, ${made.key}, ${made.bpm} bpm`,
+					generation: {
+						provider: "cue",
+						model: "music-composer",
+						prompt: `${made.mood} in ${made.key} at ${made.bpm} bpm: ${made.about}`,
+					},
+					place: input.place
+						? {
+								trackId: input.trackId,
+								startMs: input.startMs,
+								durationMs,
+								fadeInMs: 0,
+								fadeOutMs: 0,
+							}
+						: undefined,
+				});
+				return {
+					...this.describeAsset(asset),
+					clipId,
+					trackId,
+					about: made.about,
+					note: "Original music made by Cue: no credit or licence needed. It fades in and out itself and ducks under the voiceover.",
+				};
 			}
 
 			case "seek":

@@ -41,6 +41,18 @@ export interface Asset {
 	peakDb?: number | null;
 	/** Prompt, voice or model for generated media. */
 	generation?: { provider: string; model: string; prompt: string; voice?: string };
+	/**
+	 * Where found media came from and how it must be credited (openly licensed music):
+	 * the credit line goes in the video's credits or description.
+	 */
+	credit?: {
+		title: string;
+		creator: string;
+		licence: string;
+		licenceUrl?: string;
+		sourceUrl: string;
+		line: string;
+	};
 	/** Set for nested sequences: this media is a render of that sequence. */
 	sequenceId?: string;
 	/**
