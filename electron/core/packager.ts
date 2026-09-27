@@ -49,16 +49,40 @@ function allClips(data: ProjectData): Clip[] {
 	return [...data.clips, ...(data.sequences ?? []).flatMap((s) => s.clips)];
 }
 
-/** The part of a file the edit uses: [from, to] in source ms, with handles, or null for all of it. */
-function usedRange(asset: Asset, clips: MediaClip[]): { fromMs: number; toMs: number } | null {
+/** Uses of one file further apart than this become separate trimmed files. */
+const SPLIT_GAP_MS = 10000;
+
+interface UsedRange {
+	fromMs: number;
+	toMs: number;
+	clips: MediaClip[];
+}
+
+/**
+ * The parts of a file the edit uses, with handles: nearby uses share one range,
+ * uses far apart get their own (a few shots from a long film make a few short
+ * files). Null keeps the whole file, when trimming would save little.
+ */
+function usedRanges(asset: Asset, clips: MediaClip[]): UsedRange[] | null {
 	if (!clips.length || asset.durationMs <= 0) return null;
-	const from = Math.max(0, Math.min(...clips.map((c) => c.inMs)) - HANDLE_MS);
-	const to = Math.min(
-		asset.durationMs,
-		Math.max(...clips.map((c) => c.inMs + sourceSpan(c))) + HANDLE_MS,
-	);
-	if (to - from >= asset.durationMs * TRIM_IF_UNDER) return null;
-	return { fromMs: Math.round(from), toMs: Math.round(to) };
+	const spans = clips
+		.map((clip) => ({
+			fromMs: Math.max(0, clip.inMs - HANDLE_MS),
+			toMs: Math.min(asset.durationMs, clip.inMs + sourceSpan(clip) + HANDLE_MS),
+			clips: [clip],
+		}))
+		.sort((a, b) => a.fromMs - b.fromMs);
+	const ranges: UsedRange[] = [];
+	for (const span of spans) {
+		const last = ranges.at(-1);
+		if (last && span.fromMs - last.toMs <= SPLIT_GAP_MS) {
+			last.toMs = Math.max(last.toMs, span.toMs);
+			last.clips.push(...span.clips);
+		} else ranges.push({ ...span, clips: [...span.clips] });
+	}
+	const kept = ranges.reduce((sum, r) => sum + r.toMs - r.fromMs, 0);
+	if (kept >= asset.durationMs * TRIM_IF_UNDER) return null;
+	return ranges.map((r) => ({ ...r, fromMs: Math.round(r.fromMs), toMs: Math.round(r.toMs) }));
 }
 
 export async function packageProject(options: PackageOptions): Promise<PackageReport> {
@@ -86,56 +110,72 @@ export async function packageProject(options: PackageOptions): Promise<PackageRe
 			const source = resolveInProject(projectDir, asset.path);
 			const inside = relativeToProject(projectDir, source) !== source;
 			const uses = clips.filter((c) => c.assetId === asset.id);
-			const range =
+			const ranges =
 				options.trim && (asset.kind === "video" || asset.kind === "audio")
-					? usedRange(asset, uses)
+					? usedRanges(asset, uses)
 					: null;
-			if (range) {
-				// Re-encoded (not stream-copied) so the cut is frame accurate.
-				const ext = asset.kind === "video" ? ".mp4" : ".m4a";
-				const zipName = unique(
-					`media/${path.basename(source, path.extname(source))}-trimmed${ext}`,
-				);
-				const file = path.join(staging, zipName);
-				await fs.mkdir(path.dirname(file), { recursive: true });
-				await ffmpeg([
-					"-ss",
-					(range.fromMs / 1000).toFixed(3),
-					"-t",
-					((range.toMs - range.fromMs) / 1000).toFixed(3),
-					"-i",
-					source,
-					...(asset.kind === "video"
-						? ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p"]
-						: ["-vn"]),
-					"-c:a",
-					"aac",
-					"-b:a",
-					"192k",
-					"-movflags",
-					"+faststart",
-					file,
-				]);
-				files.set(zipName, file);
-				for (const clip of uses) clip.inMs = Math.max(0, clip.inMs - range.fromMs);
-				asset.durationMs = range.toMs - range.fromMs;
-				if (asset.transcript)
-					asset.transcript = {
-						...asset.transcript,
-						words: asset.transcript.words
-							.filter((w) => w.endMs > range.fromMs && w.startMs < range.toMs)
-							.map((w) => ({
-								...w,
-								startMs: w.startMs - range.fromMs,
-								endMs: w.endMs - range.fromMs,
-							})),
-					};
-				for (const key of ["speechStartMs", "speechEndMs"] as const) {
-					const v = asset[key];
-					if (v !== undefined) asset[key] = Math.max(0, v - range.fromMs);
+			if (ranges) {
+				for (const [i, range] of ranges.entries()) {
+					// The first part keeps the media item; later parts become new ones.
+					const part: Asset =
+						i === 0
+							? asset
+							: {
+									...structuredClone(asset),
+									id: `${asset.id}-${i + 1}`,
+									name: `${asset.name} (${i + 1})`,
+								};
+					if (i > 0) out.assets.push(part);
+					// Re-encoded (not stream-copied) so the cut is frame accurate.
+					const ext = asset.kind === "video" ? ".mp4" : ".m4a";
+					const zipName = unique(
+						`media/${path.basename(source, path.extname(source))}-${Math.round(range.fromMs / 1000)}s${ext}`,
+					);
+					const file = path.join(staging, zipName);
+					await fs.mkdir(path.dirname(file), { recursive: true });
+					await ffmpeg([
+						"-ss",
+						(range.fromMs / 1000).toFixed(3),
+						"-t",
+						((range.toMs - range.fromMs) / 1000).toFixed(3),
+						"-i",
+						source,
+						...(asset.kind === "video"
+							? ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p"]
+							: ["-vn"]),
+						"-c:a",
+						"aac",
+						"-b:a",
+						"192k",
+						"-movflags",
+						"+faststart",
+						file,
+					]);
+					files.set(zipName, file);
+					for (const clip of range.clips) {
+						clip.assetId = part.id;
+						clip.inMs = Math.max(0, clip.inMs - range.fromMs);
+					}
+					part.durationMs = range.toMs - range.fromMs;
+					if (asset.transcript)
+						part.transcript = {
+							...asset.transcript,
+							words: asset.transcript.words
+								.filter((w) => w.endMs > range.fromMs && w.startMs < range.toMs)
+								.map((w) => ({
+									...w,
+									startMs: w.startMs - range.fromMs,
+									endMs: w.endMs - range.fromMs,
+								})),
+						};
+					for (const key of ["speechStartMs", "speechEndMs"] as const) {
+						const v = asset[key];
+						if (v !== undefined) part[key] = Math.max(0, v - range.fromMs);
+					}
+					part.path = zipName;
+					part.relPath = zipName;
+					trimmed.push({ name: part.name, fromMs: range.fromMs, toMs: range.toMs });
 				}
-				asset.path = zipName;
-				trimmed.push({ name: asset.name, ...range });
 			} else {
 				// Media in the project folder keeps its place; the rest goes in media/.
 				const zipName = inside

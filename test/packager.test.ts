@@ -60,6 +60,16 @@ describe("packaging a project", () => {
 						linkedAudio: false,
 					},
 					{ type: "media", trackId: "V1", assetId: image.id, startMs: 5000, durationMs: 1000 },
+					// Far from the others in the film: its own short file.
+					{
+						type: "media",
+						trackId: "V1",
+						assetId: video.id,
+						startMs: 6000,
+						durationMs: 1000,
+						inMs: 50000,
+						linkedAudio: false,
+					},
 				],
 			} as never,
 			"user",
@@ -71,11 +81,14 @@ describe("packaging a project", () => {
 			"user",
 		);
 		expect(report.media).toBe(2);
-		expect(report.trimmed).toEqual([{ name: video.name, fromMs: 19000, toMs: 33000 }]);
+		expect(report.trimmed).toEqual([
+			{ name: video.name, fromMs: 19000, toMs: 33000 },
+			{ name: `${video.name} (2)`, fromMs: 49000, toMs: 52000 },
+		]);
 
 		const entries = [...readZip(await fs.readFile(out)).keys()];
 		expect(entries).toContain("film/README.txt");
-		expect(entries.some((e) => e.startsWith("film/media/film-trimmed"))).toBe(true);
+		expect(entries.some((e) => e === "film/media/film-19s.mp4")).toBe(true);
 		expect(entries.some((e) => e.includes(".cue-history") || e.includes(".cue-cache"))).toBe(false);
 
 		// Unzipped anywhere, it opens with its media found and the clips on the same frames.
@@ -89,13 +102,9 @@ describe("packaging a project", () => {
 		await other.open(path.join(there, "film", "film.cueproj"));
 		expect(other.snapshot()?.offline ?? []).toEqual([]);
 		const clips = other.current.clips.filter((c) => c.type === "media");
-		expect(clips.map((c) => (c.type === "media" ? c.inMs : -1))).toEqual([1000, 11000, 0]);
-		const trimmedFile = path.join(
-			there,
-			"Film",
-			report.trimmed.length ? "media" : "",
-			"film-trimmed.mp4",
-		);
+		expect(clips.map((c) => (c.type === "media" ? c.inMs : -1))).toEqual([1000, 11000, 0, 1000]);
+		expect(other.current.assets.filter((a) => a.kind === "video")).toHaveLength(2);
+		const trimmedFile = path.join(there, "film", "media", "film-19s.mp4");
 		expect(Math.round((await probe(trimmedFile)).durationMs / 1000)).toBe(14);
 	}, 120000);
 });
