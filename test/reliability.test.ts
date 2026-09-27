@@ -318,3 +318,19 @@ describe("long jobs", () => {
 		expect(partFile(out, "mp4")).not.toBe(partFile(out, "mp4"));
 	});
 });
+
+describe("project file type", () => {
+	it("renames a .cue.json project to .cueproj when it is opened, keeping one recent entry", async () => {
+		const { dir, store } = await newStore("legacy");
+		const legacy = path.join(dir, "Old", "old.cue.json");
+		await fs.mkdir(path.dirname(legacy), { recursive: true });
+		await fs.copyFile(store.filePath as string, legacy);
+		await store.open(legacy);
+		const renamed = path.join(dir, "Old", "old.cueproj");
+		expect(store.filePath).toBe(renamed);
+		await expect(fs.access(legacy)).rejects.toThrow();
+		const recent = await store.recent();
+		expect(recent.filter((r) => r.path === legacy)).toHaveLength(0);
+		expect(recent[0].path).toBe(renamed);
+	});
+});

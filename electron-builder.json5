@@ -57,12 +57,25 @@
     extendInfo: {
       NSMicrophoneUsageDescription: "Cue records voiceover takes from your microphone.",
       NSCameraUsageDescription: "Cue records video from your camera when you ask it to.",
+      // Declares .cueproj as Cue's own file type, so Finder shows it with the document icon.
+      UTExportedTypeDeclarations: [
+        {
+          UTTypeIdentifier: "life.wicker.cue.project",
+          UTTypeDescription: "Cue Project",
+          UTTypeConformsTo: ["public.json", "public.data"],
+          UTTypeIconFile: "document.icns",
+          UTTypeTagSpecification: {
+            "public.filename-extension": ["cueproj"],
+            "public.mime-type": ["application/x-cue-project"],
+          },
+        },
+      ],
     },
     extraResources: [
       { from: "build/native", to: "native", filter: ["cue-vision", "cue-cursor", "cue-capture"] },
     ],
     fileAssociations: [
-      { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/icon.icns" },
+      { ext: "cueproj", name: "Cue Project", description: "Cue video project", role: "Editor", rank: "Owner", icon: "build/document.icns" },
       { ext: "otio", name: "OpenTimelineIO Timeline", role: "Viewer", rank: "Alternate" },
     ],
   },
@@ -72,7 +85,7 @@
     icon: "build/icon.png",
     artifactName: "${productName}-win-${arch}-setup.${ext}",
     fileAssociations: [
-      { ext: "cueproj", name: "Cue Project", description: "Cue video project" },
+      { ext: "cueproj", name: "Cue Project", description: "Cue video project", icon: "build/document.ico" },
     ],
   },
   nsis: {

@@ -72,6 +72,7 @@ import {
 	deriveLines,
 	emptyProject,
 	isProjectFile,
+	LEGACY_EXTENSION,
 	type LineInput,
 	newId,
 	PROJECT_EXTENSION,
@@ -1830,8 +1831,19 @@ export class ProjectStore extends EventEmitter {
 		const resolved = path.resolve(file);
 		const stat = await fs.stat(resolved).catch(() => null);
 		if (!stat) throw new Error(`Project not found: ${resolved}`);
-		const target = stat.isDirectory() ? await this.findProjectIn(resolved) : resolved;
+		let target = stat.isDirectory() ? await this.findProjectIn(resolved) : resolved;
 		const data = parseProject(JSON.parse(await fs.readFile(target, "utf8")));
+		// Projects from before .cueproj (name.cue.json) take the project extension, so
+		// Finder and Explorer show them as Cue projects and open them in Cue.
+		let migratedFrom: string | null = null;
+		if (target.endsWith(LEGACY_EXTENSION)) {
+			const renamed = `${target.slice(0, -LEGACY_EXTENSION.length)}${PROJECT_EXTENSION}`;
+			if (!existsSync(renamed)) {
+				await fs.rename(target, renamed);
+				migratedFrom = target;
+				target = renamed;
+			}
+		}
 		await this.flush();
 		await this.history?.flush();
 		this.refreshPoster();
@@ -1846,8 +1858,15 @@ export class ProjectStore extends EventEmitter {
 			data.assets.filter((a) => existsSync(this.proxyPath(a.id))).map((a) => this.cacheKey(a.id)),
 		);
 		this.audioProxies.clear();
-		await this.remember();
+		await this.remember(migratedFrom);
 		this.log(actor, `Opened ${path.basename(target)}`);
+		if (migratedFrom) {
+			this.log(
+				"system",
+				`Renamed ${path.basename(migratedFrom)} to ${path.basename(target)}, the Cue project file type`,
+			);
+			this.emit("renamed", migratedFrom, target);
+		}
 		this.emit("change");
 		this.history = new ProjectHistory(target);
 		await this.history.load();
@@ -3720,17 +3739,20 @@ export class ProjectStore extends EventEmitter {
 		return path.join(dir, match);
 	}
 
-	private async remember(): Promise<void> {
+	/** Puts the open project first in the recent list (replacing `previousPath` after a rename). */
+	private async remember(previousPath: string | null = null): Promise<void> {
 		if (!this.file || !this.data) return;
 		const entry: RecentProject = {
 			path: this.file,
 			name: this.data.name,
 			openedAt: new Date().toISOString(),
 		};
-		const list = [entry, ...(await this.recent()).filter((item) => item.path !== this.file)].slice(
-			0,
-			12,
-		);
+		const list = [
+			entry,
+			...(await this.recent()).filter(
+				(item) => item.path !== this.file && item.path !== previousPath,
+			),
+		].slice(0, 12);
 		await fs.mkdir(path.dirname(this.options.recentFile), { recursive: true });
 		await fs.writeFile(this.options.recentFile, JSON.stringify(list, null, 2));
 	}
