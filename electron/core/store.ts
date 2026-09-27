@@ -60,6 +60,7 @@ import {
 import { type MontageSource, planMontage } from "./montage";
 import { type LottieJson, motionDurationMs, motionInfo } from "./motion";
 import { readMotionFile } from "./motionFile";
+import { findLayer, layerAt, listLayers, moveLayer, updateLayer } from "./motionLayers";
 import { compileMotion, type TextBox, textBoxes } from "./motionSpec";
 import {
 	buildTemplate,
@@ -2930,11 +2931,66 @@ export class ProjectStore extends EventEmitter {
 		source: MotionSource;
 		spec: unknown;
 		textBoxes: TextBox[];
+		layers: { name: string; type: string; path: string }[];
 	} {
 		const a = this.current.assets.find((x) => x.id === assetId);
 		if (!a?.motionSource) throw new Error(`"${assetId}" is not a motion graphic made in Cue.`);
 		const spec = this.motionSpecOf(a.motionSource);
-		return { source: a.motionSource, spec, textBoxes: textBoxes(spec) };
+		const layers = listLayers(spec as Record<string, unknown>).map((r) => ({
+			name: r.name,
+			type: r.type,
+			path: r.path.join("."),
+		}));
+		return { source: a.motionSource, spec, textBoxes: textBoxes(spec), layers };
+	}
+
+	/**
+	 * Changes one layer of a motion graphic made in Cue, by name or path: sets or
+	 * removes properties (null removes), moves it, or deletes it. A graphic made
+	 * from a template becomes its own design (the template's fields stop applying).
+	 */
+	async editMotionLayer(
+		assetId: string,
+		edit: {
+			layer: string;
+			patch?: Record<string, unknown>;
+			move?: { dx: number; dy: number };
+			remove?: boolean;
+		},
+		actor: Actor,
+	): Promise<{ asset: Asset; layer: string; path: string }> {
+		const a = this.current.assets.find((x) => x.id === assetId);
+		if (!a?.motionSource) throw new Error(`"${assetId}" is not a motion graphic made in Cue.`);
+		let spec = this.motionSpecOf(a.motionSource) as Record<string, unknown>;
+		const row = findLayer(spec, edit.layer);
+		if (!row)
+			throw new Error(
+				`No layer "${edit.layer}". Layers: ${listLayers(spec)
+					.map((r) => `${r.name} (${r.path.join(".")})`)
+					.join(", ")}.`,
+			);
+		if (edit.remove) {
+			const parent = row.path.slice(0, -1);
+			const i = row.path[row.path.length - 1];
+			const siblings = ((parent.length ? layerAt(spec, parent)?.layers : spec.layers) ??
+				[]) as unknown[];
+			const kept = siblings.filter((_, j) => j !== i);
+			spec = parent.length
+				? updateLayer(spec, parent, { layers: kept })
+				: { ...spec, layers: kept };
+		} else {
+			if (edit.patch)
+				spec = updateLayer(
+					spec,
+					row.path,
+					Object.fromEntries(
+						Object.entries(edit.patch).map(([k, v]) => [k, v === null ? undefined : v]),
+					),
+				);
+			if (edit.move) spec = moveLayer(spec, row.path, edit.move.dx, edit.move.dy);
+		}
+		const asset = await this.updateMotionGraphic(assetId, { spec }, actor);
+		return { asset, layer: row.name, path: row.path.join(".") };
 	}
 
 	/**

@@ -70,8 +70,9 @@ const PRESETS: {
 ];
 
 /** Export window: a preset, the whole timeline or just in to out, and where to save. */
-export function ExportDialog() {
-	const open = exportDialog.use((s) => s.open);
+/** Export: a dialog over the editor, or `inline` as the Deliver page's main area. */
+export function ExportDialog({ inline = false }: { inline?: boolean } = {}) {
+	const open = exportDialog.use((s) => s.open) || inline;
 	const project = useProject();
 	const inPoint = editor.use((s) => s.inPoint);
 	const outPoint = editor.use((s) => s.outPoint);
@@ -86,6 +87,7 @@ export function ExportDialog() {
 	useEffect(() => {
 		if (!open) return;
 		setRange(hasRange ? "inout" : "all");
+		if (inline) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				e.stopPropagation();
@@ -94,10 +96,10 @@ export function ExportDialog() {
 		};
 		window.addEventListener("keydown", onKey, true);
 		return () => window.removeEventListener("keydown", onKey, true);
-	}, [open, hasRange]);
+	}, [open, hasRange, inline]);
 	if (!open || !project) return null;
 	const chosen = PRESETS.find((p) => p.id === preset) ?? PRESETS[0];
-	const close = () => exportDialog.set({ open: false });
+	const close = () => !inline && exportDialog.set({ open: false });
 	const w = Math.round((project.data.canvas.width * chosen.patch.scale) / 2) * 2;
 	const h = Math.round((project.data.canvas.height * chosen.patch.scale) / 2) * 2;
 	const length =
@@ -155,25 +157,34 @@ export function ExportDialog() {
 
 	return (
 		<div
-			className="fixed inset-0 z-[150] flex bg-black/40 backdrop-blur-[2px]"
+			className={
+				inline
+					? "custom-scrollbar flex min-h-0 flex-1 overflow-y-auto bg-background py-10"
+					: "fixed inset-0 z-[150] flex bg-black/40 backdrop-blur-[2px]"
+			}
 			onPointerDown={close}
 		>
 			<div
-				role="dialog"
+				role={inline ? "region" : "dialog"}
 				aria-label="Export"
 				onPointerDown={(e) => e.stopPropagation()}
-				className="m-auto flex w-[min(520px,92vw)] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl shadow-black/50"
+				className={cn(
+					"m-auto flex w-[min(520px,92vw)] flex-col overflow-hidden rounded-xl border border-border bg-surface",
+					!inline && "shadow-2xl shadow-black/50",
+				)}
 			>
 				<header className="flex h-12 items-center justify-between border-b border-separator px-5">
-					<h2 className="text-[14px] font-semibold">Export</h2>
-					<button
-						type="button"
-						onClick={close}
-						aria-label="Close"
-						className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
-					>
-						<X className="size-4" />
-					</button>
+					<h2 className="text-[14px] font-semibold">{inline ? "Deliver" : "Export"}</h2>
+					{!inline && (
+						<button
+							type="button"
+							onClick={close}
+							aria-label="Close"
+							className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground"
+						>
+							<X className="size-4" />
+						</button>
+					)}
 				</header>
 				<div className="flex gap-1 border-b border-separator px-5 py-2">
 					{(
@@ -303,9 +314,11 @@ export function ExportDialog() {
 					</div>
 				)}
 				<footer className="flex justify-end gap-2 border-t border-separator px-5 py-3">
-					<Button size="sm" variant="ghost" className="h-8 text-[12px]" onPress={close}>
-						Cancel
-					</Button>
+					{!inline && (
+						<Button size="sm" variant="ghost" className="h-8 text-[12px]" onPress={close}>
+							Cancel
+						</Button>
+					)}
 					{mode === "variants" ? (
 						<Button
 							size="sm"

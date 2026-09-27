@@ -7,6 +7,7 @@ import {
 	keyframeLanes,
 	toggleLanes,
 } from "../lib/keyframes";
+import { goToPage, hasViewer, pageForDigit, pageState } from "../lib/pages";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import {
@@ -18,7 +19,6 @@ import {
 	toggleSource,
 } from "../lib/source";
 import { app, appSettings, editor, findLine } from "../lib/state";
-import { BUILT_IN, switchWorkspace } from "../lib/workspace";
 
 function typing(target: EventTarget | null) {
 	const el = target as HTMLElement | null;
@@ -90,6 +90,17 @@ export function useShortcuts() {
 			const selectedClips = project.data.clips.filter((c) => selected.includes(c.id));
 			const handled = () => e.preventDefault();
 
+			// On pages with their own screen (Motion, Deliver) the timeline is out of sight:
+			// only page switching reaches it here, never edits (undo is in the app menu).
+			if (!hasViewer(pageState.get().page)) {
+				if (e.altKey && !mod && /^Digit[1-9]$/.test(e.code)) {
+					handled();
+					const page = pageForDigit(Number(e.code.slice(5)));
+					if (page) goToPage(page);
+				}
+				return;
+			}
+
 			if (recorder.status.get().phase !== "idle") {
 				if (key === "escape") recorder.cancel();
 				else if (key === " " || key === "enter") void recorder.stop();
@@ -156,10 +167,11 @@ export function useShortcuts() {
 			else if (key === "end") playback.seek(project.durationMs);
 			else if (key === "i" && !mod) editor.set({ inPoint: Math.round(playback.currentMs) });
 			else if (key === "o" && !mod) editor.set({ outPoint: Math.round(playback.currentMs) });
-			// Workspaces: ⌥1–⌥7 (physical keys, since ⌥ changes the character).
-			else if (e.altKey && !mod && /^Digit[1-7]$/.test(e.code)) {
+			// Pages: ⌥1–⌥9 (physical keys, since ⌥ changes the character).
+			else if (e.altKey && !mod && /^Digit[1-9]$/.test(e.code)) {
 				handled();
-				switchWorkspace(Object.keys(BUILT_IN)[Number(e.code.slice(5)) - 1]);
+				const page = pageForDigit(Number(e.code.slice(5)));
+				if (page) goToPage(page);
 			}
 			// ⌥ changes e.key on macOS (⌥X types ≈), so this one checks the physical key.
 			else if (e.code === "KeyX" && e.altKey) editor.set({ inPoint: null, outPoint: null });

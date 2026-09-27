@@ -114,9 +114,9 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 Cue has grown past one screen with panels. Like DaVinci Resolve's pages, each job gets its own page with only the tools for it, and the same project flows through them. Everything stays one click (and one MCP call) away; nothing advanced sits in the way of a simple edit.
 
 - [x] **Projects** (home): projects in collections (folders), search, recent. Group the pieces of one video (the edit, its graphics, alternate versions) together. (Templates to start from: still to do.)
-- [ ] **Edit**: the timeline, source monitor, media and inspector (today's Editing workspace).
-- [ ] **Motion**: design one motion graphic at a time, like an After Effects composition: its layers, a visual editor for the spec (select, move, scale, turn, keyframe a layer), easing curves, the template's fields, and a live preview. Opens from any graphic on the timeline.
-- [ ] **Colour**, **Audio**, **Voice**, **Review** and **Deliver** as pages instead of workspaces, with a page bar at the bottom (⌥1–⌥7 as now).
+- [x] **Edit**: the timeline, source monitor, media and inspector (today's Editing workspace).
+- [x] **Motion**: design one motion graphic at a time, like an After Effects composition: its layers, the picked layer's properties, click and drag on a live preview, the template's fields, entrances and exits. Opens from any graphic (Inspector, set_view). Still to come: scaling and turning by handles, keyframes and easing curves on a timeline of its own.
+- [x] **Colour**, **Audio**, **Voice**, **Review** and **Deliver** as pages instead of workspaces, with a page bar at the bottom (⌥1–⌥9).
 - [ ] **Library**: footage, textures, sounds, motion templates, styles and playbooks in one place, searchable, with previews.
 - [ ] Progressive disclosure everywhere: simple controls first, "More" folds for the rest; defaults that already look good.
 - [x] Projects as media: place another project (or one of its sequences) in an edit, updated when it changes, like a pre-composition shared between projects.

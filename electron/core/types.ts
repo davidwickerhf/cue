@@ -745,6 +745,8 @@ export type EditorCommand =
 	| { type: "setInOut"; inMs?: number | null; outMs?: number | null }
 	| {
 			type: "setView";
+			page?: string;
+			motionAssetId?: string;
 			panel?: string;
 			fitTimeline?: boolean;
 			openSource?: string;

@@ -1,9 +1,12 @@
 import { useRef } from "react";
 import { useEditorCommands } from "../../hooks/useEditorCommands";
 import { useShortcuts } from "../../hooks/useShortcuts";
+import { hasViewer, pageState } from "../../lib/pages";
 import { editor } from "../../lib/state";
 import { clampLayout, layout } from "../../lib/workspace";
 import { ExportDialog } from "../ExportDialog";
+import { MotionPage } from "../pages/MotionPage";
+import { PageBar } from "../pages/PageBar";
 import { CaptureBar, RecordDialog } from "../RecordDialog";
 import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
@@ -24,64 +27,73 @@ export function EditorShell() {
 	const sidebarOpen = layout.use((s) => s.sidebarOpen);
 	const dock = layout.use((s) => s.dock);
 	const dragStart = useRef<{ y: number; h: number } | null>(null);
+	const page = pageState.use((s) => s.page);
+	// The editor stays mounted on the Motion and Deliver pages (hidden), so the viewer
+	// and playback keep their place; those pages show their own screen instead.
+	const viewer = hasViewer(page);
 
 	return (
 		<div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
 			<EditorHeader />
 			<OfflineBanner />
-			<div className="flex min-h-0 flex-1">
-				<EditorSidebar />
-				{sidebarOpen && <Splitter edge="sidebarWidth" />}
-				<PreviewPanel />
-				{dock !== "none" && <Splitter edge="dockWidth" invert />}
-				<Dock />
-				{inspectorOpen && <Splitter edge="inspectorWidth" invert />}
-				{inspectorOpen && <Inspector />}
-			</div>
-			{timelineOpen && (
-				<hr
-					aria-orientation="horizontal"
-					aria-label="Timeline height"
-					aria-valuenow={timelineHeight}
-					tabIndex={0}
-					// Arrow keys resize, like dragging.
-					onKeyDown={(e) => {
-						const step = e.shiftKey ? 64 : 16;
-						if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-						e.preventDefault();
-						e.stopPropagation();
-						layout.set(
-							clampLayout({
-								timelineHeight: timelineHeight + (e.key === "ArrowUp" ? step : -step),
-							}),
-						);
-					}}
-					className="relative m-0 h-px shrink-0 cursor-row-resize border-0 bg-separator after:absolute after:inset-x-0 after:-top-1.5 after:-bottom-1.5 after:content-[''] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-					onPointerDown={(e) => {
-						dragStart.current = { y: e.clientY, h: timelineHeight };
-						(e.target as HTMLElement).setPointerCapture(e.pointerId);
-					}}
-					onPointerMove={(e) => {
-						if (!dragStart.current) return;
-						layout.set(
-							clampLayout({
-								timelineHeight: dragStart.current.h - (e.clientY - dragStart.current.y),
-							}),
-						);
-					}}
-					onPointerUp={() => {
-						dragStart.current = null;
-					}}
-				/>
-			)}
-			{timelineOpen && (
-				<div
-					style={{ height: `min(${timelineHeight}px, max(120px, calc(100dvh - 260px)))` }}
-					className="shrink-0"
-				>
-					<Timeline />
+			{page === "motion" && <MotionPage />}
+			{page === "deliver" && <ExportDialog inline />}
+			<div className={viewer ? "contents" : "hidden"}>
+				<div className="flex min-h-0 flex-1">
+					<EditorSidebar />
+					{sidebarOpen && <Splitter edge="sidebarWidth" />}
+					<PreviewPanel />
+					{dock !== "none" && <Splitter edge="dockWidth" invert />}
+					<Dock />
+					{inspectorOpen && <Splitter edge="inspectorWidth" invert />}
+					{inspectorOpen && <Inspector />}
 				</div>
-			)}
+				{timelineOpen && (
+					<hr
+						aria-orientation="horizontal"
+						aria-label="Timeline height"
+						aria-valuenow={timelineHeight}
+						tabIndex={0}
+						// Arrow keys resize, like dragging.
+						onKeyDown={(e) => {
+							const step = e.shiftKey ? 64 : 16;
+							if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+							e.preventDefault();
+							e.stopPropagation();
+							layout.set(
+								clampLayout({
+									timelineHeight: timelineHeight + (e.key === "ArrowUp" ? step : -step),
+								}),
+							);
+						}}
+						className="relative m-0 h-px shrink-0 cursor-row-resize border-0 bg-separator after:absolute after:inset-x-0 after:-top-1.5 after:-bottom-1.5 after:content-[''] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+						onPointerDown={(e) => {
+							dragStart.current = { y: e.clientY, h: timelineHeight };
+							(e.target as HTMLElement).setPointerCapture(e.pointerId);
+						}}
+						onPointerMove={(e) => {
+							if (!dragStart.current) return;
+							layout.set(
+								clampLayout({
+									timelineHeight: dragStart.current.h - (e.clientY - dragStart.current.y),
+								}),
+							);
+						}}
+						onPointerUp={() => {
+							dragStart.current = null;
+						}}
+					/>
+				)}
+				{timelineOpen && (
+					<div
+						style={{ height: `min(${timelineHeight}px, max(120px, calc(100dvh - 260px)))` }}
+						className="shrink-0"
+					>
+						<Timeline />
+					</div>
+				)}
+			</div>
+			<PageBar />
 			<RelinkDialog />
 			<ExportDialog />
 			<RecordDialog />

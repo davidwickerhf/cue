@@ -111,9 +111,20 @@ export const contract = {
 			fit: fitInput,
 		},
 	},
+	edit_motion_layer: {
+		description:
+			"Change one layer of a motion graphic made in Cue without rewriting its spec: layer is its name or path (see get_motion_graphic layers, e.g. 'Title' or '1.0'); patch sets spec properties of that layer (text, color, fill, size, x, y, rotation, opacity, enter, exit, keys…; null removes one); move {dx, dy} shifts it in composition pixels (lines by their points, groups with everything in them); remove deletes it. A graphic made from a template becomes its own design (the template's params stop applying). One undoable step; clips using it update. Works without the window on screen.",
+		input: {
+			assetId: z.string(),
+			layer: z.string(),
+			patch: z.record(z.string(), z.unknown()).optional(),
+			move: z.object({ dx: z.number(), dy: z.number() }).optional(),
+			remove: z.boolean().optional(),
+		},
+	},
 	get_motion_graphic: {
 		description:
-			"A motion graphic's source: the template and params it was made from, and its full spec (for templates, the spec they build). Copy and change the spec to make a new graphic in the same style.",
+			"A motion graphic's source: the template and params it was made from, its full spec (for templates, the spec they build) and its layers (name, type, path) for edit_motion_layer. Copy and change the spec to make a new graphic in the same style.",
 		input: { assetId: z.string() },
 	},
 	get_state: {
@@ -1290,8 +1301,22 @@ export const contract = {
 	},
 	set_view: {
 		description:
-			"Show the user something: switch workspace (window layout), open a sidebar panel or a dock beside the viewer, fit the whole timeline in view, zoom the timeline (px per second), open a media item in the source monitor, zoom the viewer, turn viewer overlays on or off, split before/after, or A/B compare two sequences.",
+			"Show the user something: go to a page (edit, motion, titles, colour, audio, voice, review, deliver, agent — motion with motionAssetId opens that graphic on the Motion page), switch workspace (window layout), open a sidebar panel or a dock beside the viewer, fit the whole timeline in view, zoom the timeline (px per second), open a media item in the source monitor, zoom the viewer, turn viewer overlays on or off, split before/after, or A/B compare two sequences.",
 		input: {
+			page: z
+				.enum([
+					"edit",
+					"motion",
+					"titles",
+					"colour",
+					"audio",
+					"voice",
+					"review",
+					"deliver",
+					"agent",
+				])
+				.optional(),
+			motionAssetId: z.string().optional().describe("motion graphic to open on the Motion page"),
 			panel: z
 				.enum([
 					"media",

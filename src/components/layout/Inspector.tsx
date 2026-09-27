@@ -15,6 +15,7 @@ import { MOTION_TEMPLATES, MOTION_THEMES } from "../../../electron/core/motionTe
 import { TRANSITIONS } from "../../../electron/core/transitions";
 import type { Asset, MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
+import { goToPage, pageState } from "../../lib/pages";
 import { isMac, keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
@@ -1918,11 +1919,14 @@ function MotionSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
 		<Section
 			title="Motion graphic"
 			action={
-				clip.motion ? (
-					<Button size="sm" variant="ghost" className="h-6 text-[11px]" onPress={() => set(null)}>
-						Reset
-					</Button>
-				) : null
+				<div className="flex gap-1">
+					{asset.motionSource && <OpenInMotion assetId={asset.id} />}
+					{clip.motion ? (
+						<Button size="sm" variant="ghost" className="h-6 text-[11px]" onPress={() => set(null)}>
+							Reset
+						</Button>
+					) : null}
+				</div>
 			}
 		>
 			{info.texts.map((t) => (
@@ -1986,16 +1990,33 @@ const humanize = (key: string) =>
  * A graphic made from one of Cue's templates: its parameters (text, data, theme,
  * accent) as fields. Each change rebuilds the graphic, as one undo step.
  */
-function TemplateSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
+/** Opens a graphic made in Cue on the Motion page, to work on its layers. */
+function OpenInMotion({ assetId }: { assetId: string }) {
+	const page = pageState.use((s) => s.page);
+	if (page === "motion") return null;
+	return (
+		<Button
+			size="sm"
+			variant="ghost"
+			className="h-6 text-[11px]"
+			onPress={() => goToPage("motion", { motionAssetId: assetId })}
+		>
+			Open in Motion
+		</Button>
+	);
+}
+
+/** A template graphic's fields; shared with the Motion page (which has no clip, so no Loop). */
+export function TemplateSection({ clip, asset }: { clip?: MediaClip; asset: Asset }) {
 	const source = asset.motionSource;
 	const template = MOTION_TEMPLATES.find((t) => t.id === source?.template);
 	if (!source || !template) return null;
 	const params = source.params ?? {};
 	const set = (key: string, value: unknown) =>
 		void run("update_motion_graphic", { assetId: asset.id, params: { [key]: value } });
-	const loop = !!clip.motion?.loop;
+	const loop = !!clip?.motion?.loop;
 	return (
-		<Section title={template.name}>
+		<Section title={template.name} action={<OpenInMotion assetId={asset.id} />}>
 			<p className="text-[11px] leading-relaxed text-muted">{template.description}</p>
 			{Object.entries(template.params.shape).map(([key, schema]) => {
 				const field = paramField(schema);
@@ -2102,13 +2123,15 @@ function TemplateSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
 					</Field>
 				);
 			})}
-			<Toggle
-				label="Loop"
-				checked={loop}
-				onChange={(next) =>
-					void run("update_clip", { id: clip.id, patch: { motion: { loop: next } } })
-				}
-			/>
+			{clip && (
+				<Toggle
+					label="Loop"
+					checked={loop}
+					onChange={(next) =>
+						void run("update_clip", { id: clip.id, patch: { motion: { loop: next } } })
+					}
+				/>
+			)}
 		</Section>
 	);
 }

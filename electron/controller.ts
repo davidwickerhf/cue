@@ -661,7 +661,12 @@ export class Controller extends EventEmitter {
 				return { path: file };
 			}
 			case "add_project_media": {
-				const { path: file, sequenceId, trackId, startMs } = parseInput("add_project_media", params);
+				const {
+					path: file,
+					sequenceId,
+					trackId,
+					startMs,
+				} = parseInput("add_project_media", params);
 				return this.job(`Rendering ${path.basename(file)}`, () =>
 					this.store.addProjectMedia(
 						file,
@@ -1422,6 +1427,10 @@ export class Controller extends EventEmitter {
 					...(regions ? { regions } : {}),
 					...(fit?.length ? await this.fitToFrame(asset.id, regions, fit, actor) : {}),
 				};
+			}
+			case "edit_motion_layer": {
+				const { assetId, layer, patch, move, remove } = parseInput("edit_motion_layer", params);
+				return this.store.editMotionLayer(assetId, { layer, patch, move, remove }, actor);
 			}
 			case "get_motion_graphic": {
 				const { assetId } = parseInput("get_motion_graphic", params);

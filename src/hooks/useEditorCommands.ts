@@ -5,6 +5,7 @@ import type { TextClip } from "../../electron/core/types";
 import { librarySelection } from "../lib/assetLibrary";
 import { capture } from "../lib/capture";
 import { motionSettled, rasteriseMotion } from "../lib/motion";
+import { goToPage, hasViewer, type PageId, pageState } from "../lib/pages";
 import { playback } from "../lib/playback";
 import { recorder } from "../lib/recorder";
 import { openSource } from "../lib/source";
@@ -31,7 +32,12 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 export function useEditorCommands() {
 	useEffect(() => {
 		let capturing: { scale: number } | null = null;
+		let pageAfterCapture: PageId | null = null;
 		const endCapture = () => {
+			if (pageAfterCapture) {
+				pageState.set({ page: pageAfterCapture });
+				pageAfterCapture = null;
+			}
 			delete document.body.dataset.capturing;
 			if (capturing && capturing.scale !== 1) viewerZoom.set({ scale: capturing.scale });
 			capturing = null;
@@ -94,6 +100,10 @@ export function useEditorCommands() {
 					break;
 				case "setView":
 					if (command.workspace) switchWorkspace(command.workspace);
+					if (command.page || command.motionAssetId)
+						goToPage((command.page ?? "motion") as PageId, {
+							...(command.motionAssetId ? { motionAssetId: command.motionAssetId } : {}),
+						});
 					if (command.panel) editor.set({ panel: command.panel as SidebarPanel });
 					if (command.dock) layout.set({ dock: command.dock as Dock });
 					if (command.zoom) editor.set({ zoom: command.zoom });
@@ -194,6 +204,13 @@ export function useEditorCommands() {
 				case "captureFrame": {
 					try {
 						// Only the picture: no guides or handles, and the whole frame (not a zoomed-in part).
+						// The viewer must be on screen: from Motion or Deliver, go to Edit for the capture.
+						const from = pageState.get().page;
+						if (!hasViewer(from)) {
+							goToPage("edit");
+							pageAfterCapture = from;
+							await new Promise((r) => setTimeout(r, 60));
+						}
 						capturing = { scale: viewerZoom.get().scale };
 						document.body.dataset.capturing = "";
 						if (capturing.scale !== 1) viewerZoom.set({ scale: 1 });
