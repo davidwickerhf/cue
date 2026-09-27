@@ -296,3 +296,25 @@ describe("reviewing agent edits", () => {
 		expect(store.current.clips.some((x) => x.id === b)).toBe(false);
 	});
 });
+
+describe("long jobs", () => {
+	it("reports how far an ffmpeg encode has got", async () => {
+		const { ffmpegWithProgress, partFile } = await import("../electron/core/media");
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-progress-"));
+		const out = path.join(dir, "out.mp4");
+		const seen: number[] = [];
+		await ffmpegWithProgress(
+			["-f", "lavfi", "-i", "testsrc=size=160x90:rate=30:duration=3", "-c:v", "libx264", out],
+			3000,
+			(f) => seen.push(f),
+		);
+		expect(seen.length).toBeGreaterThan(0);
+		expect(Math.max(...seen)).toBeGreaterThan(0.9);
+		expect(seen.every((f) => f >= 0 && f <= 1)).toBe(true);
+		await expect(
+			ffmpegWithProgress(["-i", path.join(dir, "missing.mp4"), out], 1000),
+		).rejects.toThrow(/ffmpeg exited/);
+		// Two jobs for the same output never share a temporary file.
+		expect(partFile(out, "mp4")).not.toBe(partFile(out, "mp4"));
+	});
+});

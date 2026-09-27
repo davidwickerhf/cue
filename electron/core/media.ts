@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -31,6 +31,36 @@ export async function ffmpeg(args: string[]): Promise<string> {
 		maxBuffer: MAX_BUFFER,
 	});
 	return stderr;
+}
+
+/**
+ * ffmpeg for long encodes: reports how far it has got (0–1 of lengthMs of output)
+ * from the time= in its status lines.
+ */
+export function ffmpegWithProgress(
+	args: string[],
+	lengthMs: number,
+	onProgress?: (fraction: number) => void,
+): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const child = spawn(ffmpegPath(), ["-hide_banner", "-y", ...args]);
+		let log = "";
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", (chunk: string) => {
+			log = (log + chunk).slice(-MAX_BUFFER);
+			const times = [...chunk.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)];
+			const last = times.at(-1);
+			if (last && onProgress && lengthMs > 0) {
+				const ms = (Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3])) * 1000;
+				onProgress(Math.min(1, ms / lengthMs));
+			}
+		});
+		child.on("error", reject);
+		child.on("close", (code) => {
+			if (code === 0) resolve(log);
+			else reject(new Error(`ffmpeg exited with code ${code}: ${log.slice(-2000)}`));
+		});
+	});
 }
 
 export interface ProbeResult {

@@ -5,7 +5,7 @@ import { keyframeExpr, seedOf, steppedExpr, wiggleExpr, zoomExprs } from "./anim
 import { trackAudioFilters } from "./audio";
 import { toSrt, toVtt } from "./captions";
 import { denoiseChain } from "./denoise";
-import { ffmpeg } from "./media";
+import { ffmpeg, ffmpegWithProgress } from "./media";
 import { resolveInProject } from "./paths";
 import {
 	clipEnd,
@@ -43,6 +43,8 @@ export type Rasteriser = (
 	clips: (TextClip | MediaClip)[],
 	canvas?: { width: number; height: number },
 	sizes?: Record<string, { width: number; height: number }>,
+	/** Called as clips are drawn: how many of them are done. */
+	onProgress?: (done: number, total: number) => void,
 ) => Promise<Record<string, TextRender>>;
 
 export interface ExportContext {
@@ -584,8 +586,10 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	);
 	const drawn = [...textClips, ...motionClips];
 	const rendered = drawn.length
-		? await (ctx.renderText?.(drawn, { width: W, height: H }, motionSizes) ??
-				Promise.reject(new Error("Open the Cue window to render text and graphics.")))
+		? await (ctx.renderText?.(drawn, { width: W, height: H }, motionSizes, (done, total) =>
+				// Drawing text and graphics is the first half of the work; encoding the second.
+				ctx.onProgress?.((done / total) * 0.5),
+			) ?? Promise.reject(new Error("Open the Cue window to render text and graphics.")))
 		: {};
 
 	const inputs: string[] = [];
@@ -942,25 +946,30 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 
 	const graph = path.join(os.tmpdir(), `cue-graph-${Date.now()}.txt`);
 	await fs.writeFile(graph, chains.join(";\n"));
+	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
 	try {
-		await ffmpeg([
-			...inputs,
-			"-filter_complex_script",
-			graph,
-			"-map",
-			"[vout]",
-			...audioMaps,
-			...encoder(data),
-			"-r",
-			String(fps),
-			...rangeArgs(ctx.range, lengthMs),
-			...(out.endsWith(".mp4") ? ["-movflags", "+faststart"] : []),
-			out,
-		]);
+		await ffmpegWithProgress(
+			[
+				...inputs,
+				"-filter_complex_script",
+				graph,
+				"-map",
+				"[vout]",
+				...audioMaps,
+				...encoder(data),
+				"-r",
+				String(fps),
+				...rangeArgs(ctx.range, lengthMs),
+				...(out.endsWith(".mp4") ? ["-movflags", "+faststart"] : []),
+				out,
+			],
+			exported,
+			(fraction) =>
+				ctx.onProgress?.((drawn.length ? 0.5 : 0) + fraction * (drawn.length ? 0.5 : 1)),
+		);
 	} finally {
 		await fs.rm(graph, { force: true });
 	}
-	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
 	return { kind: "video", outputs: [out], missing: [], durationMs: exported };
 }
 

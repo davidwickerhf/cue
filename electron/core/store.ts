@@ -3634,13 +3634,14 @@ export class ProjectStore extends EventEmitter {
 		actor: Actor,
 		renderText?: TextRenderer,
 		range?: { startMs: number; endMs: number },
+		onProgress?: (fraction: number) => void,
 	): Promise<ExportReport> {
 		if (kind === "edl") await this.renderNested(renderText);
 		if (kind === "otio" || kind === "fcpxml" || kind === "mlt" || kind === "edl")
 			return this.exportTimeline(kind, out, actor);
 		// Nested sequences must be up to date before they are used in an export.
 		if (kind === "video" || kind === "gif" || kind === "audio") await this.renderNested(renderText);
-		const ctx = { ...this.exportContext(renderText), range };
+		const ctx = { ...this.exportContext(renderText), range, onProgress };
 		const target = out ? path.resolve(this.projectDir, out) : undefined;
 		const report =
 			kind === "stems"

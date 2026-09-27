@@ -1587,8 +1587,8 @@ export class Controller extends EventEmitter {
 						kind,
 						kind === "stems",
 					);
-				return this.job(`Exporting ${kind}`, () =>
-					this.store.export(kind, out, actor, this.hooks.renderText, range),
+				return this.job(`Exporting ${kind}`, (progress) =>
+					this.store.export(kind, out, actor, this.hooks.renderText, range, progress),
 				);
 			}
 			case "export_frame": {

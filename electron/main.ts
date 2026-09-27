@@ -122,40 +122,58 @@ async function renderText(
 	clips: (TextClip | MediaClip)[],
 	canvas?: { width: number; height: number },
 	sizes?: Record<string, { width: number; height: number }>,
+	onProgress?: (done: number, total: number) => void,
 ): Promise<Record<string, TextRender>> {
 	const fps = store.current.canvas.fps;
-	const images = await askWindow<Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }>>(
-		// The clips travel with the request: they may belong to a sequence that is not open.
-		(requestId) => ({
-			type: "renderText",
-			requestId,
-			clipIds: clips.map((c) => c.id),
-			clips,
-			fps,
-			...canvas,
-			...(sizes ? { sizes } : {}),
-		}),
-		300000,
-	);
 	const root = path.join(store.cacheDir(), "text");
 	const out: Record<string, TextRender> = {};
-	for (const [id, image] of Object.entries(images)) {
-		if (image.frames?.length) {
-			const dir = path.join(root, id);
-			await fs.rm(dir, { recursive: true, force: true });
-			await fs.mkdir(dir, { recursive: true });
-			await Promise.all(
-				image.frames.map((frame, i) =>
-					fs.writeFile(path.join(dir, `${String(i).padStart(5, "0")}.png`), Buffer.from(frame)),
-				),
-			);
-			out[id] = { kind: "sequence", pattern: path.join(dir, "%05d.png"), fps };
-		} else if (image.still) {
-			await fs.mkdir(root, { recursive: true });
-			const file = path.join(root, `${id}.png`);
-			await fs.writeFile(file, Buffer.from(image.still));
-			out[id] = { kind: "still", file };
+	// Text is quick and goes in one request; each motion graphic gets its own, with
+	// time for its length, so a long edit full of graphics never runs out of time
+	// (and its frames are written as they come instead of all held at once).
+	const texts = clips.filter((c) => c.type === "text");
+	const batches = [
+		...(texts.length ? [texts] : []),
+		...clips.filter((c) => c.type !== "text").map((c) => [c]),
+	];
+	let done = 0;
+	for (const batch of batches) {
+		const frames = batch.reduce(
+			(n, c) => n + (c.type === "text" ? 1 : Math.ceil((c.durationMs / 1000) * fps)),
+			0,
+		);
+		const images = await askWindow<Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }>>(
+			// The clips travel with the request: they may belong to a sequence that is not open.
+			(requestId) => ({
+				type: "renderText",
+				requestId,
+				clipIds: batch.map((c) => c.id),
+				clips: batch,
+				fps,
+				...canvas,
+				...(sizes ? { sizes } : {}),
+			}),
+			60000 + frames * 250,
+		);
+		for (const [id, image] of Object.entries(images)) {
+			if (image.frames?.length) {
+				const dir = path.join(root, id);
+				await fs.rm(dir, { recursive: true, force: true });
+				await fs.mkdir(dir, { recursive: true });
+				await Promise.all(
+					image.frames.map((frame, i) =>
+						fs.writeFile(path.join(dir, `${String(i).padStart(5, "0")}.png`), Buffer.from(frame)),
+					),
+				);
+				out[id] = { kind: "sequence", pattern: path.join(dir, "%05d.png"), fps };
+			} else if (image.still) {
+				await fs.mkdir(root, { recursive: true });
+				const file = path.join(root, `${id}.png`);
+				await fs.writeFile(file, Buffer.from(image.still));
+				out[id] = { kind: "still", file };
+			}
 		}
+		done += batch.length;
+		onProgress?.(done, clips.length);
 	}
 	return out;
 }
