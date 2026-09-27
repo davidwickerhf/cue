@@ -2,7 +2,6 @@ import { Button, Spinner } from "@heroui/react";
 import {
 	ArrowClockwise,
 	CheckCircle,
-	Copy,
 	Cpu,
 	Info,
 	Keyboard,
@@ -18,6 +17,7 @@ import { isMac, keyLabel, thisComputer } from "../../lib/platform";
 import { SHORTCUTS } from "../../lib/shortcuts";
 import { appSettings, useApp } from "../../lib/state";
 import { cn } from "../../lib/utils";
+import { AgentConnect } from "../AgentConnect";
 import { Segmented, Toggle } from "../ui/controls";
 
 type Inventory = Awaited<ReturnType<typeof window.cue.localInventory>>;
@@ -645,11 +645,7 @@ function AgentSection({
 	settings: Settings;
 	save: (p: Partial<Settings>) => void;
 }) {
-	const [command, setCommand] = useState("");
 	const agent = useApp((s) => s.agent);
-	useEffect(() => {
-		void window.cue.mcpCommand().then(setCommand);
-	}, []);
 	return (
 		<>
 			<Group title="Access">
@@ -686,25 +682,11 @@ function AgentSection({
 				</Row>
 			</Group>
 			<Group
-				title="Connect Claude Code"
-				description="Run once in a terminal. Any MCP client can use the same command."
+				title="Connect an agent"
+				description="Claude Code, Codex, Gemini CLI, VS Code, Cursor, Claude Desktop or any MCP client."
 			>
-				<div className="flex items-start gap-2 p-3">
-					<code className="min-w-0 flex-1 font-mono text-[11px] break-all select-text">
-						{command}
-					</code>
-					<Button
-						isIconOnly
-						size="sm"
-						variant="ghost"
-						aria-label="Copy"
-						onPress={() => {
-							void navigator.clipboard.writeText(command);
-							notify("Copied", "success");
-						}}
-					>
-						<Copy className="size-4" />
-					</Button>
+				<div className="p-3">
+					<AgentConnect />
 				</div>
 			</Group>
 		</>

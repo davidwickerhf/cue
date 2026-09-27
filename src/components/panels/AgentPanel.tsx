@@ -3,7 +3,6 @@ import {
 	ArrowClockwise,
 	ArrowUp,
 	CheckCircle,
-	Copy,
 	Microphone,
 	NotePencil,
 	Robot,
@@ -26,6 +25,7 @@ import {
 } from "../../lib/chat";
 import { appSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
+import { AgentConnect } from "../AgentConnect";
 import { Section, Segmented } from "../ui/controls";
 
 const SUGGESTIONS = [
@@ -384,10 +384,6 @@ function NoHarness({ harnesses, onRefresh }: { harnesses: HarnessInfo[]; onRefre
 function ConnectView() {
 	const agent = useApp((s) => s.agent);
 	const activity = useApp((s) => s.activity) ?? [];
-	const [command, setCommand] = useState("");
-	useEffect(() => {
-		void window.cue.mcpCommand().then(setCommand);
-	}, []);
 	const active = agent?.lastSeenAt && Date.now() - Date.parse(agent.lastSeenAt) < 5 * 60 * 1000;
 
 	return (
@@ -416,28 +412,12 @@ function ConnectView() {
 					</div>
 				</div>
 			</Section>
-			<Section title="Connect from a terminal">
+			<Section title="Connect from your agent">
 				<p className="text-[12px] leading-relaxed text-muted">
-					Run this once. The agent gets every editing, recording and export tool and sees the same
-					project you do.
+					Pick your agent and run its command once (or add its config). It gets every editing,
+					recording and export tool and sees the same project you do.
 				</p>
-				<div className="flex items-start gap-2 rounded-md border border-border bg-field p-2">
-					<code className="min-w-0 flex-1 text-[11px] leading-relaxed break-all select-text">
-						{command}
-					</code>
-					<Button
-						isIconOnly
-						size="sm"
-						variant="ghost"
-						aria-label="Copy"
-						onPress={() => {
-							void navigator.clipboard.writeText(command);
-							notify("Copied", "success");
-						}}
-					>
-						<Copy className="size-4" />
-					</Button>
-				</div>
+				<AgentConnect />
 			</Section>
 			<Section title="Activity">
 				<ol className="flex flex-col gap-2">

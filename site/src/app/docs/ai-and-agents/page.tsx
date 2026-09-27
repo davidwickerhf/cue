@@ -1,8 +1,8 @@
-import { A, C, CodeBlock, DocPage, H2, H3, Kbd, Note, Ol, Table, Ul } from "@/components/docs/Prose";
+import { A, C, DocPage, H2, H3, Kbd, Note, Ol, Table, Ul } from "@/components/docs/Prose";
 import tools from "@/content/tools.json";
 import { doc } from "@/content/docs";
 import { pageMetadata } from "@/lib/metadata";
-import { MCP_COMMAND } from "@/lib/site";
+import { AgentConnect } from "@/components/AgentConnect";
 
 const PAGE = doc("/docs/ai-and-agents");
 
@@ -92,11 +92,11 @@ export default function Page() {
 			</Ul>
 
 			<H2 id="mcp">Connect an MCP client</H2>
-			<p>With Cue in Applications, run this once in a terminal:</p>
-			<CodeBlock>{MCP_COMMAND}</CodeBlock>
+			<p>With Cue in Applications, pick your agent and run its command once in a terminal (or add the config it shows):</p>
+			<AgentConnect />
 			<p>
-				That adds Cue to Claude Code for every folder. Other MCP clients use the same command: <C>node</C> with the path to{" "}
-				<C>cue-mcp.mjs</C> inside the app. You can copy it from <strong className="text-white">Settings → Agent</strong> or from the Agent
+				Claude Code, Codex, Gemini CLI, VS Code, Cursor, Claude Desktop and any other MCP client start the same server:{" "}
+				<C>node</C> with the path to <C>cue-mcp.mjs</C> inside the app. You can copy it from <strong className="text-white">Settings → Agent</strong> or from the Agent
 				panel&apos;s <strong className="text-white">Connect &amp; activity</strong> tab, which also shows whether an agent is connected and
 				what it has done.
 			</p>

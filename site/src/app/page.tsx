@@ -15,7 +15,8 @@ import { Faq } from "@/components/Faq";
 import { JsonLd } from "@/components/JsonLd";
 import { Reveal, Words } from "@/components/Reveal";
 import { FAQ } from "@/content/faq";
-import { MCP_COMMAND, REPO } from "@/lib/site";
+import { REPO } from "@/lib/site";
+import { AgentConnect } from "@/components/AgentConnect";
 import { faqPage, softwareApplication } from "@/lib/structured-data";
 
 const FEATURES: { video: string; title: string; body: string }[] = [
@@ -170,11 +171,11 @@ export default function Home() {
 					<Reveal y={40} blur={0} className="flex flex-col gap-5 rounded-2xl bg-card p-8">
 						<div>
 							<h2 className="text-[26px] font-bold tracking-[-0.03em]">Connect your agent in one line</h2>
-							<p className="mt-2 text-[15px] text-muted">Or skip it: the Agent panel inside Cue runs the CLIs you already have.</p>
+							<p className="mt-2 text-[15px] text-muted">
+								Pick your agent. Or skip it: the Agent panel inside Cue runs the CLIs you already have.
+							</p>
 						</div>
-						<code className="block w-full overflow-x-auto rounded-xl border border-line bg-page px-4 py-3 font-mono text-[13px] whitespace-nowrap text-neutral-300 select-all">
-							{MCP_COMMAND}
-						</code>
+						<AgentConnect />
 					</Reveal>
 				</section>
 

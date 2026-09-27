@@ -3,7 +3,9 @@ export const REPO = "https://github.com/davidwickerhf/cue";
 /** Donations. */
 export const KOFI = "https://ko-fi.com/davidwickerhf";
 export const DOWNLOAD = `${REPO}/releases/latest/download/Cue-mac-arm64.zip`;
-export const MCP_COMMAND = 'claude mcp add --scope user cue -- node "/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs"';
+/** Cue's MCP server inside the installed app. */
+export const MCP_SCRIPT = "/Applications/Cue.app/Contents/Resources/mcp/cue-mcp.mjs";
+export const MCP_COMMAND = `claude mcp add --scope user cue -- node "${MCP_SCRIPT}"`;
 
 export const AUTHOR = {
 	name: "David Henry Francis Wicker",

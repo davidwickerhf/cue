@@ -1,6 +1,5 @@
 import { Button } from "@heroui/react";
 import {
-	Copy,
 	DotsThree,
 	FilmSlate,
 	Folder,
@@ -19,6 +18,7 @@ import { notify, run } from "../lib/api";
 import { keyLabel } from "../lib/platform";
 import { appSettings, dialogs, openSettings, useApp } from "../lib/state";
 import { cn } from "../lib/utils";
+import { AgentConnectButton, AgentConnectDialog } from "./AgentConnect";
 import { UpdateBadge } from "./UpdateBadge";
 import { Segmented } from "./ui/controls";
 import { WindowDots } from "./WindowDots";
@@ -63,7 +63,6 @@ export function Welcome() {
 	const [sort, setSort] = useState<"recent" | "name">("recent");
 	const [menu, setMenu] = useState<{ project: ProjectSummary; x: number; y: number } | null>(null);
 	const [renaming, setRenaming] = useState<string | null>(null);
-	const [command, setCommand] = useState("");
 	const [collections, setCollections] = useState<Collection[]>([]);
 	/** The collection shown: "all", "loose" (in no collection) or a collection id. */
 	const [place, setPlace] = useState<string>("all");
@@ -102,7 +101,6 @@ export function Welcome() {
 	useEffect(refresh, [recent, projectsDir, collectionsVersion]);
 	useEffect(() => {
 		window.addEventListener("focus", refresh);
-		void window.cue.mcpCommand().then(setCommand);
 		return () => window.removeEventListener("focus", refresh);
 	}, [refresh]);
 
@@ -298,20 +296,10 @@ export function Welcome() {
 			</div>
 
 			<footer className="flex h-10 shrink-0 items-center gap-3 border-t border-separator bg-surface px-4 text-[11px] text-muted">
-				<span className="shrink-0">Agent access</span>
-				<code className="min-w-0 flex-1 truncate font-mono select-text">{command}</code>
-				<button
-					type="button"
-					onClick={() => {
-						void navigator.clipboard.writeText(command);
-						notify("Copied. Run it once in a terminal.", "success");
-					}}
-					className="flex h-6 items-center gap-1 rounded-md px-2 hover:bg-default hover:text-foreground"
-				>
-					<Copy className="size-3.5" /> Copy
-				</button>
+				<AgentConnectButton />
 			</footer>
 
+			<AgentConnectDialog />
 			{menu && (
 				<Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
 					{menu.project.exists && (

@@ -2,11 +2,12 @@ import { DownloadSimple, FilmStrip, Robot } from "@phosphor-icons/react/dist/ssr
 import Image from "next/image";
 import Link from "next/link";
 import { DownloadCta, Footer, Header } from "@/components/Chrome";
+import { AgentConnect } from "@/components/AgentConnect";
 import { CopyBlock } from "@/components/CopyBlock";
 import { JsonLd } from "@/components/JsonLd";
 import { Reveal } from "@/components/Reveal";
 import type { Example } from "@/content/examples";
-import { MCP_COMMAND, SITE_URL } from "@/lib/site";
+import { SITE_URL } from "@/lib/site";
 
 /** Structured data: the example as a VideoObject. */
 function videoObject(e: Example) {
@@ -136,8 +137,7 @@ export function ExamplePage({ example: e }: { example: Example }) {
 						yourself).
 					</Reveal>
 					<Reveal delay={120} className="mt-5">
-						<CopyBlock text={MCP_COMMAND} label="Copy" />
-						<p className="mt-2 text-[13px] text-muted">Connects Claude Code to Cue; other clients are in the docs.</p>
+						<AgentConnect />
 					</Reveal>
 					<Reveal delay={160} className="mt-5">
 						<CopyBlock text={e.prompt} label="Copy prompt" />

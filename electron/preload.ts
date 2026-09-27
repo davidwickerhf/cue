@@ -1,6 +1,7 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 import type { MethodName } from "./control/contract";
 import type { ProjectPatch } from "./core/delta";
+import type { McpClient } from "./core/mcpClients";
 import type {
 	AppState,
 	DenoiseMode,
@@ -212,6 +213,8 @@ const api = {
 		};
 	},
 	mcpCommand: () => ipcRenderer.invoke("cue:mcpCommand") as Promise<string>,
+	/** How to connect each MCP client (Claude Code, Codex, Gemini CLI, Cursor…) to this copy of Cue. */
+	mcpClients: () => ipcRenderer.invoke("cue:mcpClients") as Promise<McpClient[]>,
 	updateStatus: () =>
 		ipcRenderer.invoke("cue:updateStatus") as Promise<import("./core/updates").UpdateStatus>,
 	onUpdateStatus: (listener: (status: import("./core/updates").UpdateStatus) => void) => {

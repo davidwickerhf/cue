@@ -40,6 +40,7 @@ import {
 	startOllama,
 	WHISPER_DOWNLOADS,
 } from "./core/local-ai";
+import { mcpClients } from "./core/mcpClients";
 import { ffmpeg } from "./core/media";
 import { resolveInProject } from "./core/paths";
 import { isProjectFile, PROJECT_EXTENSION } from "./core/project";
@@ -1396,6 +1397,7 @@ function registerIpc() {
 		"cue:mcpCommand",
 		() => `claude mcp add --scope user cue -- node "${mcpScriptPath()}"`,
 	);
+	ipcMain.handle("cue:mcpClients", () => mcpClients(mcpScriptPath()));
 	ipcMain.handle(
 		"cue:chooseFolder",
 		async (_event, options: { title: string; defaultPath?: string }) => {
