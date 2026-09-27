@@ -109,6 +109,37 @@ Today a workspace only resizes panels and switches the sidebar tab. Each one sho
 - [x] Music-driven montage (beat_montage: cuts on every 1, 2 or 4 beats, fresh shots first, push-ins on stills)
 - [x] Auto-mix: levelled dialogue and ML noise removal (auto_mix and the mixer's Auto-mix and LUFS readout; per-clip denoise Off / Light / Voice (ML) with RNNoise, heard in the preview too)
 
+## 8. Pages: clear places for each job
+
+Cue has grown past one screen with panels. Like DaVinci Resolve's pages, each job gets its own page with only the tools for it, and the same project flows through them. Everything stays one click (and one MCP call) away; nothing advanced sits in the way of a simple edit.
+
+- [ ] **Projects** (home): projects in collections (folders), search, recent, templates to start from. Group the pieces of one video (the edit, its graphics, alternate versions) together.
+- [ ] **Edit**: the timeline, source monitor, media and inspector (today's Editing workspace).
+- [ ] **Motion**: design one motion graphic at a time, like an After Effects composition: its layers, a visual editor for the spec (select, move, scale, turn, keyframe a layer), easing curves, the template's fields, and a live preview. Opens from any graphic on the timeline.
+- [ ] **Colour**, **Audio**, **Voice**, **Review** and **Deliver** as pages instead of workspaces, with a page bar at the bottom (⌥1–⌥7 as now).
+- [ ] **Library**: footage, textures, sounds, motion templates, styles and playbooks in one place, searchable, with previews.
+- [ ] Progressive disclosure everywhere: simple controls first, "More" folds for the rest; defaults that already look good.
+- [ ] Projects as media: place another project (or one of its sequences) in an edit, updated when it changes, like a pre-composition shared between projects.
+
+## 9. After Effects power, kept simple
+
+What editors reach for After Effects to do, available in Cue without its complexity: as clip settings with good defaults, as templates, and to agents over MCP.
+
+- [x] Motion graphics: Lottie (After Effects exports) as media, a motion spec agents write, templates, text and colour swaps
+- [x] Film grain and blend modes (multiply, screen, overlay, soft light) for textures, light leaks and paper
+- [x] Rotation and opacity keyframes on pictures; hand-held wiggle; stepped motion ("on twos")
+- [x] Cut-outs: lift a subject out of a picture with a paper outline and a shadow (on-device Vision)
+- [x] Playbooks: styles and craft written down for agents
+- [ ] Masks from shapes and graphics: any motion graphic (torn paper, a blob, text) as a clip's matte, with feather
+- [ ] Parenting and tracking: attach labels, circles and graphics to a clip (they follow its push-ins), and point tracking on footage
+- [ ] Parallax from a single still: subject, middle and background layers moving at different speeds
+- [ ] Directional, zoom and radial blur; chromatic aberration; halftone; colour isolation (keep one hue)
+- [ ] Time remapping curves and motion blur on fast moves
+- [ ] Per-letter text animators (offset, scale, colour by character) in the motion spec
+- [ ] A 2.5D camera: layers at depths, a camera that moves through them
+- [ ] Map toolkit: public-domain base maps (Natural Earth), places by latitude and longitude, routes and pins
+- [ ] Where words are in a picture (OCR boxes), so highlights and underlines land on printed text by themselves
+
 ## 7. Website, SEO and getting the word out
 
 - [x] Metadata: page title and description per section, canonical URL, Open Graph and Twitter cards with a real preview image
