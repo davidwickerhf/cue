@@ -155,15 +155,24 @@ async function renderText(
 	// Text is quick and goes in one request; each motion graphic gets its own, with
 	// time for its length, so a long edit full of graphics never runs out of time
 	// (and its frames are written as they come instead of all held at once).
-	const texts = clips.filter((c) => c.type === "text");
+	// Animated text (typewriter, fades, word styles) is rendered frame by frame like a
+	// graphic, so it gets its own request and time for its frames: an edit with twenty
+	// typed-on labels used to share one request timed as twenty stills, and timed out.
+	const animated = (c: TextClip | MediaClip) =>
+		c.type === "text" &&
+		((c.animationIn ?? "none") !== "none" ||
+			(c.animationOut ?? "none") !== "none" ||
+			!!c.wordStyle);
+	const stills = clips.filter((c) => c.type === "text" && !animated(c));
 	const batches = [
-		...(texts.length ? [texts] : []),
-		...clips.filter((c) => c.type !== "text").map((c) => [c]),
+		...(stills.length ? [stills] : []),
+		...clips.filter((c) => c.type !== "text" || animated(c)).map((c) => [c]),
 	];
 	let done = 0;
 	for (const batch of batches) {
 		const frames = batch.reduce(
-			(n, c) => n + (c.type === "text" ? 1 : Math.ceil((c.durationMs / 1000) * fps)),
+			(n, c) =>
+				n + (c.type === "text" && !animated(c) ? 1 : Math.ceil((c.durationMs / 1000) * fps)),
 			0,
 		);
 		const images = await askWindow<Record<string, { still?: ArrayBuffer; frames?: ArrayBuffer[] }>>(
