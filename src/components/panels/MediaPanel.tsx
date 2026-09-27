@@ -93,19 +93,25 @@ export async function removeMedia(project: ProjectSnapshot, ids: string[]) {
 /** A frame of a video (or the image itself) to show for a media item. */
 export function useThumb(asset: Asset, project: ProjectSnapshot): string | null {
 	const url = project.assetUrls[asset.id];
-	const [thumb, setThumb] = useState<string | null>(asset.kind === "image" ? url : null);
+	// Pictures and videos use small cached thumbnails: the original of a large photo
+	// decodes to ~100 MB, and the media panel shows dozens of them.
+	const [thumb, setThumb] = useState<string | null>(null);
 	useEffect(() => {
-		if (asset.kind !== "video") return;
+		if (asset.kind !== "video" && asset.kind !== "image") return;
 		let alive = true;
 		void window.cue
 			.thumbnails(asset.id)
-			.then((t) => alive && setThumb(t.urls[Math.min(1, t.urls.length - 1)] ?? null))
+			.then(
+				(t) =>
+					alive &&
+					setThumb(t.urls[Math.min(1, t.urls.length - 1)] ?? (asset.kind === "image" ? url : null)),
+			)
 			.catch(() => {});
 		return () => {
 			alive = false;
 		};
 		// A new file (relinked, re-rendered) has new frames.
-	}, [asset.id, asset.kind, asset.path]);
+	}, [asset.id, asset.kind, asset.path, url]);
 	// Motion graphics: a still drawn by the player.
 	useEffect(() => {
 		if (asset.kind !== "lottie" || !asset.motion || !url) return;

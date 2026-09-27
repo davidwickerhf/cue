@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import ffmpegStatic from "ffmpeg-static";
@@ -26,11 +27,28 @@ export function ffmpegPath(): string {
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 
+/** Where the last failed ffmpeg run's command and full log are kept. */
+export const FFMPEG_FAILURE_LOG = path.join(os.tmpdir(), "cue-ffmpeg-last-failure.txt");
+
+function keepFailure(args: string[], log: string) {
+	fs.writeFile(
+		FFMPEG_FAILURE_LOG,
+		`ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n\n${log}`,
+	).catch(() => {});
+}
+
 export async function ffmpeg(args: string[]): Promise<string> {
-	const { stderr } = await run(ffmpegPath(), ["-hide_banner", "-y", ...args], {
-		maxBuffer: MAX_BUFFER,
-	});
-	return stderr;
+	try {
+		const { stderr } = await run(ffmpegPath(), ["-hide_banner", "-y", ...args], {
+			maxBuffer: MAX_BUFFER,
+		});
+		return stderr;
+	} catch (error) {
+		const stderr = (error as { stderr?: unknown }).stderr;
+		// `-i file` with no output (report()) fails by design; only keep real encodes.
+		if (typeof stderr === "string" && args.length > 2) keepFailure(args, stderr);
+		throw error;
+	}
 }
 
 /**
@@ -57,8 +75,15 @@ export function ffmpegWithProgress(
 		});
 		child.on("error", reject);
 		child.on("close", (code) => {
-			if (code === 0) resolve(log);
-			else reject(new Error(`ffmpeg exited with code ${code}: ${log.slice(-2000)}`));
+			if (code === 0) return resolve(log);
+			// Keep the whole command and log of a failed encode: the error shows only its tail,
+			// and a graph with hundreds of inputs can't be debugged from that.
+			keepFailure(args, log);
+			reject(
+				new Error(
+					`ffmpeg exited with code ${code} (full log: ${FFMPEG_FAILURE_LOG}): ${log.slice(-2000)}`,
+				),
+			);
 		});
 	});
 }
@@ -409,6 +434,32 @@ export async function makeVideoProxy(input: string, output: string): Promise<voi
 
 /** Longest side of a picture in the viewer; bigger stills get a smaller copy. */
 export const PREVIEW_IMAGE_MAX = 2048;
+
+/** Media panel and timeline tiles of a picture: at most this on its longest side. */
+export const THUMB_IMAGE_MAX = 320;
+
+/**
+ * Small copy of a picture for tiles and the media panel. Showing the original there
+ * made the window decode every full-size photo (a 6000-pixel photo is about 100 MB
+ * decoded, several times over for a clip's tiles): a 150-clip project held 2 GB.
+ */
+export async function makeImageThumb(input: string, output: string): Promise<void> {
+	await fs.mkdir(path.dirname(output), { recursive: true });
+	const tmp = partFile(output, "png");
+	await ffmpeg([
+		"-i",
+		input,
+		"-vf",
+		`scale='min(${THUMB_IMAGE_MAX},iw)':'min(${THUMB_IMAGE_MAX},ih)':force_original_aspect_ratio=decrease:flags=bicubic`,
+		"-frames:v",
+		"1",
+		tmp,
+	]).catch(async (error) => {
+		await fs.rm(tmp, { force: true });
+		throw error;
+	});
+	await fs.rename(tmp, output);
+}
 
 /**
  * Viewer copy of a large picture (a 3000-pixel cut-out takes long to decode and

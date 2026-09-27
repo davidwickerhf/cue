@@ -1379,6 +1379,11 @@ class PlaybackEngine {
 			if (c.type !== "media" || !near(c)) continue;
 			const asset = index.assets.get(c.assetId);
 			if (!asset?.hasAudio || asset.kind === "image") continue;
+			// Silent clips (volume 0, a muted or hidden track) are never played, so their
+			// sound isn't decoded: archive footage used for its picture can be a 20-minute
+			// film whose decoded audio alone is hundreds of megabytes.
+			const track = index.tracks.get(c.trackId);
+			if (!track || !this.audible(c, track)) continue;
 			const key = bufferKey(asset, c.speed, c.denoise);
 			const distance = Math.max(0, c.startMs - now);
 			const seen = wanted.get(key);

@@ -174,6 +174,27 @@ export function Tiled({ url, width, height }: { url: string; width: number; heig
 	);
 }
 
+/** A picture's small thumbnail repeated along its clip (never the full-size file). */
+export function ImageTiles({
+	asset,
+	width,
+	height,
+}: {
+	asset: Asset;
+	width: number;
+	height: number;
+}) {
+	const [url, setUrl] = useState<string | null>(null);
+	useEffect(() => {
+		let alive = true;
+		void loadThumbs(asset.id, asset.path).then((t) => alive && setUrl(t.urls[0] ?? null));
+		return () => {
+			alive = false;
+		};
+	}, [asset.id, asset.path]);
+	return url ? <Tiled url={url} width={width} height={height} /> : null;
+}
+
 /** A motion graphic's still, repeated along its clip like an image's. */
 export function MotionTiles({
 	asset,

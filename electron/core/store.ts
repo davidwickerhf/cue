@@ -50,6 +50,7 @@ import {
 	kindOf,
 	makeAudioProxy,
 	makeImageProxy,
+	makeImageThumb,
 	makeVideoProxy,
 	PEAKS_PER_SECOND,
 	PREVIEW_IMAGE_MAX,
@@ -3847,8 +3848,14 @@ export class ProjectStore extends EventEmitter {
 
 	async thumbnails(assetId: string): Promise<{ intervalMs: number; urls: string[] }> {
 		const asset = this.current.assets.find((a) => a.id === assetId);
-		if (!asset || asset.kind !== "video") return { intervalMs: 0, urls: [] };
+		if (!asset || (asset.kind !== "video" && asset.kind !== "image"))
+			return { intervalMs: 0, urls: [] };
 		const dir = path.join(this.projectDir, CACHE_DIR, "thumbs", this.cacheKey(assetId));
+		if (asset.kind === "image") {
+			const file = path.join(dir, "thumb.png");
+			if (!existsSync(file)) await makeImageThumb(this.assetPath(assetId), file);
+			return { intervalMs: 0, urls: [this.options.mediaUrl(file)] };
+		}
 		const meta = path.join(dir, "meta.json");
 		let info: { intervalMs: number; count: number };
 		try {
