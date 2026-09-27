@@ -731,10 +731,19 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			: "";
 		const boxW = rotating ? side * fitBase : baseW;
 		const boxH = rotating ? side * fitBase : baseH;
+		// A picture whose size changes each frame is padded to a fixed box (its largest size,
+		// centred): overlay keeps the first frame's size, so without it the scale never moved.
+		const peak =
+			Math.max(t.scale, ...(kf.scale ?? []).map((k) => k.value)) *
+			(tr?.kind === "zoom" ? 1 + ZOOM_FROM : 1) *
+			// Bezier eases can overshoot their keyframes.
+			((kf.scale ?? []).some((k) => k.ease === "bezier") ? 1.5 : 1);
+		const padW = Math.max(2, Math.ceil((boxW * peak) / 2) * 2 + 2);
+		const padH = Math.max(2, Math.ceil((boxH * peak) / 2) * 2 + 2);
 		const size =
 			turn +
 			(animatedScale
-				? `,scale=w='max(2,trunc(${boxW.toFixed(2)}*(${S})/2)*2)':h='max(2,trunc(${boxH.toFixed(2)}*(${S})/2)*2)':eval=frame`
+				? `,scale=w='max(2,trunc(min(${padW},${boxW.toFixed(2)}*(${S}))/2)*2)':h='max(2,trunc(min(${padH},${boxH.toFixed(2)}*(${S}))/2)*2)':eval=frame,format=rgba,pad=w=${padW}:h=${padH}:x='(ow-iw)/2':y='(oh-ih)/2':color=black@0:eval=frame`
 				: `,scale=${Math.max(2, Math.round((boxW * t.scale) / 2) * 2)}:${Math.max(2, Math.round((boxH * t.scale) / 2) * 2)}`);
 		const opacity =
 			(kf.opacity?.length

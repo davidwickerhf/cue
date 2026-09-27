@@ -177,3 +177,55 @@ describe("hand-made motion", () => {
 		expect(mid).toBeLessThan(180);
 	}, 120000);
 });
+
+describe("animated scale in export", () => {
+	it("grows a picture with scale keyframes (not stuck at its first size)", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-scale-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Scale" });
+		const file = path.join(dir, "white.png");
+		await ffmpeg(["-f", "lavfi", "-i", "color=c=white:s=320x180", "-frames:v", "1", file]);
+		const [white] = await store.importMedia([file], "user");
+		store.apply(
+			{
+				type: "setCanvas",
+				canvas: { width: 320, height: 180, fps: 10, background: "#000000" },
+			} as never,
+			"user",
+		);
+		store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{
+						type: "media",
+						trackId: "V1",
+						assetId: white.id,
+						startMs: 0,
+						durationMs: 2000,
+						keyframes: {
+							scale: [
+								{ atMs: 0, value: 0.2, ease: "ease-out" },
+								{ atMs: 1000, value: 0.9, ease: "linear" },
+							],
+						},
+					},
+				],
+			} as never,
+			"user",
+		);
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "draft" } } as never,
+			"user",
+		);
+		const out = (await store.export("video", "scale.mp4", "user")).outputs[0];
+		// At first only the middle is white; once grown, a point near the edge is white too.
+		expect((await pixel(out, 0.05, 160, 90, 320))[0]).toBeGreaterThan(200);
+		expect((await pixel(out, 0.05, 40, 90, 320))[0]).toBeLessThan(60);
+		expect((await pixel(out, 1.5, 40, 90, 320))[0]).toBeGreaterThan(200);
+	}, 120000);
+});
