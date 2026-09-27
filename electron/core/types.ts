@@ -165,7 +165,19 @@ export interface Transform {
 	/** 1 fits the canvas. */
 	scale: number;
 	opacity: number;
+	/** Turn in degrees, clockwise (paper cut-outs sit a little askew). */
+	rotation?: number;
 	crop: Crop;
+}
+
+/** A small random drift, like a hand-held camera or a paper cut-out that is never quite still. */
+export interface Wiggle {
+	/** How far it drifts, in pixels of a 1080-line frame. */
+	position: number;
+	/** How far it turns, in degrees. */
+	rotation: number;
+	/** Drifts per second. */
+	speed: number;
 }
 
 export type Ease = "linear" | "ease" | "ease-in" | "ease-out" | "hold" | "bezier";
@@ -183,7 +195,7 @@ export interface Keyframe {
 	curve?: Curve;
 }
 
-export type KeyframeProp = "x" | "y" | "scale" | "volume";
+export type KeyframeProp = "x" | "y" | "scale" | "rotation" | "opacity" | "volume";
 
 /** A push-in on part of a video clip, like the auto-zooms of screen recorders. */
 export interface Zoom {
@@ -300,6 +312,12 @@ export interface MediaClip {
 	frame?: Frame;
 	/** Blend with the tracks below; none is normal. */
 	blend?: BlendMode;
+	wiggle?: Wiggle;
+	/**
+	 * Movement held for whole steps at this rate (12 = "on twos", like stop-motion
+	 * paper): keyframes, wiggle and motion graphics advance in steps, footage plays on.
+	 */
+	stepFps?: number;
 	/** Motion graphics: this clip's text and colour changes, and whether it loops. */
 	motion?: import("./motion").MotionSettings;
 	/** How this clip enters from the clip before it on the same track. */

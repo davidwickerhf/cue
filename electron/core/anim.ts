@@ -1,4 +1,4 @@
-import type { Curve, Ease, Keyframe, Zoom } from "./types";
+import type { Curve, Ease, Keyframe, Wiggle, Zoom } from "./types";
 
 /**
  * Animation maths shared by the preview (browser) and the exporter (ffmpeg
@@ -331,4 +331,68 @@ export function zoomExprs(
 		x: `(0.5+(${fx}-0.5)*(${k}))`,
 		y: `(0.5+(${fy}-0.5)*(${k}))`,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Hand-made motion: wiggle and stepped time
+// ---------------------------------------------------------------------------
+
+/** A number from a clip's id, so each clip wiggles its own way but always the same way. */
+export function seedOf(id: string): number {
+	let h = 7;
+	for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 100003;
+	return h / 100003;
+}
+
+// Three sines at unrelated rates read as random drift rather than a swing.
+const WIGGLE_RATES = [1, 1.73, 2.61];
+const WIGGLE_WEIGHTS = [0.55, 0.3, 0.15];
+
+/** A wiggle's offset at a clip-local time: pixels of a 1080-line frame, and degrees. */
+export function wiggleAt(
+	w: Wiggle | undefined,
+	seed: number,
+	ms: number,
+): { x: number; y: number; rotation: number } {
+	if (!w) return { x: 0, y: 0, rotation: 0 };
+	const a = (ms / 1000) * w.speed * Math.PI * 2;
+	const wave = (phase: number) =>
+		WIGGLE_RATES.reduce(
+			(sum, rate, i) => sum + WIGGLE_WEIGHTS[i] * Math.sin(a * rate + phase * (i + 1) * 6.283),
+			0,
+		);
+	return {
+		x: w.position * wave(seed),
+		y: w.position * wave(seed + 0.37),
+		rotation: w.rotation * wave(seed + 0.71),
+	};
+}
+
+/** The same wiggle as FFmpeg expressions of a time in seconds `T`. */
+export function wiggleExpr(
+	w: Wiggle | undefined,
+	seed: number,
+	T: string,
+): { x: string; y: string; rotation: string } {
+	if (!w) return { x: "0", y: "0", rotation: "0" };
+	const a = `(${T})*${(w.speed * Math.PI * 2).toFixed(6)}`;
+	const wave = (phase: number) =>
+		WIGGLE_RATES.map(
+			(rate, i) => `${WIGGLE_WEIGHTS[i]}*sin(${a}*${rate}+${(phase * (i + 1) * 6.283).toFixed(6)})`,
+		).join("+");
+	return {
+		x: `${w.position}*(${wave(seed)})`,
+		y: `${w.position}*(${wave(seed + 0.37)})`,
+		rotation: `${w.rotation}*(${wave(seed + 0.71)})`,
+	};
+}
+
+/** A clip-local time held to whole steps of `fps` (motion "on twos" at 12). */
+export function steppedMs(ms: number, fps: number | undefined): number {
+	return fps ? (Math.floor((ms * fps) / 1000) * 1000) / fps : ms;
+}
+
+/** The same as an FFmpeg expression of a time in seconds. */
+export function steppedExpr(T: string, fps: number | undefined): string {
+	return fps ? `(floor((${T})*${fps})/${fps})` : T;
 }

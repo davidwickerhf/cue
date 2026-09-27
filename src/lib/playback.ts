@@ -1,4 +1,4 @@
-import { valueAt, zoomAt, zoomView } from "../../electron/core/anim";
+import { seedOf, steppedMs, valueAt, wiggleAt, zoomAt, zoomView } from "../../electron/core/anim";
 import {
 	COMPRESSOR_KNEE_DB,
 	compressorSettings,
@@ -828,16 +828,20 @@ class PlaybackEngine {
 		const local = ms - clip.startMs;
 		const t = clip.transform;
 		const kf = clip.keyframes;
+		// Keyframes and wiggle may move in whole steps ("on twos"); the footage itself plays on.
+		const moved = steppedMs(local, clip.stepFps);
+		const wig = wiggleAt(clip.wiggle, seedOf(clip.id), moved);
 		// How far the transition into this clip has got (1 once it is over).
 		const tr = clip.transitionIn;
 		const p = entered(tr, local);
 		const scale =
-			valueAt(kf?.scale, local, t.scale) * (tr?.kind === "zoom" ? 1 + ZOOM_FROM * (1 - p) : 1);
+			valueAt(kf?.scale, moved, t.scale) * (tr?.kind === "zoom" ? 1 + ZOOM_FROM * (1 - p) : 1);
 		const x =
-			valueAt(kf?.x, local, t.x) +
+			valueAt(kf?.x, moved, t.x) +
 			(tr?.kind === "slide-left" ? 1 - p : tr?.kind === "slide-right" ? p - 1 : 0);
-		const y = valueAt(kf?.y, local, t.y);
-		let opacity = t.opacity;
+		const y = valueAt(kf?.y, moved, t.y);
+		const rotation = valueAt(kf?.rotation, moved, t.rotation ?? 0) + wig.rotation;
+		let opacity = valueAt(kf?.opacity, moved, t.opacity);
 		if (clip.fadeInMs > 0 && local < clip.fadeInMs) opacity *= local / clip.fadeInMs;
 		if (clip.fadeOutMs > 0 && local > clip.durationMs - clip.fadeOutMs)
 			opacity *= (clip.durationMs - local) / clip.fadeOutMs;
@@ -852,7 +856,10 @@ class PlaybackEngine {
 		frame.display = "";
 		frame.width = `${w}px`;
 		frame.height = `${h}px`;
-		frame.transform = `translate3d(${x * W - w / 2}px, ${y * H - h / 2}px, 0)`;
+		// Wiggle is in pixels of a 1080-line frame.
+		const wx = (wig.x * H) / 1080;
+		const wy = (wig.y * H) / 1080;
+		frame.transform = `translate3d(${x * W - w / 2 + wx}px, ${y * H - h / 2 + wy}px, 0)${rotation ? ` rotate(${rotation}deg)` : ""}`;
 		frame.opacity = String(Math.max(0, Math.min(1, opacity)));
 		// A wipe uncovers the picture from one side, on top of any crop.
 		const left = Math.max(c.left, tr?.kind === "wipe-left" ? 1 - p : 0);
@@ -1016,7 +1023,7 @@ class PlaybackEngine {
 		const k = Math.min(dpr * Math.max(1, zoom), limit);
 		const cw = Math.max(2, Math.round(w * k));
 		const ch = Math.max(2, Math.round(h * k));
-		const frame = motionFrameAt(asset.motion, clip, local);
+		const frame = motionFrameAt(asset.motion, clip, steppedMs(local, clip.stepFps));
 		const key = `${url}|${motionKey(clip.motion)}|${frame.toFixed(3)}|${cw}x${ch}`;
 		if (slot.motionKey === key) return;
 		if (canvas.width !== cw || canvas.height !== ch) {

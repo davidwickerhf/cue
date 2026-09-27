@@ -25,6 +25,8 @@ const PROPS: { prop: KeyframeProp; label: string }[] = [
 	{ prop: "x", label: "Position X" },
 	{ prop: "y", label: "Position Y" },
 	{ prop: "scale", label: "Scale" },
+	{ prop: "rotation", label: "Rotation" },
+	{ prop: "opacity", label: "Opacity" },
 	{ prop: "volume", label: "Volume" },
 ];
 
@@ -33,10 +35,19 @@ const LIMITS: Record<KeyframeProp, [number, number]> = {
 	x: [-1, 2],
 	y: [-1, 2],
 	scale: [0.01, 10],
+	rotation: [-360, 360],
+	opacity: [0, 1],
 	volume: [0, 2],
 };
 /** The smallest value range a lane shows, so tiny moves don't fill it top to bottom. */
-const MIN_SPAN: Record<KeyframeProp, number> = { x: 0.2, y: 0.2, scale: 0.2, volume: 0.25 };
+const MIN_SPAN: Record<KeyframeProp, number> = {
+	x: 0.2,
+	y: 0.2,
+	scale: 0.2,
+	rotation: 10,
+	opacity: 0.25,
+	volume: 0.25,
+};
 
 const EASES: { ease: Ease; label: string }[] = [
 	{ ease: "linear", label: "Linear" },
@@ -46,12 +57,17 @@ const EASES: { ease: Ease; label: string }[] = [
 	{ ease: "hold", label: "Hold" },
 ];
 
-const staticValue = (clip: MediaClip, prop: KeyframeProp) =>
-	prop === "volume" ? clip.volume : clip.transform[prop];
+const staticValue = (clip: MediaClip, prop: KeyframeProp): number =>
+	prop === "volume"
+		? clip.volume
+		: prop === "rotation"
+			? (clip.transform.rotation ?? 0)
+			: clip.transform[prop];
 
 function formatValue(prop: KeyframeProp, v: number): string {
 	if (prop === "volume") return v > 0 ? `${(20 * Math.log10(v)).toFixed(1)} dB` : "−∞ dB";
 	if (prop === "scale") return `${v.toFixed(2)}×`;
+	if (prop === "rotation") return `${v.toFixed(1)}°`;
 	return `${Math.round(v * 100)}%`;
 }
 

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { steppedMs } from "../../electron/core/anim";
 import { type MotionInfo, motionFrameAt } from "../../electron/core/motion";
 import type { TextClip } from "../../electron/core/types";
 import { librarySelection } from "../lib/assetLibrary";
@@ -151,7 +152,11 @@ export function useEditorCommands() {
 								if (asset?.motion && url && size) {
 									const count = Math.max(1, Math.ceil((clip.durationMs / 1000) * command.fps));
 									const frames = Array.from({ length: count }, (_, i) =>
-										motionFrameAt(asset.motion as MotionInfo, clip, (i * 1000) / command.fps),
+										motionFrameAt(
+											asset.motion as MotionInfo,
+											clip,
+											steppedMs((i * 1000) / command.fps, clip.stepFps),
+										),
 									);
 									images[id] = {
 										frames: await rasteriseMotion(

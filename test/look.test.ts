@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { seedOf, steppedMs, wiggleAt } from "../electron/core/anim";
 import { ffmpeg, ffmpegPath } from "../electron/core/media";
 import { ProjectStore } from "../electron/core/store";
 
@@ -104,5 +105,75 @@ describe("looks: blend modes and grain", () => {
 			[10, 11, 12, 13, 14, 15].map((x) => pixel(grained, 1.5, x, 90, 320)),
 		);
 		expect(new Set(row.map((p) => p[0])).size).toBeGreaterThan(1);
+	}, 120000);
+});
+
+describe("hand-made motion", () => {
+	it("wiggles the same way every time, within its size, and steps time", () => {
+		const w = { position: 10, rotation: 2, speed: 1 };
+		const seed = seedOf("c_abc");
+		expect(wiggleAt(w, seed, 1234)).toEqual(wiggleAt(w, seed, 1234));
+		const samples = Array.from({ length: 200 }, (_, i) => wiggleAt(w, seed, i * 37));
+		expect(Math.max(...samples.map((p) => Math.abs(p.x)))).toBeLessThanOrEqual(10);
+		expect(Math.max(...samples.map((p) => Math.abs(p.rotation)))).toBeLessThanOrEqual(2);
+		expect(new Set(samples.map((p) => p.x.toFixed(3))).size).toBeGreaterThan(50);
+		// On twos: every time within one 12 fps step holds the same value.
+		expect(steppedMs(90, 12)).toBe(83.33333333333333);
+		expect(steppedMs(160, 12)).toBe(steppedMs(90, 12));
+		expect(steppedMs(160, undefined)).toBe(160);
+	});
+
+	it("turns a picture in export, and fades it with opacity keyframes", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-turn-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Turn" });
+		const file = path.join(dir, "white.png");
+		await ffmpeg(["-f", "lavfi", "-i", "color=c=white:s=160x160", "-frames:v", "1", file]);
+		const [white] = await store.importMedia([file], "user");
+		store.apply(
+			{
+				type: "setCanvas",
+				canvas: { width: 320, height: 320, fps: 10, background: "#000000" },
+			} as never,
+			"user",
+		);
+		store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{
+						type: "media",
+						trackId: "V1",
+						assetId: white.id,
+						startMs: 0,
+						durationMs: 2000,
+						transform: { scale: 0.5, rotation: 45 },
+						keyframes: {
+							opacity: [
+								{ atMs: 1000, value: 1, ease: "linear" },
+								{ atMs: 2000, value: 0, ease: "linear" },
+							],
+						},
+					},
+				],
+			} as never,
+			"user",
+		);
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "draft" } } as never,
+			"user",
+		);
+		const out = (await store.export("video", "turn.mp4", "user")).outputs[0];
+		// A square 160 px wide turned 45° reaches 113 px from the centre along the axes, but its corners are cut.
+		expect((await pixel(out, 0.5, 160, 160 - 100, 320))[0]).toBeGreaterThan(200);
+		expect((await pixel(out, 0.5, 160 - 75, 160 - 75, 320))[0]).toBeLessThan(40);
+		// Half-way through the fade it is about half as bright.
+		const mid = (await pixel(out, 1.5, 160, 160, 320))[0];
+		expect(mid).toBeGreaterThan(80);
+		expect(mid).toBeLessThan(180);
 	}, 120000);
 });

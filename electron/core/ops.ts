@@ -27,6 +27,7 @@ import {
 	frameSchema,
 	groupTracks,
 	infographicSchema,
+	KEYFRAME_PROPS,
 	keyframeSchema,
 	keySchema,
 	lineInputSchema,
@@ -47,6 +48,7 @@ import {
 	transformSchema,
 	transitionSchema,
 	voiceoverTrack,
+	wiggleSchema,
 	wordStyleSchema,
 } from "./project";
 import { fadesIn, overlaps, transitionLabel } from "./transitions";
@@ -97,6 +99,8 @@ export const mediaClipInput = z.object({
 			x: z.array(keyframeSchema).max(2000),
 			y: z.array(keyframeSchema).max(2000),
 			scale: z.array(keyframeSchema).max(2000),
+			rotation: z.array(keyframeSchema).max(2000),
+			opacity: z.array(keyframeSchema).max(2000),
 			volume: z.array(keyframeSchema).max(2000),
 		})
 		.partial()
@@ -104,6 +108,8 @@ export const mediaClipInput = z.object({
 	frame: frameSchema.partial().optional(),
 	/** Blend with the tracks below (multiply for paper textures, screen for light leaks). */
 	blend: z.enum(BLEND_MODES).optional(),
+	wiggle: wiggleSchema.optional(),
+	stepFps: z.number().min(1).max(60).optional(),
 	/** Motion graphics: new text per text layer, colour swaps and looping. */
 	motion: motionSettingsSchema.optional(),
 });
@@ -154,6 +160,8 @@ export const clipPatch = z
 		key: keySchema.partial().nullable(),
 		effects: effectsSchema.partial().nullable(),
 		blend: z.enum(BLEND_MODES).nullable(),
+		wiggle: wiggleSchema.partial().nullable(),
+		stepFps: z.number().min(1).max(60).nullable(),
 		frame: frameSchema.partial().nullable(),
 		motion: motionSettingsSchema.nullable(),
 		wordStyle: wordStyleSchema.nullable(),
@@ -342,13 +350,13 @@ export const opSchema = z.discriminatedUnion("type", [
 	z.object({
 		type: z.literal("setKeyframe"),
 		clipId: z.string(),
-		prop: z.enum(["x", "y", "scale", "volume"]),
+		prop: z.enum(KEYFRAME_PROPS),
 		keyframe: keyframeSchema,
 	}),
 	z.object({
 		type: z.literal("removeKeyframe"),
 		clipId: z.string(),
-		prop: z.enum(["x", "y", "scale", "volume"]),
+		prop: z.enum(KEYFRAME_PROPS),
 		atMs: ms,
 	}),
 	// Several keyframes of one clip changed at once (a drag, a delete, an ease), one undo step.
@@ -358,7 +366,7 @@ export const opSchema = z.discriminatedUnion("type", [
 		edits: z
 			.array(
 				z.object({
-					prop: z.enum(["x", "y", "scale", "volume"]),
+					prop: z.enum(KEYFRAME_PROPS),
 					/** Which keyframe: the one within 10 ms of this clip-local time. */
 					atMs: ms,
 					toMs: ms.min(0).optional(),
@@ -373,7 +381,7 @@ export const opSchema = z.discriminatedUnion("type", [
 	z.object({
 		type: z.literal("clearKeyframes"),
 		clipId: z.string(),
-		prop: z.enum(["x", "y", "scale", "volume"]).optional(),
+		prop: z.enum(KEYFRAME_PROPS).optional(),
 	}),
 	z.object({
 		type: z.literal("addZoom"),
@@ -787,6 +795,8 @@ function buildClip(data: ProjectData, input: z.output<typeof clipInput>): Clip {
 		...(input.frame ? { frame: frameSchema.parse({ ...DEFAULT_FRAME, ...input.frame }) } : {}),
 		...(input.motion && a.kind === "lottie" ? { motion: input.motion } : {}),
 		...(input.blend && input.blend !== "normal" ? { blend: input.blend } : {}),
+		...(input.wiggle ? { wiggle: input.wiggle } : {}),
+		...(input.stepFps ? { stepFps: input.stepFps } : {}),
 	});
 }
 
@@ -1368,6 +1378,8 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				frame,
 				motion,
 				blend,
+				wiggle,
+				stepFps,
 				wordStyle,
 				words,
 				shape,
@@ -1427,6 +1439,24 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				...(blend === undefined || current.type !== "media"
 					? {}
 					: { blend: blend === null || blend === "normal" ? undefined : blend }),
+				...(wiggle === undefined || current.type !== "media"
+					? {}
+					: {
+							wiggle: (() => {
+								if (wiggle === null) return undefined;
+								const next = wiggleSchema.parse({
+									position: 0,
+									rotation: 0,
+									speed: 1,
+									...current.wiggle,
+									...wiggle,
+								});
+								return next.position || next.rotation ? next : undefined;
+							})(),
+						}),
+				...(stepFps === undefined || current.type !== "media"
+					? {}
+					: { stepFps: stepFps ?? undefined }),
 			};
 			const merged =
 				current.type === "media"

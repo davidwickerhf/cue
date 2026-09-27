@@ -260,7 +260,7 @@ function Timing({ clip }: { clip: MediaClip | TextClip }) {
 	);
 }
 
-type Prop = "x" | "y" | "scale" | "volume";
+type Prop = "x" | "y" | "scale" | "rotation" | "opacity" | "volume";
 
 /** Diamond that keys a property at the playhead, like the stopwatch in other editors. */
 function KeyButton({
@@ -512,14 +512,44 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 						</div>
 					</Field>
 					<Field label="Opacity">
-						<Range
-							value={clip.transform.opacity}
-							min={0}
-							max={1}
-							step={0.01}
-							format={(v) => `${Math.round(v * 100)}%`}
-							onCommit={(opacity) => patch({ transform: { opacity } })}
-						/>
+						<div className="flex items-center gap-1.5">
+							<div className="flex-1">
+								<Range
+									value={current("opacity", clip.transform.opacity)}
+									min={0}
+									max={1}
+									step={0.01}
+									format={(v) => `${Math.round(v * 100)}%`}
+									onCommit={(v) => setProp("opacity", v)}
+								/>
+							</div>
+							<KeyButton
+								clip={clip}
+								prop="opacity"
+								value={current("opacity", clip.transform.opacity)}
+								local={local}
+							/>
+						</div>
+					</Field>
+					<Field label="Rotation">
+						<div className="flex items-center gap-1.5">
+							<div className="flex-1">
+								<Range
+									value={current("rotation", clip.transform.rotation ?? 0)}
+									min={-45}
+									max={45}
+									step={0.5}
+									format={(v) => `${v.toFixed(1)}°`}
+									onCommit={(v) => setProp("rotation", v)}
+								/>
+							</div>
+							<KeyButton
+								clip={clip}
+								prop="rotation"
+								value={current("rotation", clip.transform.rotation ?? 0)}
+								local={local}
+							/>
+						</div>
 					</Field>
 					<div className="grid grid-cols-2 gap-2">
 						<Field label="X">
@@ -603,6 +633,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 			)}
 			{visual && !adjustment && <ArrangeSection single={clip.id} />}
 			{visual && <ZoomSection clip={clip} />}
+			{visual && <HandMadeSection clip={clip} />}
 			{visual && <ColorSection clip={clip} />}
 			{visual && <EffectsSection clip={clip} video={asset?.kind === "video"} />}
 			{visual && !adjustment && <FrameSection clip={clip} />}
@@ -1806,6 +1837,67 @@ function EffectsSection({
 					onChange={(stabilize) => set({ stabilize })}
 				/>
 			)}
+		</Section>
+	);
+}
+
+/**
+ * Motion that looks made by hand: a gentle drift like a hand-held camera, and
+ * movement in whole steps ("on twos") like stop-motion paper.
+ */
+function HandMadeSection({ clip }: { clip: MediaClip }) {
+	const w = { position: 0, rotation: 0, speed: 1, ...clip.wiggle };
+	const set = (patch: Record<string, unknown>) => void run("update_clip", { id: clip.id, patch });
+	return (
+		<Section title="Hand-made motion">
+			<Field label="Drift">
+				<Range
+					value={w.position}
+					min={0}
+					max={30}
+					step={0.5}
+					format={(v) => (v ? `${v.toFixed(1)} px` : "Still")}
+					onCommit={(position) => set({ wiggle: { ...w, position } })}
+				/>
+			</Field>
+			<Field label="Wobble">
+				<Range
+					value={w.rotation}
+					min={0}
+					max={5}
+					step={0.1}
+					format={(v) => (v ? `${v.toFixed(1)}°` : "None")}
+					onCommit={(rotation) => set({ wiggle: { ...w, rotation } })}
+				/>
+			</Field>
+			{(w.position > 0 || w.rotation > 0) && (
+				<Field label="Speed">
+					<Range
+						value={w.speed}
+						min={0.1}
+						max={12}
+						step={0.1}
+						format={(v) => `${v.toFixed(1)} per second`}
+						onCommit={(speed) => set({ wiggle: { ...w, speed } })}
+					/>
+				</Field>
+			)}
+			<Field label="Steps">
+				<Segmented
+					size="xs"
+					value={String(clip.stepFps ?? 0)}
+					options={[
+						{ value: "0", label: "Smooth" },
+						{
+							value: "12",
+							label: "On twos (12)",
+							title: "Movement in 12 steps a second, like stop-motion",
+						},
+						{ value: "8", label: "8 fps" },
+					]}
+					onChange={(v) => set({ stepFps: v === "0" ? null : Number(v) })}
+				/>
+			</Field>
 		</Section>
 	);
 }

@@ -5,6 +5,7 @@ import {
 	aiSchema,
 	curveSchema,
 	exportSchema,
+	KEYFRAME_PROPS,
 	lineInputSchema,
 	settingsSchema,
 	textStyleSchema,
@@ -408,7 +409,7 @@ export const contract = {
 	},
 	update_clip: {
 		description:
-			"Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow, grain (film grain): 0–1, stabilize: boolean} (partial, merged) or null; on an adjustment layer vignette and grain give the whole edit a filmic look. blend: normal | multiply | screen | overlay | soft-light | darken | lighten combines a picture with the tracks below (multiply a paper texture over everything, screen a light leak) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+			"Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow, grain (film grain): 0–1, stabilize: boolean} (partial, merged) or null; on an adjustment layer vignette and grain give the whole edit a filmic look. transform.rotation turns a picture (degrees; cut-outs and clippings look placed by hand at -3 to 3). wiggle {position: px drift, rotation: degrees, speed: per second} or null adds a gentle hand-held drift (e.g. {position: 4, rotation: 0.5, speed: 1}); stepFps (12 = 'on twos') moves keyframes, wiggle and motion graphics in whole steps like stop-motion paper, or null for smooth. blend: normal | multiply | screen | overlay | soft-light | darken | lighten combines a picture with the tracks below (multiply a paper texture over everything, screen a light leak) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 		input: { id: z.string(), patch: clipPatch },
 	},
 	move_clips: {
@@ -615,10 +616,10 @@ export const contract = {
 	},
 	set_keyframe: {
 		description:
-			"Animate a media clip: set x or y (0–1, centre on canvas), scale (1 = fit) or volume (0–2) at a clip-local time. ease is how the value travels to the next keyframe: linear, ease (slow in and out), ease-in (starts slow), ease-out (ends slow), hold (jumps at the next keyframe) or bezier with curve [x1, y1, x2, y2] like CSS cubic-bezier (x 0–1; y below 0 or above 1 overshoots, e.g. [0.34, 1.56, 0.64, 1] for a bounce back).",
+			"Animate a media clip: set x or y (0–1, centre on canvas), scale (1 = fit), rotation (degrees, clockwise), opacity (0–1) or volume (0–2) at a clip-local time. ease is how the value travels to the next keyframe: linear, ease (slow in and out), ease-in (starts slow), ease-out (ends slow), hold (jumps at the next keyframe) or bezier with curve [x1, y1, x2, y2] like CSS cubic-bezier (x 0–1; y below 0 or above 1 overshoots, e.g. [0.34, 1.56, 0.64, 1] for a bounce back).",
 		input: {
 			clipId: z.string(),
-			prop: z.enum(["x", "y", "scale", "volume"]),
+			prop: z.enum(KEYFRAME_PROPS),
 			atMs: z.number().min(0),
 			value: z.number(),
 			ease: z.enum(["linear", "ease", "ease-in", "ease-out", "hold", "bezier"]).default("ease"),
@@ -633,7 +634,7 @@ export const contract = {
 			edits: z
 				.array(
 					z.object({
-						prop: z.enum(["x", "y", "scale", "volume"]),
+						prop: z.enum(KEYFRAME_PROPS),
 						atMs: z.number().min(0),
 						toMs: z.number().min(0).optional(),
 						value: z.number().optional(),
@@ -649,13 +650,13 @@ export const contract = {
 		description: "Remove one keyframe.",
 		input: {
 			clipId: z.string(),
-			prop: z.enum(["x", "y", "scale", "volume"]),
+			prop: z.enum(KEYFRAME_PROPS),
 			atMs: z.number().min(0),
 		},
 	},
 	clear_keyframes: {
 		description: "Remove all keyframes of a property (or of the clip).",
-		input: { clipId: z.string(), prop: z.enum(["x", "y", "scale", "volume"]).optional() },
+		input: { clipId: z.string(), prop: z.enum(KEYFRAME_PROPS).optional() },
 	},
 	add_zoom: {
 		description:

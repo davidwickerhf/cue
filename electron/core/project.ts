@@ -64,6 +64,13 @@ export const DEFAULT_AI: AiSettings = {
 
 export const NO_CROP = { left: 0, top: 0, right: 0, bottom: 0 };
 export const DEFAULT_TRANSFORM: Transform = { x: 0.5, y: 0.5, scale: 1, opacity: 1, crop: NO_CROP };
+/** What media clips can animate with keyframes. */
+export const KEYFRAME_PROPS = ["x", "y", "scale", "rotation", "opacity", "volume"] as const;
+export const wiggleSchema = z.object({
+	position: z.number().min(0).max(200),
+	rotation: z.number().min(0).max(45),
+	speed: z.number().min(0.05).max(30),
+});
 
 export const DEFAULT_TEXT_STYLE: TextStyle = {
 	fontFamily: "DM Sans Variable",
@@ -119,6 +126,7 @@ export const transformSchema = z.object({
 	y: z.number().min(-1).max(2),
 	scale: z.number().min(0.01).max(10),
 	opacity: z.number().min(0).max(1),
+	rotation: z.number().min(-3600).max(3600).optional(),
 	crop: cropSchema.default(NO_CROP),
 });
 
@@ -403,9 +411,7 @@ const mediaClipSchema = z.object({
 	fadeOutMs: ms.default(0),
 	transform: transformSchema.default(DEFAULT_TRANSFORM),
 	denoise: denoiseSchema.default("off"),
-	keyframes: z
-		.partialRecord(z.enum(["x", "y", "scale", "volume"]), z.array(keyframeSchema))
-		.optional(),
+	keyframes: z.partialRecord(z.enum(KEYFRAME_PROPS), z.array(keyframeSchema)).optional(),
 	zooms: z.array(zoomSchema).optional(),
 	color: colorSchema.optional(),
 	mask: maskSchema.optional(),
@@ -413,6 +419,8 @@ const mediaClipSchema = z.object({
 	effects: effectsSchema.optional(),
 	frame: frameSchema.optional(),
 	blend: z.enum(BLEND_MODES).optional(),
+	wiggle: wiggleSchema.optional(),
+	stepFps: z.number().min(1).max(60).optional(),
 	motion: motionSettingsSchema.optional(),
 	transitionIn: transitionSchema.optional(),
 	groupId: z.string().optional(),

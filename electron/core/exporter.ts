@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { keyframeExpr, zoomExprs } from "./anim";
+import { keyframeExpr, seedOf, steppedExpr, wiggleExpr, zoomExprs } from "./anim";
 import { trackAudioFilters } from "./audio";
 import { toSrt, toVtt } from "./captions";
 import { denoiseChain } from "./denoise";
@@ -687,7 +687,11 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const zoomIn = (T: string) =>
 			tr?.kind === "zoom" ? `*(1+${ZOOM_FROM}*(1-${enteredAt(T)}))` : "";
 		const animatedScale = !!kf.scale?.length || tr?.kind === "zoom";
-		const S = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, "t") : String(t.scale)}${zoomIn("t")}`;
+		// Keyframes and wiggle may move in whole steps ("on twos"); `t` here is clip-local.
+		const stepT = steppedExpr("t", clip.stepFps);
+		const S = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, stepT) : String(t.scale)}${zoomIn("t")}`;
+		const seed = seedOf(clip.id);
+		const rotating = !!(t.rotation || kf.rotation?.length || clip.wiggle?.rotation);
 		// Zooms: zoompan keeps the frame size fixed (a scale that changes size per frame
 		// would leave crop working on the old size, pinning every zoom to the top left).
 		// The focus is centred where it can be, without showing past the picture's edge.
@@ -715,11 +719,26 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				: "";
 		const baseW = sw * cropW * fitBase;
 		const baseH = sh * cropH * fitBase;
-		const size = animatedScale
-			? `,scale=w='max(2,trunc(${baseW.toFixed(2)}*(${S})/2)*2)':h='max(2,trunc(${baseH.toFixed(2)}*(${S})/2)*2)':eval=frame`
-			: `,scale=${Math.max(2, Math.round((baseW * t.scale) / 2) * 2)}:${Math.max(2, Math.round((baseH * t.scale) / 2) * 2)}`;
+		// Turning: the picture is turned at its own size inside a square that fits any angle
+		// (a filter can't follow a picture whose size changes), then that square is scaled.
+		const side = Math.hypot(sw * cropW, sh * cropH);
+		const turn = rotating
+			? `,format=rgba,pad=w=${Math.ceil(side / 2) * 2}:h=${Math.ceil(side / 2) * 2}:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0,rotate=a='(${keyframeExpr(kf.rotation, t.rotation ?? 0, stepT)}+${wiggleExpr(clip.wiggle, seed, stepT).rotation})*PI/180':c=none`
+			: "";
+		const boxW = rotating ? side * fitBase : baseW;
+		const boxH = rotating ? side * fitBase : baseH;
+		const size =
+			turn +
+			(animatedScale
+				? `,scale=w='max(2,trunc(${boxW.toFixed(2)}*(${S})/2)*2)':h='max(2,trunc(${boxH.toFixed(2)}*(${S})/2)*2)':eval=frame`
+				: `,scale=${Math.max(2, Math.round((boxW * t.scale) / 2) * 2)}:${Math.max(2, Math.round((boxH * t.scale) / 2) * 2)}`);
 		const opacity =
-			(t.opacity < 1 ? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}` : "") +
+			(kf.opacity?.length
+				? // Opacity keyframes: the alpha follows the curve (T is clip-local seconds here).
+					`,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*clip(${keyframeExpr(kf.opacity, t.opacity, steppedExpr("T", clip.stepFps))},0,1)'`
+				: t.opacity < 1
+					? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}`
+					: "") +
 			// Wipes: the alpha is cut off beyond a moving edge while the transition runs.
 			(tr?.kind === "wipe-left" || tr?.kind === "wipe-right"
 				? `,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*${tr.kind === "wipe-left" ? `gte(X,W*(1-${enteredAt("T")}))` : `lte(X,W*${enteredAt("T")})`}':enable='lt(t,${s(tr.durationMs)})'`
@@ -825,7 +844,8 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			chains.push(`${source}${zoomChain}${colorChain}${keyChain}${finish}`);
 		}
 		// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
-		const local = `(t-${start})`;
+		const local = steppedExpr(`(t-${start})`, clip.stepFps);
+		const wig = wiggleExpr(clip.wiggle, seed, local);
 		const slide =
 			tr?.kind === "slide-left"
 				? `+(1-${enteredAt(local)})`
@@ -869,7 +889,8 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			);
 			current = `sdo${label}`;
 		}
-		const position = `x='${W}*(${X})+${dx}-w/2':y='${H}*(${Y})+${dy}-h/2'`;
+		// Wiggle is in pixels of a 1080-line frame.
+		const position = `x='${W}*(${X})+${dx}+(${wig.x})*${(H / 1080).toFixed(5)}-w/2':y='${H}*(${Y})+${dy}+(${wig.y})*${(H / 1080).toFixed(5)}-h/2'`;
 		if (clip.blend && clip.blend !== "normal") {
 			// Blend modes: the picture is laid on a canvas of the mode's neutral colour (which
 			// leaves what is below unchanged), then that whole frame is blended with the edit.
