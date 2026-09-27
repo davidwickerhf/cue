@@ -1160,6 +1160,8 @@ export class Controller extends EventEmitter {
 				if (!this.hooks.appSettings) throw new Error("App settings are not available.");
 				return this.hooks.appSettings.set(parseInput("update_app_settings", params).patch);
 			}
+			case "wait_for":
+				throw new Error("wait_for is answered by the control server for agents.");
 			case "get_guide": {
 				const { topic } = parseInput("get_guide", params);
 				return topic === "motion" ? MOTION_GUIDE : AGENT_GUIDE;
@@ -1602,6 +1604,11 @@ export class Controller extends EventEmitter {
 	}
 
 	// -------------------------------------------------------------------------
+
+	/** The job running now, if any (its label and progress), for agents waiting on a long call. */
+	runningJob(): JobStatus | undefined {
+		return this.jobs.find((j) => j.state === "running");
+	}
 
 	private async job<T>(
 		label: string,

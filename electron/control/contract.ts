@@ -24,6 +24,11 @@ const ids = z.array(z.string()).min(1);
 
 export const contract = {
 	// --- Overview --------------------------------------------------------------
+	wait_for: {
+		description:
+			"Wait for a long call to finish. Calls that take longer than about 45 seconds (exports, voiceovers, transcripts) reply with {status: 'running', callId, progress} instead of their result; pass that callId here to wait again (up to about 45 seconds per call) and get the result. Never start the same work twice.",
+		input: { callId: z.string(), waitMs: z.number().min(1000).max(50000).optional() },
+	},
 	get_guide: {
 		description:
 			"How Cue works and how to edit with these tools: concepts, units, track order, workflows and which tool does what. Read it once before editing. topic 'motion' is the guide to designing motion graphics (the spec format, design rules and patterns); read it before create_motion_graphic with a spec.",

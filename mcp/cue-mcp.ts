@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 import { contract, type MethodName } from "../electron/control/contract";
 import { AGENT_GUIDE } from "../electron/control/guide";
 
@@ -195,7 +196,8 @@ for (const [name, spec] of Object.entries(contract) as [
 ][]) {
 	server.registerTool(
 		name,
-		{ description: spec.description, inputSchema: spec.input },
+		// Strict, so a misspelt parameter is reported instead of silently dropped.
+		{ description: spec.description, inputSchema: z.strictObject(spec.input) },
 		async (args: unknown) => {
 			try {
 				const result = await rpc(name, args);

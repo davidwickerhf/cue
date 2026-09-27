@@ -24,6 +24,49 @@ export async function startControlServer(
 	enabled: () => boolean = () => true,
 ) {
 	const token = randomBytes(24).toString("hex");
+	/**
+	 * Calls that outlast one request (exports, voiceovers, transcripts…) keep running
+	 * here; the agent gets a call id and picks the result up with wait_for. Finished
+	 * results are kept for ten minutes.
+	 */
+	const calls = new Map<
+		string,
+		{
+			method: MethodName;
+			startedAt: number;
+			done: Promise<void>;
+			outcome?: { result: unknown } | { error: string };
+		}
+	>();
+	let callSeq = 0;
+	const errorText = (error: unknown) => {
+		const err = error as Error & { issues?: unknown };
+		return err.issues ? `Invalid input: ${JSON.stringify(err.issues)}` : err.message;
+	};
+	/** Waits up to `waitMs` for a call; its reply, or a note that it is still running. */
+	const settle = async (id: string, waitMs: number) => {
+		const call = calls.get(id);
+		if (!call)
+			return { error: `No call "${id}" (results are kept for ten minutes after they finish).` };
+		await Promise.race([call.done, new Promise((r) => setTimeout(r, waitMs))]);
+		if (call.outcome) {
+			calls.delete(id);
+			return "error" in call.outcome
+				? { error: call.outcome.error }
+				: { result: call.outcome.result ?? null };
+		}
+		const job = controller.runningJob();
+		return {
+			result: {
+				status: "running",
+				callId: id,
+				method: call.method,
+				elapsedMs: Date.now() - call.startedAt,
+				...(job ? { job: job.label, progress: job.progress } : {}),
+				next: `Still working. Call wait_for {callId: "${id}"} to wait for the result (do not start it again).`,
+			},
+		};
+	};
 	const server = http.createServer(async (req, res) => {
 		const reply = (status: number, body: unknown) => {
 			res.writeHead(status, { "content-type": "application/json" });
@@ -44,16 +87,50 @@ export async function startControlServer(
 			if (body.length > 5_000_000) return reply(413, { error: "Request too large" });
 		}
 		try {
-			const { method, params } = JSON.parse(body) as { method: string; params?: unknown };
+			const { method, params, waitMs } = JSON.parse(body) as {
+				method: string;
+				params?: unknown;
+				waitMs?: number;
+			};
 			if (!(method in contract)) return reply(400, { error: `Unknown method ${method}` });
 			controller.noteAgentRequest();
-			const result = await controller.call(method as MethodName, params, "agent");
-			reply(200, { result: result ?? null });
+			// Replies come within this time, so no client times out on a long call.
+			const budget = Math.max(1000, Math.min(waitMs ?? 45000, 50000));
+			if (method === "wait_for") {
+				const { callId, waitMs: wait } = (params ?? {}) as { callId?: string; waitMs?: number };
+				return reply(200, await settle(String(callId), Math.min(wait ?? budget, budget)));
+			}
+			// A misspelt parameter is an error, not silently dropped.
+			const known = Object.keys(contract[method as MethodName].input);
+			const unknown = Object.keys((params ?? {}) as object).filter((k) => !known.includes(k));
+			if (unknown.length)
+				return reply(200, {
+					error: `Unknown parameter${unknown.length > 1 ? "s" : ""} ${unknown.map((k) => `"${k}"`).join(", ")} for ${method}. Its parameters are: ${known.join(", ") || "none"}.`,
+				});
+			const id = `call${++callSeq}`;
+			const entry = {
+				method: method as MethodName,
+				startedAt: Date.now(),
+				done: Promise.resolve(),
+				outcome: undefined as { result: unknown } | { error: string } | undefined,
+			};
+			entry.done = controller
+				.call(method as MethodName, params, "agent")
+				.then(
+					(result) => {
+						entry.outcome = { result };
+					},
+					(error) => {
+						entry.outcome = { error: errorText(error) };
+					},
+				)
+				.then(() => {
+					setTimeout(() => calls.delete(id), 600000);
+				});
+			calls.set(id, entry);
+			reply(200, await settle(id, budget));
 		} catch (error) {
-			const err = error as Error & { issues?: unknown };
-			reply(200, {
-				error: err.issues ? `Invalid input: ${JSON.stringify(err.issues)}` : err.message,
-			});
+			reply(200, { error: errorText(error) });
 		}
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

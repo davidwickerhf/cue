@@ -68,6 +68,8 @@ export kinds: video (optional range {startMs,endMs}), audio, voiceover, stems (o
 Projects are .cueproj files: open_project, create_project, save_project_as, close_project, list_projects, import_timeline (OpenTimelineIO). Project-level settings: update_settings (recording), update_export, update_ai (voice, models). App-wide: get_app_settings/update_app_settings (theme, providers such as macOS voices, local Whisper, Ollama, editing defaults); API keys and agent access are the user's to change.
 
 ## Good practice
+- Long calls (export, voiceovers, transcription, rendering) reply within about 45 seconds. If a reply is {status: "running", callId}, the work is still going: call wait_for {callId} until it returns the result. Never start the same work again.
+- Unknown parameter names are errors that list the right ones; fix the name rather than dropping it.
 - Prefer precise, small edits; check with get_timeline, render_frame or inspect_edit afterwards.
 - Every edit is one undo step; if something goes wrong, call undo rather than patching around it.
 - get_history shows every change ever made to the project (also in earlier sessions, by the user or agents); restore_history goes back to any step.
