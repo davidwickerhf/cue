@@ -9,6 +9,16 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.6",
+		date: "2026-09-28",
+		summary: "Exports that don't freeze the editor, clips that never stack, and Cue's own font for motion graphics.",
+		changes: [
+			"Exporting no longer freezes the editor: graphics are drawn only where they change (a still backdrop is one frame, not hundreds), the window keeps responding between frames, and ffmpeg runs at a lower priority.",
+			"Clips an agent adds never land on top of each other: a clip that would overlap goes to a free track, and voiceover takes move back to the voiceover track once their lines are spaced out.",
+			"Motion graphics can use DM Sans, the font of Cue's own interface (font: ui).",
+		],
+	},
+	{
 		version: "0.2.5",
 		date: "2026-09-27",
 		summary: "Takes trimmed to the speech, and a clearer takes list you can stop.",
