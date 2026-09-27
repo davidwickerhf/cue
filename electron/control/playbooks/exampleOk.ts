@@ -10,7 +10,7 @@ export const EXAMPLE_OK: Playbook = {
 		"Before building any explainer, archive or collage video; as a model of how much goes into one scene.",
 	body: `# Worked example: "Why we say OK"
 
-A 73.5 s, 1080p recreation of the technique of Vox's "Why we say OK" (not its artwork), made entirely with Cue's tools. Shown on cue.wicker.life/examples with the project to download.
+A 73.5 s, 1080p remake of Vox's explainer "Why we say OK" (youtube.com/watch?v=1UnIDL-eHOs), made entirely with Cue's tools as a test of how well an agent can recreate a style: the idea, story and editing style are Vox's, the material and the build are new, and the end card credits Vox. Shown on cue.wicker.life/examples with the project to download. Credit the original the same way whenever you remake someone's video.
 
 ## Script (8 lines, generated voice "ash", about 150 words)
 L1 There is a two-letter word you have probably said today without even thinking about it.

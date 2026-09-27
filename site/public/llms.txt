@@ -43,6 +43,7 @@ The MCP server starts Cue when needed and gives every client a written guide to 
 - [Open-source Premiere Pro alternative](https://cue.wicker.life/open-source-premiere-alternative)
 - [Edit video with Claude Code and MCP](https://cue.wicker.life/edit-video-with-claude-code)
 - [Text-based video editing](https://cue.wicker.life/text-based-video-editing)
+- [Examples](https://cue.wicker.life/examples): videos made in Cue by an agent, with the project files and the prompt to make them again (a remake of Vox's "Why we say OK")
 - [Changelog](https://cue.wicker.life/changelog)
 - [Docs](https://cue.wicker.life/docs): getting started, editing, look and motion, titles and captions, audio, AI and agents, export, projects and history
 - [Agent tool reference](https://cue.wicker.life/docs/tools): every MCP tool with its inputs

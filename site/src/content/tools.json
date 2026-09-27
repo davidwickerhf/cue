@@ -1,10 +1,68 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 159,
+	"count": 164,
 	"groups": [
 		{
 			"title": "Overview",
 			"tools": [
+				{
+					"name": "cut_out",
+					"description": "Cut the subject (people, objects) out of a picture, or of a video frame at atMs, into a new image with a transparent background, a paper-white outline (px, 0 for none) and a soft shadow (0–1) — the collage cut-outs of explainer videos. Returns the new media; with trackId and startMs it is placed too. Turn it slightly (transform.rotation -3…3) and add a small wiggle for the hand-made look. macOS only.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "outline",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "shadow",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "list_playbooks",
+					"description": "Cue's playbooks: how to work in Cue (read 'working-in-cue' first), how to match a reference video ('match-a-reference', with analyze_reference), a complete worked example ('example-why-we-say-ok'), editing craft, premium motion design, and recognisable styles (Vox explainer, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
+					"inputs": [
+						{
+							"name": "category",
+							"type": "\"workflow\" | \"craft\" | \"style\" | \"example\"",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "get_playbook",
+					"description": "A playbook's full text (markdown), by id from list_playbooks.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
 				{
 					"name": "wait_for",
 					"description": "Wait for a long call to finish. Calls that take longer than about 45 seconds (exports, voiceovers, transcripts) reply with {status: 'running', callId, progress} instead of their result; pass that callId here to wait again (up to about 45 seconds per call) and get the result. Never start the same work twice.",
@@ -236,6 +294,44 @@
 							"name": "path",
 							"type": "string",
 							"required": true
+						}
+					]
+				},
+				{
+					"name": "analyze_reference",
+					"description": "Measure a reference video you are asked to match (a style, a creator, an ad): where its cuts are, shot lengths (median, mean, range), cuts per minute and per 10 s (where it speeds up or breathes), brightness, colourfulness and how much is black and white, its dominant colours, loudness, and a contact sheet with one frame per shot (returned as an image). Give a file path or the assetId of imported media. Use the numbers to set your pacing, grade and palette, then read the matching playbook (list_playbooks) and the 'match-a-reference' playbook. Long: may reply with a callId for wait_for.",
+					"inputs": [
+						{
+							"name": "file",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "package_project",
+					"description": "Package the project and every media file it uses into one .zip to share or archive (like Premiere's Project Manager): media outside the project folder is copied in, caches and history are left out, and the zip opens anywhere. trim (default true) cuts long video and audio down to the parts the edit uses plus 1 s handles, so footage from a long film stays small. readme adds a README.txt (credits, sources, how it was made). out defaults to the project's export folder. Long: may reply with a callId for wait_for.",
+					"inputs": [
+						{
+							"name": "out",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "trim",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						},
+						{
+							"name": "readme",
+							"type": "string",
+							"required": false
 						}
 					]
 				},
@@ -838,7 +934,7 @@
 				},
 				{
 					"name": "update_clip",
-					"description": "Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow, grain (film grain): 0–1, stabilize: boolean} (partial, merged) or null; on an adjustment layer vignette and grain give the whole edit a filmic look. blend: normal | multiply | screen | overlay | soft-light | darken | lighten combines a picture with the tracks below (multiply a paper texture over everything, screen a light leak) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+					"description": "Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow, grain (film grain): 0–1, stabilize: boolean} (partial, merged) or null; on an adjustment layer vignette and grain give the whole edit a filmic look. transform.rotation turns a picture (degrees; cut-outs and clippings look placed by hand at -3 to 3). wiggle {position: px drift, rotation: degrees, speed: per second} or null adds a gentle hand-held drift (e.g. {position: 4, rotation: 0.5, speed: 1}); stepFps (12 = 'on twos') moves keyframes, wiggle and motion graphics in whole steps like stop-motion paper, or null for smooth. blend: normal | multiply | screen | overlay | soft-light | darken | lighten combines a picture with the tracks below (multiply a paper texture over everything, screen a light leak) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 					"inputs": [
 						{
 							"name": "id",
@@ -1436,7 +1532,7 @@
 				},
 				{
 					"name": "set_keyframe",
-					"description": "Animate a media clip: set x or y (0–1, centre on canvas), scale (1 = fit) or volume (0–2) at a clip-local time. ease is how the value travels to the next keyframe: linear, ease (slow in and out), ease-in (starts slow), ease-out (ends slow), hold (jumps at the next keyframe) or bezier with curve [x1, y1, x2, y2] like CSS cubic-bezier (x 0–1; y below 0 or above 1 overshoots, e.g. [0.34, 1.56, 0.64, 1] for a bounce back).",
+					"description": "Animate a media clip: set x or y (0–1, centre on canvas), scale (1 = fit), rotation (degrees, clockwise), opacity (0–1) or volume (0–2) at a clip-local time. ease is how the value travels to the next keyframe: linear, ease (slow in and out), ease-in (starts slow), ease-out (ends slow), hold (jumps at the next keyframe) or bezier with curve [x1, y1, x2, y2] like CSS cubic-bezier (x 0–1; y below 0 or above 1 overshoots, e.g. [0.34, 1.56, 0.64, 1] for a bounce back).",
 					"inputs": [
 						{
 							"name": "clipId",
@@ -1445,7 +1541,7 @@
 						},
 						{
 							"name": "prop",
-							"type": "\"x\" | \"y\" | \"scale\" | \"volume\"",
+							"type": "enum",
 							"required": true
 						},
 						{
@@ -1499,7 +1595,7 @@
 						},
 						{
 							"name": "prop",
-							"type": "\"x\" | \"y\" | \"scale\" | \"volume\"",
+							"type": "enum",
 							"required": true
 						},
 						{
@@ -1520,7 +1616,7 @@
 						},
 						{
 							"name": "prop",
-							"type": "\"x\" | \"y\" | \"scale\" | \"volume\"",
+							"type": "enum",
 							"required": false
 						}
 					]
