@@ -73,7 +73,8 @@ export function ffmpegWithProgress(
 			);
 		const child = spawn(ffmpegPath(), ["-hide_banner", "-y", ...args]);
 		// A long encode uses every core: below normal priority, the editor stays responsive meanwhile.
-		if (child.pid)
+		// (Not under tests: parallel test workers at normal priority would starve it.)
+		if (child.pid && !process.env.VITEST)
 			try {
 				os.setPriority(child.pid, 10);
 			} catch {}
