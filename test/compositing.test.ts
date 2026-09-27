@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { dataCalloutTemplate, infographicTemplate } from "../electron/core/infographics";
 import { ffmpeg, ffmpegPath } from "../electron/core/media";
+import { buildTemplate } from "../electron/core/motionTemplates";
+import { parseProject } from "../electron/core/project";
 import { ProjectStore } from "../electron/core/store";
 import type { MediaClip, TextClip } from "../electron/core/types";
 
@@ -36,7 +39,7 @@ async function pixel(file: string, sec: number, x: number, y: number, w: number)
 }
 
 describe("compositing", () => {
-	it("adds an editable point callout as one undoable clip", async () => {
+	it("makes a data callout as an editable callout motion graphic", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-callout-"));
 		const store = new ProjectStore({
 			mediaUrl: (f) => f,
@@ -44,7 +47,7 @@ describe("compositing", () => {
 			autoProxies: () => false,
 		});
 		await store.create({ path: dir, name: "Callout" });
-		const { clipId } = await store.addDataCallout(
+		const made = await store.addDataCallout(
 			{
 				label: "Train station",
 				value: "42%",
@@ -53,31 +56,34 @@ describe("compositing", () => {
 				y: 0.35,
 				targetX: 0.34,
 				targetY: 0.61,
-				palette: "editorial",
-				startMs: 0,
-				durationMs: 3500,
+				palette: "electric",
+				startMs: 500,
 			},
-			"user",
+			"agent",
 		);
-		expect(
-			(store.current.clips.find((c) => c.id === clipId) as TextClip).dataCallout?.targetX,
-		).toBe(0.34);
-		store.apply(
-			{
-				type: "updateClip",
-				id: clipId,
-				patch: { dataCallout: { targetX: 0.36, palette: "electric" } },
-			},
-			"user",
+		expect(made.template).toBe("callout");
+		expect(made.params).toMatchObject({ theme: "signal", labelX: 0.72, targetX: 0.34 });
+		const asset = store.current.assets.find((a) => a.id === made.assetId);
+		expect(asset?.kind).toBe("lottie");
+		expect(asset?.motion?.texts.map((t) => t.text)).toEqual(
+			expect.arrayContaining(["TRAIN STATION", "Source: Example"]),
 		);
-		expect(
-			(store.current.clips.find((c) => c.id === clipId) as TextClip).dataCallout?.palette,
-		).toBe("electric");
+		const clip = store.current.clips.find((c) => c.id === made.clipId) as MediaClip;
+		expect(clip.type).toBe("media");
+		expect(clip.startMs).toBe(500);
+		expect(clip.durationMs).toBe(asset?.durationMs);
+		// Agents edit it like any made graphic.
+		const updated = await store.updateMotionGraphic(
+			made.assetId,
+			{ params: { targetX: 0.4 } },
+			"agent",
+		);
+		expect(updated.motionSource?.params).toMatchObject({ targetX: 0.4, label: "Train station" });
 		store.undo("user");
 		store.undo("user");
-		expect(store.current.clips.some((c) => c.id === clipId)).toBe(false);
+		expect(store.current.clips.some((c) => c.id === made.clipId)).toBe(false);
 	}, 30000);
-	it("adds editable infographic data as one undoable clip", async () => {
+	it("makes each infographic kind with the matching template", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-chart-"));
 		const store = new ProjectStore({
 			mediaUrl: (f) => f,
@@ -85,44 +91,158 @@ describe("compositing", () => {
 			autoProxies: () => false,
 		});
 		await store.create({ path: dir, name: "Chart" });
-		const { clipId } = await store.addInfographic(
+		const items = [
+			{ label: "2022", value: 72 },
+			{ label: "2023", value: 28.5 },
+			{ label: "2024", value: 40 },
+		];
+		const expected = {
+			bars: "bar-chart",
+			donut: "donut-chart",
+			cards: "stat-row",
+			line: "line-chart",
+			timeline: "timeline",
+		} as const;
+		for (const [kind, template] of Object.entries(expected)) {
+			const made = await store.addInfographic(
+				{
+					kind: kind as keyof typeof expected,
+					title: "Sample survey",
+					items,
+					unit: "%",
+					palette: "mono",
+					source: "Example data",
+					startMs: 0,
+					durationMs: 5000,
+				},
+				"agent",
+			);
+			expect(made.template).toBe(template);
+			expect(made.params).toMatchObject({ theme: "mono", durationMs: 5000 });
+			const asset = store.current.assets.find((a) => a.id === made.assetId);
+			expect(asset?.kind).toBe("lottie");
+			expect(asset?.durationMs).toBe(5000);
+			expect(asset?.motion?.texts.some((t) => t.text.includes("Sample survey"))).toBe(true);
+		}
+		// Nothing new is drawn as a text clip.
+		expect(store.current.clips.every((c) => c.type === "media")).toBe(true);
+	}, 30000);
+	it("maps old data to templates within their limits", () => {
+		const long = infographicTemplate({
+			kind: "cards",
+			title: "Six numbers",
+			items: [1, 2, 3, 4, 5, 6].map((v) => ({ label: `Item ${v}`, value: v })),
+			unit: "million people",
+			palette: "electric",
+		});
+		// Six cards do not fit side by side: they become bars, with the unit in the subtitle.
+		expect(long.template).toBe("bar-chart");
+		expect(long.params).toMatchObject({ theme: "signal", subtitle: "In million people" });
+		const timeline = infographicTemplate({
+			kind: "timeline",
+			title: "Stores",
+			items: [
+				{ label: "2019", value: 12 },
+				{ label: "2024", value: 1250 },
+			],
+			unit: "stores",
+			palette: "editorial",
+		});
+		expect(timeline.params.items).toEqual([
+			{ date: "2019", label: "12 stores" },
+			{ date: "2024", label: "1,250 stores" },
+		]);
+		for (const kind of ["bars", "donut", "cards", "line", "timeline"] as const) {
+			const { template, params } = infographicTemplate({
+				kind,
+				title: "A".repeat(120),
+				items: [{ label: "L".repeat(60), value: 3 }],
+				unit: "u".repeat(24),
+				source: "S".repeat(160),
+				palette: "mono",
+			});
+			expect(() =>
+				buildTemplate(template, params, { width: 1920, height: 1080, fps: 30 }),
+			).not.toThrow();
+		}
+		const callout = dataCalloutTemplate({
+			label: "L".repeat(80),
+			value: "V".repeat(40),
+			source: "S".repeat(120),
+			x: 0.2,
+			y: 0.3,
+			targetX: 0.5,
+			targetY: 0.6,
+			palette: "editorial",
+		});
+		expect(() =>
+			buildTemplate(callout.template, callout.params, { width: 1920, height: 1080, fps: 30 }),
+		).not.toThrow();
+	});
+	it("keeps infographic and data callout text clips from older projects editable", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-old-chart-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Old chart" });
+		const trackId = store.apply(
+			{ type: "addTrack", kind: "text", name: "Infographics", index: 0 },
+			"user",
+		).created?.[0] as string;
+		const created = store.apply(
 			{
-				kind: "bars",
-				title: "Sample survey",
-				items: [
-					{ label: "Yes", value: 72 },
-					{ label: "No", value: 28 },
+				type: "addClips",
+				clips: [
+					{
+						type: "text",
+						trackId,
+						startMs: 0,
+						durationMs: 4000,
+						text: "",
+						infographic: {
+							kind: "bars",
+							title: "Sample survey",
+							items: [{ label: "Yes", value: 72 }],
+							palette: "editorial",
+						},
+					},
+					{
+						type: "text",
+						trackId,
+						startMs: 4000,
+						durationMs: 3500,
+						text: "",
+						dataCallout: {
+							label: "Station",
+							x: 0.7,
+							y: 0.3,
+							targetX: 0.3,
+							targetY: 0.6,
+							palette: "mono",
+						},
+					},
 				],
-				palette: "editorial",
-				source: "Example data",
-				startMs: 0,
-				durationMs: 4000,
 			},
 			"user",
-		);
-		const clip = store.current.clips.find((c) => c.id === clipId);
-		expect(clip?.type === "text" && clip.infographic?.items[0].value).toBe(72);
+		).created as string[];
 		store.apply(
 			{
 				type: "updateClip",
-				id: clipId,
-				patch: {
-					infographic: {
-						kind: "cards",
-						title: "Sample survey",
-						items: [{ label: "Yes", value: 73 }],
-						palette: "mono",
-					},
-				},
+				id: created[0],
+				patch: { infographic: { kind: "cards", items: [{ label: "Yes", value: 73 }] } },
 			},
 			"user",
 		);
-		expect((store.current.clips.find((c) => c.id === clipId) as TextClip).infographic?.kind).toBe(
-			"cards",
-		);
-		store.undo("user");
-		store.undo("user");
-		expect(store.current.clips.some((c) => c.id === clipId)).toBe(false);
+		const chart = store.current.clips.find((c) => c.id === created[0]) as TextClip;
+		expect(chart.infographic?.kind).toBe("cards");
+		expect(chart.infographic?.title).toBe("Sample survey");
+		// Saved and read back, the clips survive as they were.
+		const saved = JSON.parse(JSON.stringify(store.current));
+		const reread = parseProject(saved);
+		const clips = reread.clips as TextClip[];
+		expect(clips.find((c) => c.id === created[1])?.dataCallout?.label).toBe("Station");
 	}, 30000);
 	it("keys a green screen, masks it and grades it with an adjustment layer", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-comp-"));

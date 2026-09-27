@@ -1494,6 +1494,8 @@ const callout = template({
 		...common,
 		label: z.string().max(40),
 		value: z.string().max(30).default(""),
+		/** Where a factual value comes from, in small type under the label. */
+		source: z.string().max(80).default(""),
 		/** The point to mark, as shares of the frame (0–1). */
 		targetX: z.number().min(0).max(1).default(0.4),
 		targetY: z.number().min(0).max(1).default(0.55),
@@ -1519,13 +1521,18 @@ const callout = template({
 		const ly = p.labelY * f.H;
 		const size = 34 * f.u;
 		const valueSize = 26 * f.u;
+		const sourceSize = 18 * f.u;
+		const sourceText = p.source ? `Source: ${p.source}` : "";
 		const w =
 			Math.max(
 				textWidth(p.label.toUpperCase(), size, "sans", 1.5 * f.u),
 				textWidth(p.value, valueSize),
+				textWidth(sourceText, sourceSize),
 			) +
 			90 * f.u;
-		const h = (p.value ? 112 : 72) * f.u;
+		const h = ((p.value ? 112 : 72) + (p.source ? 34 : 0)) * f.u;
+		// Label and value sit higher when a source line is under them.
+		const shift = p.source ? -17 * f.u : 0;
 		const right = lx >= tx;
 		const boxX = right ? lx : lx - w;
 		const elbow: [number, number] = [lx, ty + (ly - ty) * 0.001];
@@ -1621,7 +1628,7 @@ const callout = template({
 						uppercase: true,
 						tracking: 1.5 * f.u,
 						x: boxX + 30 * f.u,
-						y: ly - (p.value ? 20 : 0) * f.u,
+						y: ly - (p.value ? 20 : 0) * f.u + shift,
 						size,
 						color: t.text,
 						weight: 700,
@@ -1637,11 +1644,27 @@ const callout = template({
 								name: "Value",
 								text: p.value,
 								x: boxX + 30 * f.u,
-								y: ly + 26 * f.u,
+								y: ly + 26 * f.u + shift,
 								size: valueSize,
 								weight: 600,
 								color: t.accent,
 								enter: { preset: "type" as const, atMs: 1250, durationMs: 450 },
+								exit: { preset: "fade" as const, atMs: out, durationMs: 250 },
+							},
+						]
+					: []),
+				...(p.source
+					? [
+							{
+								type: "text" as const,
+								name: "Source",
+								text: sourceText,
+								x: boxX + 30 * f.u,
+								y: ly + h / 2 - 24 * f.u,
+								size: sourceSize,
+								weight: 400,
+								color: t.muted,
+								enter: { preset: "fade" as const, atMs: 1450, durationMs: 400 },
 								exit: { preset: "fade" as const, atMs: out, durationMs: 250 },
 							},
 						]

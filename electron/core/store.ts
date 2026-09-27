@@ -20,6 +20,7 @@ import {
 	type Rasteriser,
 } from "./exporter";
 import { type HistoryEntry, ProjectHistory } from "./history";
+import { dataCalloutTemplate, infographicTemplate } from "./infographics";
 import {
 	detectBeats as detectBeatsIn,
 	editTranscript,
@@ -105,6 +106,15 @@ import {
 const HISTORY_LIMIT = 150;
 const ACTIVITY_LIMIT = 200;
 const CACHE_DIR = ".cue-cache";
+
+/** A graphic made from a template and placed on the timeline: edit it with update_motion_graphic. */
+export interface MadeGraphic {
+	clipId: string;
+	trackId: string;
+	assetId: string;
+	template: string;
+	params: Record<string, unknown>;
+}
 
 export interface CreateProjectOptions {
 	/** Project file or directory. A directory gets `<name>.cueproj`. */
@@ -425,72 +435,46 @@ export class ProjectStore extends EventEmitter {
 	// Analysis and AI helpers
 	// -------------------------------------------------------------------------
 
-	/** Adds a source-labelled chart as one editable clip and one undo step. */
+	/**
+	 * Adds a source-labelled chart as a motion graphic (bar, donut, line chart, key
+	 * numbers or timeline template), placed at startMs; one undo step. Older
+	 * projects keep their infographic text clips, which still draw.
+	 */
 	async addInfographic(
-		input: Infographic & { startMs: number; durationMs: number },
+		input: Infographic & { startMs: number; durationMs?: number },
 		actor: Actor,
-	): Promise<{ clipId: string; trackId: string }> {
-		return this.transaction(actor, `Added ${input.kind} infographic`, () => {
-			const trackId =
-				this.current.tracks.find((t) => t.kind === "text" && t.name === "Infographics")?.id ??
-				(this.apply({ type: "addTrack", kind: "text", name: "Infographics", index: 0 }, actor)
-					.created?.[0] as string);
-			const { startMs, durationMs, ...infographic } = input;
-			const clipId = this.apply(
-				{
-					type: "addClips",
-					clips: [
-						{
-							type: "text",
-							trackId,
-							startMs,
-							durationMs,
-							text: "",
-							infographic,
-							animationIn: "none",
-							animationOut: "none",
-							name: infographic.title,
-						},
-					],
-				},
-				actor,
-			).created?.[0] as string;
-			return { clipId, trackId };
-		});
+	): Promise<MadeGraphic> {
+		const { startMs, ...chart } = input;
+		return this.addLegacyGraphic(infographicTemplate(chart), chart.title, startMs, actor);
 	}
 
-	/** Adds a point annotation as one editable clip and one undo step. */
+	/** Adds a point annotation as a callout motion graphic, placed at startMs; one undo step. */
 	async addDataCallout(
-		input: DataCallout & { startMs: number; durationMs: number },
+		input: DataCallout & { startMs: number; durationMs?: number },
 		actor: Actor,
-	): Promise<{ clipId: string; trackId: string }> {
-		return this.transaction(actor, `Added data callout`, () => {
-			const trackId =
-				this.current.tracks.find((t) => t.kind === "text" && t.name === "Callouts")?.id ??
-				(this.apply({ type: "addTrack", kind: "text", name: "Callouts", index: 0 }, actor)
-					.created?.[0] as string);
-			const { startMs, durationMs, ...dataCallout } = input;
-			const clipId = this.apply(
-				{
-					type: "addClips",
-					clips: [
-						{
-							type: "text",
-							trackId,
-							startMs,
-							durationMs,
-							text: "",
-							dataCallout,
-							animationIn: "none",
-							animationOut: "fade",
-							name: dataCallout.label,
-						},
-					],
-				},
-				actor,
-			).created?.[0] as string;
-			return { clipId, trackId };
-		});
+	): Promise<MadeGraphic> {
+		const { startMs, ...callout } = input;
+		return this.addLegacyGraphic(dataCalloutTemplate(callout), callout.label, startMs, actor);
+	}
+
+	private async addLegacyGraphic(
+		source: { template: string; params: Record<string, unknown> },
+		name: string,
+		startMs: number,
+		actor: Actor,
+	): Promise<MadeGraphic> {
+		const { asset, clipId } = await this.createMotionGraphic(
+			{ ...source, name, place: { startMs } },
+			actor,
+		);
+		const clip = this.current.clips.find((c) => c.id === clipId);
+		return {
+			clipId: clipId as string,
+			trackId: clip?.trackId as string,
+			assetId: asset.id,
+			template: source.template,
+			params: source.params,
+		};
 	}
 
 	/** Adds a shape, callout, blur or redact overlay in one undo step. */

@@ -907,8 +907,8 @@
         "Return to the footage or a supporting example."
       ],
       "directions": [
-        "Use add_infographic kind bars with labels, numeric values, unit and source.",
-        "Try editorial for documentary footage, electric for technology, or mono for archival material.",
+        "Use create_motion_graphic with the bar-chart template (or add_infographic kind bars) with labels, numeric values, unit and source; set highlight to the bar the story is about.",
+        "Try the editorial theme for documentary footage, signal for technology, or mono for archival material; backdrop card keeps the footage visible around the chart.",
         "Keep units consistent across every row."
       ],
       "review": [
@@ -950,7 +950,7 @@
         "Follow with the segment most relevant to the story."
       ],
       "directions": [
-        "Use add_infographic kind donut with the electric palette. Cue derives slice angles and percentages from the supplied values.",
+        "Use create_motion_graphic with the donut-chart template and the signal theme (or add_infographic kind donut, palette electric). Cue derives slice angles and percentages from the supplied values.",
         "Use a source field and avoid mixing categories that overlap."
       ],
       "review": [
@@ -991,7 +991,7 @@
         "Cut to evidence that explains the most important number."
       ],
       "directions": [
-        "Use add_infographic kind cards with the mono palette; edit the values in the inspector or with update_clip.",
+        "Use create_motion_graphic with the stat-row template and the mono theme (or add_infographic kind cards); change the values later with update_motion_graphic.",
         "For different units, omit the shared unit and include units in each label.",
         "Replace the demo values before publishing."
       ],
@@ -1034,7 +1034,7 @@
         "Cut to a scene that helps explain the change."
       ],
       "directions": [
-        "Use add_infographic kind line with ordered labels, values, unit and source.",
+        "Use create_motion_graphic with the line-chart template (or add_infographic kind line) with ordered labels, values, unit and source.",
         "Do not reorder the data to make a smoother curve.",
         "Use the same unit throughout."
       ],
@@ -1077,7 +1077,7 @@
         "Return to the latest scene or outcome."
       ],
       "directions": [
-        "Use add_infographic kind timeline with the electric palette; each item is one milestone label and its associated value.",
+        "Use create_motion_graphic with the timeline template and the signal theme; each item is a date or stage and a short label with its value (add_infographic kind timeline makes the same from labels and values).",
         "Keep the labels short and use the source field.",
         "For more than six moments, split the story across multiple clips."
       ],
@@ -1119,9 +1119,9 @@
         "Let the value remain readable, then clear the callout before the next cut."
       ],
       "directions": [
-        "Use add_data_callout with targetX and targetY on the subject, and x and y where the label can sit without covering faces.",
+        "Use create_motion_graphic with the callout template (or add_data_callout): targetX and targetY on the subject, and labelX and labelY where the label can sit without covering faces.",
         "Include the source field for a factual value.",
-        "Choose the editorial, electric or mono palette to suit the surrounding sequence."
+        "Choose the editorial, signal or mono theme (or colors {accent}) to suit the surrounding sequence."
       ],
       "review": [
         "Confirm the line ends on the intended object throughout the shot.",
