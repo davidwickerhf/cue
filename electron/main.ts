@@ -755,11 +755,11 @@ function createWindow() {
 			lastFrame = Date.now();
 			void fs.writeFile(path.join(recordFrames, `${lastFrame}.jpg`), image.toJPEG(90));
 		});
-		// Nothing repaints while the screen is still; ask for a frame so there always is a current one.
+		// Paint every frame while recording (a steady 30 fps, so motion in the app is smooth in the
+		// edit even when nothing asks for a repaint).
 		setInterval(() => {
-			if (win && !win.isDestroyed() && existsSync(flag) && Date.now() - lastFrame > 400)
-				win.webContents.invalidate();
-		}, 250);
+			if (win && !win.isDestroyed() && existsSync(flag)) win.webContents.invalidate();
+		}, 33);
 	} else win.once("ready-to-show", () => win?.show());
 	// A (re)loaded page has no project yet.
 	win.webContents.on("did-start-loading", () => {
