@@ -30,8 +30,26 @@ env:
   PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
 
 jobs:
+  # The draft release exists before the builds start. Otherwise the three jobs race to
+  # create it and can make two drafts for one tag (v0.2.2 did), and only one gets published.
+  draft:
+    name: Create the draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "${GITHUB_REF_NAME#v}" --notes ""
+          fi
+
   build:
     name: Build (${{ matrix.platform }})
+    needs: draft
+    # Manual runs build without publishing, so they don't wait for a draft.
+    if: always() && (needs.draft.result == 'success' || needs.draft.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
