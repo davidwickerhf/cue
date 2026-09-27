@@ -67,7 +67,10 @@ export function ffmpegWithProgress(
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
 		if (process.env.CUE_TRACE_FFMPEG)
-			writeFileSync("/tmp/cue-ffmpeg-trace.txt", `ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n`);
+			writeFileSync(
+				"/tmp/cue-ffmpeg-trace.txt",
+				`ffmpeg ${args.map((a) => JSON.stringify(a)).join(" ")}\n`,
+			);
 		const child = spawn(ffmpegPath(), ["-hide_banner", "-y", ...args]);
 		let log = "";
 		child.stderr.setEncoding("utf8");
@@ -229,6 +232,46 @@ export function parseMediaInfo(log: string, now = new Date()): MediaInfo {
 export async function toWav(input: string, output: string): Promise<void> {
 	await fs.mkdir(path.dirname(output), { recursive: true });
 	await ffmpeg(["-i", input, "-vn", "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", output]);
+}
+
+/** Loudness a voice take is brought up to when it was recorded too quietly. */
+export const SPEECH_TARGET_LUFS = -18;
+
+/**
+ * Brings a quiet recording up to voiceover level. A laptop's built-in microphone,
+ * recorded raw (no automatic gain, so nothing pumps), often lands 20 dB below a
+ * normal voice: too quiet for a clip's volume (at most +6 dB) to fix. The take is
+ * measured, raised by up to 30 dB towards SPEECH_TARGET_LUFS, and limited so peaks
+ * never clip. The untouched recording is kept beside it as `<name>.original.wav`.
+ * Returns the gain applied in dB (0 when it was already loud enough).
+ */
+export async function levelSpeech(file: string, output = file): Promise<number> {
+	const report = await ffmpeg(["-i", file, "-af", "ebur128=peak=true", "-f", "null", "-"]);
+	const summary = report.slice(report.lastIndexOf("Summary:"));
+	const loudness = Number(/I:\s*(-?[\d.]+) LUFS/.exec(summary)?.[1]);
+	if (!Number.isFinite(loudness) || loudness < -70) return 0; // silence: nothing to level
+	const gain = Math.min(30, SPEECH_TARGET_LUFS - loudness);
+	if (gain < 1.5) return 0;
+	// In place: the untouched recording is kept as <name>.original.wav. To a new file: the
+	// input itself stays as it was.
+	const inPlace = path.resolve(output) === path.resolve(file);
+	const original = inPlace ? file.replace(/\.wav$/, ".original.wav") : file;
+	const tmp = partFile(output, "wav");
+	if (inPlace) await fs.copyFile(file, original);
+	await ffmpeg([
+		"-i",
+		original,
+		"-af",
+		`volume=${gain.toFixed(2)}dB,alimiter=limit=0.891:attack=5:release=60:level=disabled`,
+		"-c:a",
+		"pcm_s16le",
+		tmp,
+	]).catch(async (error) => {
+		await fs.rm(tmp, { force: true });
+		throw error;
+	});
+	await fs.rename(tmp, output);
+	return gain;
 }
 
 export interface SpeechAnalysis {

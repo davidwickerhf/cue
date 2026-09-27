@@ -1242,8 +1242,24 @@ export class Controller extends EventEmitter {
 					{ type: "shiftLines", ...parseInput("shift_lines", params), withClips: true },
 					actor,
 				);
+			case "level_take": {
+				const { assetId } = parseInput("level_take", params);
+				const { asset, gainDb } = await this.job("Levelling the take", () =>
+					this.store.levelTake(assetId, actor),
+				);
+				return {
+					...this.describeAsset(asset),
+					gainDb: Math.round(gainDb * 10) / 10,
+					note: gainDb
+						? `Raised by ${gainDb.toFixed(1)} dB to voiceover level.`
+						: "Already at voiceover level: left as it was.",
+				};
+			}
 			case "ripple_from":
-				return this.store.apply({ type: "rippleFrom", ...parseInput("ripple_from", params) }, actor);
+				return this.store.apply(
+					{ type: "rippleFrom", ...parseInput("ripple_from", params) },
+					actor,
+				);
 			case "select_line": {
 				const { id } = parseInput("select_line", params);
 				this.requireLine(id);

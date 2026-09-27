@@ -48,6 +48,7 @@ import {
 	extractThumbnails,
 	ffmpeg,
 	kindOf,
+	levelSpeech,
 	makeAudioProxy,
 	makeImageProxy,
 	makeImageThumb,
@@ -3062,10 +3063,36 @@ export class ProjectStore extends EventEmitter {
 		} finally {
 			await fs.rm(raw, { force: true });
 		}
+		// A quiet microphone (a laptop's, recorded raw) is brought up to voiceover level.
+		await levelSpeech(wav).catch(() => 0);
 		return this.addTakeFile(line.id, wav, "recording", input.actor, {
 			recordedAtMs: Math.round(input.recordedAtMs),
 			name: `Take ${count}`,
 		});
+	}
+
+	/**
+	 * Raises a quiet take to voiceover level (see levelSpeech) as a new file beside it,
+	 * and points the take at that file, so the original stays and no cache is stale.
+	 */
+	async levelTake(assetId: string, actor: Actor): Promise<{ asset: Asset; gainDb: number }> {
+		const asset = this.current.assets.find((a) => a.id === assetId);
+		if (!asset || asset.kind !== "audio") throw new Error(`No audio media "${assetId}".`);
+		const file = this.assetPath(assetId);
+		const out = file.replace(/(\.[^.]+)?$/, `-level${Date.now().toString(36)}.wav`);
+		const wav = file.endsWith(".wav") ? file : partFile(out, "src.wav");
+		if (wav !== file) await toWav(file, wav);
+		const gainDb = await levelSpeech(wav, out);
+		if (wav !== file) await fs.rm(wav, { force: true });
+		if (gainDb === 0) return { asset, gainDb };
+		const analysis = await analyseSpeech(out, this.current.settings.silenceDb);
+		const patch: Partial<Asset> = {
+			path: relativeToProject(this.projectDir, out),
+			peakDb: analysis.peakDb,
+			size: (await fs.stat(out)).size,
+		};
+		this.apply({ type: "updateAsset", id: assetId, patch }, actor);
+		return { asset: { ...asset, ...patch }, gainDb };
 	}
 
 	/**

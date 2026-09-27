@@ -848,6 +848,11 @@ export const contract = {
 		description: "Move lines starting at or after fromMs by deltaMs, with their clips.",
 		input: { fromMs: z.number(), deltaMs: z.number() },
 	},
+	level_take: {
+		description:
+			"Raise a quiet voiceover take (or any speech audio) to voiceover level: measured, raised by up to 30 dB towards -18 LUFS and limited so it never clips, written as a new file (the original stays). Use it when a recorded take is much quieter than the others: a clip's volume only goes up to +6 dB. New recordings are levelled automatically.",
+		input: { assetId: z.string() },
+	},
 	ripple_from: {
 		description:
 			"Move everything that starts at or after fromMs (clips on every track, script lines and markers) by deltaMs, in one undoable step: positive makes room (a take that runs long, an inserted scene), negative closes a gap. Pictures, music and voice stay in sync with each other.",

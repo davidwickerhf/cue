@@ -6,6 +6,7 @@ import {
 	Play,
 	Plus,
 	Sparkle,
+	SpeakerHigh,
 	Stop,
 	Trash,
 	UploadSimple,
@@ -410,6 +411,8 @@ function TakeRow({ take, line, url }: { take: Asset; line: LineView; url: string
 	const chosen = line.chosenAssetId === take.id;
 	const speech = (take.speechEndMs ?? take.durationMs) - (take.speechStartMs ?? 0);
 	const fit = speech > line.maxMs ? "over" : speech > line.maxMs - 300 ? "tight" : "ok";
+	// A take peaking this low is much quieter than a normal voice (a laptop mic, far away).
+	const quiet = take.peakDb !== undefined && take.peakDb !== null && take.peakDb < -12;
 	const Icon =
 		take.origin === "tts"
 			? Sparkle
@@ -442,10 +445,22 @@ function TakeRow({ take, line, url }: { take: Asset; line: LineView; url: string
 				<p className={cn("text-[11px] tabular-nums", STATUS_STYLE[fit].text)}>
 					{formatSeconds(speech)} of {formatSeconds(line.maxMs)}
 					{take.peakDb !== undefined && take.peakDb !== null && (
-						<span className="text-muted"> · peak {take.peakDb.toFixed(0)} dB</span>
+						<span className={quiet ? "text-warning" : "text-muted"}>
+							{" "}
+							· peak {take.peakDb.toFixed(0)} dB{quiet ? " · quiet" : ""}
+						</span>
 					)}
 				</p>
 			</div>
+			{quiet && (
+				<IconButton
+					label="Raise to voice level"
+					onPress={() => void run("level_take", { assetId: take.id })}
+					className="text-warning"
+				>
+					<SpeakerHigh className="size-3.5" />
+				</IconButton>
+			)}
 			<IconButton label="Listen" onPress={() => playback.previewAsset(url)}>
 				<Play weight="fill" className="size-3.5" />
 			</IconButton>
