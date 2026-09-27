@@ -73,6 +73,16 @@ paper under everything · archive photos cut out with a white edge and shadow, s
 - Paper rustle on each cut-out landing, a thud on slams, a whoosh on pushes and whips, a typewriter under typed dates, a marker squeak under highlighter swipes (Sound effects in list_library_assets). Quiet: −18 to −24 dB under the voice, varied.
 - Archive sound (a speech, a news anchor) starts 0.5–1 s before its picture, with the voice and music ducked under it.
 
+## Recipes that worked (from rebuilding Vox's "Why we say OK" in Cue)
+- Cold open on archive: 4–5 public-domain shots of 1.1–1.5 s (Prelinger Archives on archive.org), graded black and white with grain 0.4 and vignette 0.35; 4:3 footage fills a 16:9 frame at scale 1.36, pushing to 1.42. A red box with white "OK" (sans 800) pops beside each speaker's head with a pop sound.
+- Red block + cut-out: a motion graphic with one red rect covering 40–55% of the frame, sliding in from its edge in 350 ms, on the track under the cut-out; the cut-out (scale 0.8–0.95, turned ±2°) half on the red, half on paper; the label or quote in the free paper half.
+- Big word with people: the word in red serif at 900 px on paper; the cut-out figures on a track above it slide up from below (y 1.45 → 0.63 in 320 ms) so they stand in front of the letters.
+- Document punch-in: put the clipping on a track above newsprint (opacity 0.3–0.55) with blend multiply so its paper takes the texture; give the circle and underline marks the same keyframes as the clipping so they stay on their words; punch to 1.7 towards the line being read, centring it: x = 0.5 − (px − 0.5) × scale.
+- Ghosted footage behind graphics: the footage at opacity 0.3–0.4, saturation 0, contrast 0.9 over paper; graphics drawn in ink on top read clearly.
+- A person leaving the story: the cut-out tips over (rotation −2 → −22) and drops out of frame (y → 1.6) with ease-in over 750 ms and a deep whoosh.
+- Chat or phone cards over footage: the chat template has its own paper background; mask the clip to the card (mask rectangle, width 0.335) so the footage shows around it.
+- Motion spec groups: children use canvas coordinates; set the group's pivot to the point it should pop and turn around.
+
 ## Building it in Cue (order)
 1. Script and voice (see working-in-cue), word timings from get_transcript.
 2. Tracks: Paper (bottom) · Scans · Graphics · Marks · Tags · Look (adjustment layer on top).
