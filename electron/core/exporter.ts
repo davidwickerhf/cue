@@ -976,10 +976,18 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 	const graph = path.join(os.tmpdir(), `cue-graph-${Date.now()}.txt`);
 	await fs.writeFile(graph, chains.join(";\n"));
 	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
+	// Every input gets its own decoder threads (about one per core) by default. A long,
+	// layered edit has 150–200 inputs, which runs the process out of threads (macOS allows
+	// 4,096) before the encoder opens: "Error initializing output stream" with any encoder.
+	// One decoder thread per input is plenty for stills, sequences and short clips; the
+	// filter graph and the encoder still use every core.
+	const inputCount = inputs.filter((a) => a === "-i").length;
+	const decodeThreads = inputCount > 24 ? ["-threads", "1"] : [];
+	const threadedInputs = inputs.flatMap((a) => (a === "-i" ? [...decodeThreads, a] : [a]));
 	const encode = (video: string[]) =>
 		ffmpegWithProgress(
 			[
-				...inputs,
+				...threadedInputs,
 				"-filter_complex_script",
 				graph,
 				"-map",
@@ -1013,7 +1021,8 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		await fs.rm(out, { force: true });
 		throw error;
 	} finally {
-		await fs.rm(graph, { force: true });
+		// CUE_KEEP_GRAPH keeps the filter graph, to run a failed export's command by hand.
+		if (!process.env.CUE_KEEP_GRAPH) await fs.rm(graph, { force: true });
 	}
 	return { kind: "video", outputs: [out], missing: [], durationMs: exported };
 }
