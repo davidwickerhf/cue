@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.23",
+		date: "2026-09-28",
+		summary: "Transitions no longer move the rest of the track.",
+		changes: [
+			"A crossfade or other transition now overlaps the two clips using spare footage at their edges, so the clips after it stay where they were and stay in sync with music and voice. Only when neither clip has spare footage does the track move, and Cue says so.",
+		],
+	},
+	{
 		version: "0.2.22",
 		date: "2026-09-28",
 		summary: "Pin titles and graphics onto moving surfaces.",
