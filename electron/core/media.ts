@@ -42,6 +42,17 @@ function keepFailure(args: string[], log: string) {
 	} catch {}
 }
 
+/** What went wrong in a failed ffmpeg run, in plain words, when it's one of the usual causes. */
+export function plainFfmpegCause(log: string): string | null {
+	if (/No space left on device/i.test(log))
+		return "The disk is full: free some space and try again.";
+	if (/Permission denied/i.test(log)) return "Cue isn't allowed to write or read one of the files.";
+	if (/No such file or directory/i.test(log)) return "A media file is missing or has moved.";
+	if (/Invalid data found when processing input|moov atom not found/i.test(log))
+		return "One of the media files is damaged or not finished.";
+	return null;
+}
+
 export async function ffmpeg(args: string[]): Promise<string> {
 	try {
 		const { stderr } = await run(ffmpegPath(), ["-hide_banner", "-y", ...args], {
@@ -52,6 +63,8 @@ export async function ffmpeg(args: string[]): Promise<string> {
 		const stderr = (error as { stderr?: unknown }).stderr;
 		// `-i file` with no output (report()) fails by design; only keep real encodes.
 		if (typeof stderr === "string" && args.length > 2) keepFailure(args, stderr);
+		const cause = typeof stderr === "string" ? plainFfmpegCause(stderr) : null;
+		if (cause) throw new Error(`${cause} (ffmpeg log: ${FFMPEG_FAILURE_LOG})`);
 		throw error;
 	}
 }
@@ -95,9 +108,12 @@ export function ffmpegWithProgress(
 			// Keep the whole command and log of a failed encode: the error shows only its tail,
 			// and a graph with hundreds of inputs can't be debugged from that.
 			keepFailure(args, log);
+			const cause = plainFfmpegCause(log);
 			reject(
 				new Error(
-					`ffmpeg exited with code ${code} (full log: ${FFMPEG_FAILURE_LOG}): ${log.slice(-2000)}`,
+					cause
+						? `${cause} (ffmpeg log: ${FFMPEG_FAILURE_LOG})`
+						: `ffmpeg exited with code ${code} (full log: ${FFMPEG_FAILURE_LOG}): ${log.slice(-2000)}`,
 				),
 			);
 		});
