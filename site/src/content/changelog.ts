@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.18",
+		date: "2026-09-28",
+		summary: "Seedance 2.0 video and photographic stills.",
+		changes: [
+			"Seedance 2.0 in the Video clip tool and for agents when Higgsfield is connected: lifelike people and camera motion, 1080p, up to 15 seconds.",
+			"generate_image takes a model and quality, so agents can ask for GPT Image 2.5 Sunburst at high quality when a still has to look photographed.",
+		],
+	},
+	{
 		version: "0.2.17",
 		date: "2026-09-28",
 		summary: "Agents review a whole edit in seconds.",
