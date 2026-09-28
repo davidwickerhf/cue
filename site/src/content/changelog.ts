@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.12",
+		date: "2026-09-28",
+		summary: "Help shape Cue: optional, anonymous usage sharing.",
+		changes: [
+			"Cue asks once whether to share anonymous usage (the version, your system, and which features get used). Nothing is sent unless you say yes; it never includes file or project names, content, prompts or keys. Change it any time in Settings → General → Privacy.",
+			"A privacy page on the site says exactly what the site and the app measure.",
+		],
+	},
+	{
 		version: "0.2.11",
 		date: "2026-09-28",
 		summary: "Pasting an API key just works.",
