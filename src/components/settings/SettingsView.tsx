@@ -330,7 +330,8 @@ function StatusPill({ ready, text }: { ready: boolean; text: string }) {
 			) : (
 				<Warning weight="fill" className="size-3.5" />
 			)}
-			{text}
+			{/* Here, "Settings → AI" is this page: the connections are just above. */}
+			{text.replace(/ in Settings → AI\.?$/, " above")}
 		</span>
 	);
 }
