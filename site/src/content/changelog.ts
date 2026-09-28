@@ -9,6 +9,21 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.9",
+		date: "2026-09-28",
+		summary: "An After Effects–style timeline for motion graphics, one key for all AI services, and a calmer editor.",
+		changes: [
+			"Motion page: a timeline with every layer, twirl-down properties with stopwatches and scrubbable values, keyframes shaped by their ease (Easy Ease with F9), layer bars to trim and slide, and entrances and exits you drag. It scrolls at the edges while you drag, and the preview follows live.",
+			"Connect services once: fal gives voice, sound, music, video clips and images with one key; Connect opens the key page and Cue picks the key up when you copy it. OpenAI and ElevenLabs connect the same way.",
+			"New AI tools: sound effects and music (ElevenLabs), video clips from a prompt or a still (Kling, Hailuo), and ElevenLabs voices for the voiceover.",
+			"Settings → AI shows the services and what Cue can do with them; the per-task choices are under Advanced.",
+			"Generate is a short list of tools, each opening on its own; the style library moved to the Agent panel.",
+			"Media: search and one Add menu, with filters and sorting in a single menu.",
+			"The sidebar, inspector and docked panes resize by dragging their edge (double-click resets); the sidebar can run the full height; the timeline folds to its tabs.",
+			"Check for Updates opens Cue's own dialog, with what's new, progress and restart.",
+		],
+	},
+	{
 		version: "0.2.8",
 		date: "2026-09-28",
 		summary: "A problem drawing one panel no longer blanks the whole window.",
