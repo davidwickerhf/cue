@@ -380,7 +380,11 @@ export function MotionPage() {
 							onKeySel={setKeySel}
 							presetSel={presetSel}
 							onPresetSel={setPresetSel}
-							commit={commit}
+							commit={(next) => {
+								// Anonymous usage (when shared): the motion timeline was used, once per launch.
+								window.cue.reportUsage("motion_timeline_used");
+								return commit(next);
+							}}
 							preview={setDraft}
 						/>
 					</div>

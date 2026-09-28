@@ -24,7 +24,7 @@ const page: UseCase = {
 			body: (
 				<>
 					<p>With Cue in Applications, run this once:</p>
-					<Command>{MCP_COMMAND}</Command>
+					<Command track="claude-code-mcp">{MCP_COMMAND}</Command>
 					<p>
 						The server starts Cue when needed and sends every client a written guide to editing in Cue. The command for other
 						MCP clients is shown in Cue under Agent → Connect.

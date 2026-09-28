@@ -17,6 +17,12 @@ export default defineConfig(({ mode }) => ({
 						main: {
 							entry: "electron/main.ts",
 							vite: {
+								// The PostHog project token for opt-in usage reporting (electron/core/usage.ts).
+								// Only release builds set it (.github/workflows/release.yml); otherwise empty,
+								// which turns reporting off entirely.
+								define: {
+									"process.env.CUE_POSTHOG_KEY": JSON.stringify(process.env.CUE_POSTHOG_KEY ?? ""),
+								},
 								build: {
 									outDir: "dist-electron",
 									lib: {

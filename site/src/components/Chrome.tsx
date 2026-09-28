@@ -26,8 +26,8 @@ export function Logo({ size = 28, eager = false }: { size?: number; eager?: bool
 }
 
 /** The blue download button for the visitor's system (see DownloadButton). */
-export function DownloadCta({ className = "" }: { className?: string }) {
-	return <DownloadButton className={className} />;
+export function DownloadCta({ className = "", location }: { className?: string; location?: string }) {
+	return <DownloadButton className={className} location={location} />;
 }
 
 /** Site header. On the home page the section links are in-page anchors. */
@@ -71,6 +71,7 @@ export async function Header({ home = false }: { home?: boolean }) {
 			</nav>
 			<a
 				href={REPO}
+				data-track-location="header-github"
 				className="flex items-center gap-2 rounded-xl bg-card px-3.5 py-2.5 text-[13px] font-semibold text-neutral-100 hover:bg-[#1f1f1f]"
 			>
 				<GithubLogo size={16} weight="fill" /> GitHub
@@ -83,7 +84,7 @@ export async function Header({ home = false }: { home?: boolean }) {
 export function Footer({ home = false }: { home?: boolean }) {
 	const base = home ? "" : "/";
 	return (
-		<footer className="bg-card">
+		<footer className="bg-card" data-track-location="footer">
 			<Reveal y={30} className="mx-auto flex max-w-[1080px] flex-col justify-between gap-10 px-5 py-12 lg:flex-row">
 				<div className="max-w-[340px]">
 					<Logo size={24} />
@@ -137,6 +138,9 @@ export function Footer({ home = false }: { home?: boolean }) {
 						<a href={`${REPO}/blob/main/LICENSE`} className="text-muted hover:text-white">
 							MIT license
 						</a>
+						<Link href="/privacy" className="text-muted hover:text-white">
+							Privacy
+						</Link>
 					</div>
 					<div className="flex flex-col gap-3">
 						<p className="font-medium">Author</p>

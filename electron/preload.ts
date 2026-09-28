@@ -235,6 +235,14 @@ const api = {
 	},
 	getAppSettings: () =>
 		ipcRenderer.invoke("cue:getAppSettings") as Promise<import("./core/runtime").AppSettings>,
+	/** Whether this build can share anonymous usage, and the user's choice. */
+	usageInfo: () =>
+		ipcRenderer.invoke("cue:usageInfo") as Promise<{
+			available: boolean;
+			setting: "ask" | "on" | "off";
+		}>,
+	/** Records a usage event the window notices (only those main allows; a no-op when sharing is off). */
+	reportUsage: (event: "motion_timeline_used") => ipcRenderer.send("cue:usageEvent", event),
 	setAppSettings: (patch: Partial<import("./core/runtime").AppSettings>) =>
 		ipcRenderer.invoke("cue:setAppSettings", patch),
 	onAppSettings: (listener: (settings: import("./core/runtime").AppSettings) => void) => {

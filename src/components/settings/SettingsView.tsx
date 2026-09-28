@@ -20,6 +20,7 @@ import { SHORTCUTS } from "../../lib/shortcuts";
 import { appSettings, useApp } from "../../lib/state";
 import { cn } from "../../lib/utils";
 import { AgentConnect } from "../AgentConnect";
+import { PRIVACY_URL } from "../UsagePrompt";
 import { Segmented, Toggle } from "../ui/controls";
 
 type Inventory = Awaited<ReturnType<typeof window.cue.localInventory>>;
@@ -122,12 +123,16 @@ function Group({
 	);
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
 	return (
 		<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
 			<div className="min-w-0">
 				<p className="text-[13px]">{label}</p>
-				{hint && <p className="text-[11px] text-muted">{keyLabel(hint)}</p>}
+				{hint && (
+					<p className="text-[11px] text-muted">
+						{typeof hint === "string" ? keyLabel(hint) : hint}
+					</p>
+				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-2">{children}</div>
 		</div>
@@ -229,6 +234,30 @@ function General({ settings, save }: { settings: Settings; save: (p: Partial<Set
 				</Row>
 			</Group>
 			<Updates settings={settings} save={save} />
+			<Group title="Privacy">
+				<Row
+					label="Share anonymous usage"
+					hint={
+						<>
+							Counts of which features are used, never names, paths, content, prompts or keys.{" "}
+							<a
+								href={PRIVACY_URL}
+								target="_blank"
+								rel="noreferrer"
+								className="text-accent hover:underline"
+							>
+								What is sent
+							</a>
+						</>
+					}
+				>
+					<Toggle
+						label=""
+						checked={settings.usage === "on"}
+						onChange={(on) => save({ usage: on ? "on" : "off" })}
+					/>
+				</Row>
+			</Group>
 		</>
 	);
 }

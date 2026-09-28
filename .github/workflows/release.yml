@@ -10,6 +10,8 @@
 #   APPLE_API_KEY_ID, APPLE_API_ISSUER
 #     or APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #   WIN_CERTIFICATE_P12, WIN_CERTIFICATE_PASSWORD   Windows code signing
+# Repository variable (optional): CUE_POSTHOG_KEY, the PostHog project token for opt-in
+# anonymous usage reporting. Without it the app never reports usage.
 # Without the macOS ones the Mac build is unsigned and not notarised (a warning
 # says so), and installed copies can't update themselves.
 name: Release
@@ -98,7 +100,11 @@ jobs:
       - run: npx vitest run
         # The suite has not been run on Windows yet; don't block the build on it.
         continue-on-error: ${{ matrix.platform == 'win' }}
+      # The PostHog project token (a public, write-only key) for opt-in usage reporting,
+      # bundled into the app. A repository variable, not a secret; unset → reporting is off.
       - run: npm run build
+        env:
+          CUE_POSTHOG_KEY: ${{ vars.CUE_POSTHOG_KEY }}
 
       - name: Build (macOS)
         if: matrix.platform == 'mac'

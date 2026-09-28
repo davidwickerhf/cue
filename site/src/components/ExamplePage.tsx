@@ -140,7 +140,7 @@ export function ExamplePage({ example: e }: { example: Example }) {
 						<AgentConnect />
 					</Reveal>
 					<Reveal delay={160} className="mt-5">
-						<CopyBlock text={e.prompt} label="Copy prompt" />
+						<CopyBlock text={e.prompt} label="Copy prompt" analytics={{ event: "prompt_copied", example: e.slug }} />
 					</Reveal>
 				</section>
 
@@ -170,7 +170,7 @@ export function ExamplePage({ example: e }: { example: Example }) {
 						Make your own
 					</Reveal>
 					<Reveal delay={150} className="mt-6">
-						<DownloadCta />
+						<DownloadCta location="example-bottom" />
 					</Reveal>
 				</section>
 			</main>

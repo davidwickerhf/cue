@@ -120,7 +120,7 @@ export default function Home() {
 						Code, Codex or any MCP agent edit right alongside you.
 					</Reveal>
 					<Reveal delay={600} className="mt-8">
-						<DownloadCta />
+						<DownloadCta location="home-hero" />
 					</Reveal>
 					<Reveal delay={780} y={60} scale={0.96} duration={1200} className="mt-14 overflow-hidden rounded-2xl border border-line bg-card shadow-2xl shadow-black/60">
 						<AutoVideo name="edit" label="Cutting, splitting and playing back an edit in Cue" priority />

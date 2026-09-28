@@ -79,6 +79,7 @@ import type {
 	RecentProject,
 	RecorderStatus,
 } from "./core/types";
+import { durationBucket, usage } from "./core/usage";
 
 const slugName = (s: string) =>
 	s
@@ -768,6 +769,7 @@ export class Controller extends EventEmitter {
 				return this.afterOpen();
 			case "create_project":
 				await this.store.create(parseInput("create_project", params), actor);
+				usage.track("project_created", {});
 				return this.afterOpen();
 			case "rename_project":
 				return this.store.apply(
@@ -1925,6 +1927,7 @@ export class Controller extends EventEmitter {
 				const made = await this.job(`Composing ${mood} music`, () =>
 					generateMusic({ mood, durationMs, key: input.key, bpm: input.bpm }, file),
 				);
+				usage.track("generation_used", { capability: "music", provider: "cue" });
 				const { asset, clipId, trackId } = await this.store.addMusic(file, actor, {
 					name: `Music: ${made.mood}, ${made.key}, ${made.bpm} bpm`,
 					generation: {
@@ -2021,6 +2024,7 @@ export class Controller extends EventEmitter {
 							file,
 						),
 					);
+					usage.track("generation_used", { capability: "sound", provider: "cue" });
 					const at = times[i] ?? (times.length === 1 ? times[0] : undefined);
 					const { asset, clipId, trackId } = await this.store.addSound(sound.file, actor, {
 						name: `SFX: ${input.kind}, ${input.character} #${sound.seed.toString(36).slice(-4)}`,
@@ -2159,9 +2163,23 @@ export class Controller extends EventEmitter {
 						kind,
 						kind === "stems",
 					);
-				return this.job(`Exporting ${kind}`, (progress) =>
-					this.store.export(kind, out, actor, this.hooks.renderText, range, progress),
-				);
+				const lengthMs = range ? range.endMs - range.startMs : this.store.timelineEndMs();
+				const finished = (success: boolean) =>
+					usage.track("export_finished", {
+						kind,
+						durationBucket: durationBucket(Math.max(0, lengthMs)),
+						success,
+					});
+				try {
+					const report = await this.job(`Exporting ${kind}`, (progress) =>
+						this.store.export(kind, out, actor, this.hooks.renderText, range, progress),
+					);
+					finished(true);
+					return report;
+				} catch (error) {
+					finished(false);
+					throw error;
+				}
 			}
 			case "export_frame": {
 				const { atMs, out } = parseInput("export_frame", params);

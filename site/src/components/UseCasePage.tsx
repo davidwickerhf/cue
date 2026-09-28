@@ -44,7 +44,7 @@ export function UseCasePage(page: UseCase) {
 						{page.intro}
 					</Reveal>
 					<Reveal delay={350} className="mt-8">
-						<DownloadCta />
+						<DownloadCta location="use-case-hero" />
 					</Reveal>
 					<Reveal delay={500} y={60} scale={0.96} duration={1200} className="mt-14 overflow-hidden rounded-2xl border border-line bg-card shadow-2xl shadow-black/60">
 						<AutoVideo name={page.video} label={page.videoLabel} priority />
@@ -65,7 +65,7 @@ export function UseCasePage(page: UseCase) {
 						Try Cue on your Mac
 					</Reveal>
 					<Reveal delay={150} className="mt-6">
-						<DownloadCta />
+						<DownloadCta location="use-case-bottom" />
 					</Reveal>
 					<Reveal delay={250} className="mt-12">
 						<nav aria-label="More about Cue" className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-[14px]">
@@ -90,9 +90,9 @@ export function UseCasePage(page: UseCase) {
 }
 
 /** A command shown in a selectable code box. */
-export function Command({ children }: { children: string }) {
+export function Command({ children, track = "command" }: { children: string; track?: string }) {
 	return (
-		<code className="block w-full overflow-x-auto rounded-xl border border-line bg-page px-4 py-3 font-mono text-[13px] whitespace-nowrap text-neutral-300 select-all">
+		<code data-track-copy={track} className="block w-full overflow-x-auto rounded-xl border border-line bg-page px-4 py-3 font-mono text-[13px] whitespace-nowrap text-neutral-300 select-all">
 			{children}
 		</code>
 	);

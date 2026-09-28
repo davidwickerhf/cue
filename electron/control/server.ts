@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import type { Controller } from "../controller";
+import { usage } from "../core/usage";
 import { contract, type MethodName } from "./contract";
 
 export interface ControlInfo {
@@ -94,6 +95,7 @@ export async function startControlServer(
 			};
 			if (!(method in contract)) return reply(400, { error: `Unknown method ${method}` });
 			controller.noteAgentRequest();
+			usage.countTool(method);
 			// Replies come within this time, so no client times out on a long call.
 			const budget = Math.max(1000, Math.min(waitMs ?? 45000, 50000));
 			if (method === "wait_for") {

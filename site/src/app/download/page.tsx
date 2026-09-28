@@ -46,7 +46,7 @@ function Platform({
 	id: string;
 }) {
 	return (
-		<Reveal as="section" y={28} className="rounded-2xl bg-card p-6 sm:p-7" id={id}>
+		<Reveal as="section" y={28} className="rounded-2xl bg-card p-6 sm:p-7" id={id} data-track-location={`download-page-${id}`}>
 			<header className="flex items-center gap-3">
 				{icon}
 				<div>

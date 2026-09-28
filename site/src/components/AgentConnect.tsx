@@ -31,7 +31,7 @@ export function AgentConnect({ initial = "claude" }: { initial?: string }) {
 					</button>
 				))}
 			</div>
-			<CopyBlock text={client.text} label="Copy" />
+			<CopyBlock text={client.text} label="Copy" analytics={{ event: "agent_connect_copied", client: client.id }} />
 			<p className="text-[13px] text-muted">{client.note}</p>
 		</div>
 	);

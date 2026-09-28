@@ -24,12 +24,12 @@ const BUTTONS: Record<Os, { label: string; href: string; Icon: typeof AppleLogo;
 };
 
 /** The blue download button for the visitor's system, with links to the other builds. */
-export function DownloadButton({ className = "" }: { className?: string }) {
+export function DownloadButton({ className = "", location = "download-button" }: { className?: string; location?: string }) {
 	const [os, setOs] = useState<Os>("mac");
 	useEffect(() => setOs(detectOs()), []);
 	const b = BUTTONS[os];
 	return (
-		<div className={`flex flex-col items-center gap-3 ${className}`}>
+		<div className={`flex flex-col items-center gap-3 ${className}`} data-track-location={location}>
 			<a
 				href={b.href}
 				className="flex items-center gap-2.5 rounded-xl bg-accent px-6 py-3.5 text-[17px] font-semibold text-white shadow-[0_8px_30px_-8px_rgba(10,108,255,0.7)] transition duration-300 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_14px_40px_-8px_rgba(10,108,255,0.85)] active:translate-y-0"

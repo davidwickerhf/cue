@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChangelogViewed } from "@/components/Analytics";
 import { Footer, Header } from "@/components/Chrome";
 import { Reveal } from "@/components/Reveal";
 import { CHANGELOG } from "@/content/changelog";
@@ -19,6 +20,7 @@ export default function Changelog() {
 	return (
 		<>
 			<Header />
+			<ChangelogViewed latest={CHANGELOG.find((r) => r.version !== "Unreleased")?.version ?? ""} />
 			<main className="mx-auto max-w-[760px] px-5 pt-14 pb-28">
 				<Reveal as="h1" className="text-[40px] leading-[1.05] font-bold tracking-[-0.035em] sm:text-[52px]">
 					Changelog

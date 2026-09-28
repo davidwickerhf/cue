@@ -60,6 +60,8 @@ export const appSettingsSchema = z.object({
 	autoUpdate: z.boolean().default(true),
 	/** Standing consent to download future updates and install them when Cue quits. */
 	autoInstallUpdates: z.boolean().default(false),
+	/** Anonymous usage reporting (electron/core/usage.ts): "ask" shows the one-time question. */
+	usage: z.enum(["ask", "on", "off"]).default("ask"),
 	ai: z
 		.object({
 			/** auto: OpenAI, else ElevenLabs (direct, else via fal), else the Mac's voices. */

@@ -66,6 +66,12 @@ either way.
 Missing secrets don't fail the build: the Mac build is then unsigned or not notarised and the
 workflow prints a warning. Don't publish such a Mac build as a release people update to.
 
+## Repository variable (GitHub → Settings → Secrets and variables → Actions → Variables)
+
+| Variable | Value |
+| --- | --- |
+| `CUE_POSTHOG_KEY` | The PostHog project token (`phc_…`, EU project) for opt-in anonymous usage reporting. It is a public, write-only key, so it is a variable, not a secret. The release build bundles it (`vite.config.ts`); without it the app never reports usage. Local builds leave it out unless `CUE_POSTHOG_KEY` is set in the environment. |
+
 ## Releasing from CI (normal path)
 
 1. Bump `version` in `package.json` (and `package-lock.json`: `npm version 0.2.0 --no-git-tag-version`).

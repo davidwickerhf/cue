@@ -2,9 +2,13 @@
 
 import { Check, Copy } from "@phosphor-icons/react";
 import { useState } from "react";
+import { track } from "@/lib/analytics";
+
+/** What a copy is reported as (see lib/analytics.ts). Serialisable, so server components can pass it. */
+export type CopyEvent = { event: "agent_connect_copied"; client: string } | { event: "prompt_copied"; example: string };
 
 /** A block of text (a prompt, a command) with a button that copies it. */
-export function CopyBlock({ text, label = "Copy" }: { text: string; label?: string }) {
+export function CopyBlock({ text, label = "Copy", analytics }: { text: string; label?: string; analytics?: CopyEvent }) {
 	const [copied, setCopied] = useState(false);
 	return (
 		<div className="relative rounded-2xl border border-line bg-[#0c0c0c]">
@@ -12,6 +16,9 @@ export function CopyBlock({ text, label = "Copy" }: { text: string; label?: stri
 				type="button"
 				onClick={() => {
 					void navigator.clipboard.writeText(text).then(() => {
+						const page = window.location.pathname;
+						if (analytics?.event === "agent_connect_copied") track("agent_connect_copied", { client: analytics.client, page });
+						if (analytics?.event === "prompt_copied") track("prompt_copied", { example: analytics.example, page });
 						setCopied(true);
 						setTimeout(() => setCopied(false), 1800);
 					});

@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { LinkTracking } from "@/components/Analytics";
 import { SmoothScroll } from "@/components/SmoothScroll";
 import { AUTHOR, DESCRIPTION, SITE_URL, TAGLINE } from "@/lib/site";
+import { APP_VERSION } from "@/lib/version";
 import "./globals.css";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
@@ -57,6 +59,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 					<style>{noScriptReveal}</style>
 				</noscript>
 				<SmoothScroll />
+				<LinkTracking version={APP_VERSION} />
 				{children}
 			</body>
 		</html>

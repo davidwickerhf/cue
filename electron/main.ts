@@ -85,6 +85,7 @@ import type {
 	TextClip,
 } from "./core/types";
 import type { UpdateStatus } from "./core/updates";
+import { BUILD_POSTHOG_KEY, type UsageEvent, usage, WINDOW_EVENTS, withUsage } from "./core/usage";
 import { Updater } from "./updater";
 
 app.setName("Cue");
@@ -585,6 +586,7 @@ async function saveAppSettings(patch: Partial<AppSettings>) {
 	if (appSettings.autoUpdate !== wasAutoUpdate) updater?.schedule();
 	if (appSettings.autoInstallUpdates !== wasAutoInstall)
 		updater?.setAutoInstall(appSettings.autoInstallUpdates);
+	usage.settingChanged();
 }
 
 let inventoryScan: Promise<LocalInventory> | null = null;
@@ -614,11 +616,8 @@ async function localInventory(force = false): Promise<LocalInventory> {
 }
 
 async function runtime() {
-	return buildRuntime(
-		appSettings,
-		await credentials(),
-		await localInventory(),
-		await connections(),
+	return withUsage(
+		buildRuntime(appSettings, await credentials(), await localInventory(), await connections()),
 	);
 }
 
@@ -719,6 +718,7 @@ async function sendChat(
 ) {
 	if (!appSettings.agent.enabled)
 		throw new Error("Agent access is turned off in Settings → Agent.");
+	usage.track("agent_chat_turn", { harness: input.harness });
 	chats.get(chatId)?.stop();
 	// Each turn has its own entry. Events from a turn that was replaced are dropped,
 	// and a stop that arrives while the harness is still starting is applied once it runs.
@@ -1614,6 +1614,14 @@ function registerIpc() {
 	ipcMain.handle("cue:connectCancel", () => connectWatch?.cancel());
 	ipcMain.handle("cue:connectState", () => connectState);
 	ipcMain.handle("cue:getAppSettings", () => appSettings);
+	// Whether this build can share usage at all (so the window only asks when it can).
+	ipcMain.handle("cue:usageInfo", () => ({
+		available: usage.available(),
+		setting: appSettings.usage,
+	}));
+	ipcMain.on("cue:usageEvent", (_event, name: UsageEvent) => {
+		if (WINDOW_EVENTS.includes(name)) usage.once(name as "motion_timeline_used", {});
+	});
 	ipcMain.handle("cue:setAppSettings", (_event, patch: Partial<AppSettings>) =>
 		saveAppSettings(patch),
 	);
@@ -1739,6 +1747,14 @@ else {
 				"Open source under the MIT License. cue.wicker.life · Support: ko-fi.com/davidwickerhf",
 		});
 		await loadAppSettings();
+		usage.configure({
+			key: BUILD_POSTHOG_KEY,
+			dataDir,
+			version: app.getVersion(),
+			packaged: app.isPackaged,
+			setting: () => appSettings.usage,
+		});
+		usage.launch({ os: process.platform, arch: process.arch, locale: app.getLocale() });
 		protocol.handle(MEDIA_SCHEME, serveMedia);
 		session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
 			callback(
@@ -1771,9 +1787,10 @@ else {
 		const shutdown = async () => {
 			for (const chat of chats.values()) chat.stop();
 			void control.close();
-			await Promise.race([store.flushAll(), new Promise((r) => setTimeout(r, 5000))]).catch(
-				(error) => store.log("system", `Could not save before quitting: ${error}`),
-			);
+			await Promise.race([
+				Promise.all([store.flushAll(), usage.shutdown()]),
+				new Promise((r) => setTimeout(r, 5000)),
+			]).catch((error) => store.log("system", `Could not save before quitting: ${error}`));
 		};
 		// Quitting waits for the last save, so no edit is lost.
 		let flushed = false;
