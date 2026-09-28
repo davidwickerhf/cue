@@ -43,10 +43,12 @@ import {
 	unqueue,
 } from "../../lib/chat";
 import { appSettings, useApp, useProject } from "../../lib/state";
+import { styleSelection } from "../../lib/styleLibrary";
 import { cn } from "../../lib/utils";
 import { AgentConnect } from "../AgentConnect";
 import { Section, Segmented } from "../ui/controls";
 import { Markdown } from "../ui/Markdown";
+import { RecipesSection } from "./RecipesSection";
 
 const SUGGESTIONS = [
 	"Tighten the edit: cut pauses longer than a second.",
@@ -58,7 +60,17 @@ const SUGGESTIONS = [
 
 /** The agent panel: chat with Claude Code, Codex or Gemini working inside Cue, or connect your own. */
 export function AgentPanel() {
-	const [tab, setTab] = useState<"chat" | "connect">("chat");
+	const [tab, setTab] = useState<"chat" | "styles" | "connect">("chat");
+	const focus = composer.use((s) => s.focus);
+	const style = styleSelection.use((s) => s.id);
+	const busy = (useApp((s) => s.jobs) ?? []).some((j) => j.state === "running");
+	// Writing to the agent (from a style or a clip) goes to the chat; showing a style, to Styles.
+	useEffect(() => {
+		if (focus) setTab("chat");
+	}, [focus]);
+	useEffect(() => {
+		if (style) setTab("styles");
+	}, [style]);
 	return (
 		<div className="flex h-full flex-col">
 			<div className="border-b border-separator px-4 py-2">
@@ -68,11 +80,20 @@ export function AgentPanel() {
 					onChange={setTab}
 					options={[
 						{ value: "chat", label: "Chat" },
-						{ value: "connect", label: "Connect & activity" },
+						{ value: "styles", label: "Styles" },
+						{ value: "connect", label: "Connect" },
 					]}
 				/>
 			</div>
-			{tab === "chat" ? <ChatView /> : <ConnectView />}
+			{tab === "chat" ? (
+				<ChatView />
+			) : tab === "styles" ? (
+				<div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
+					<RecipesSection busy={busy} />
+				</div>
+			) : (
+				<ConnectView />
+			)}
 		</div>
 	);
 }

@@ -3,6 +3,7 @@ import { EditorShell } from "./components/layout/EditorShell";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { recordDialog } from "./components/RecordDialog";
 import { SettingsView } from "./components/settings/SettingsView";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { Toaster } from "./components/ui/Toaster";
 import { Welcome } from "./components/Welcome";
@@ -89,6 +90,7 @@ export function App() {
 			{project ? <EditorShell /> : <Welcome />}
 			<SettingsView />
 			<NewProjectDialog />
+			<UpdateDialog />
 			<Toaster />
 		</ErrorBoundary>
 	);

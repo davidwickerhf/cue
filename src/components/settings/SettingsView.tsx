@@ -148,6 +148,24 @@ function General({ settings, save }: { settings: Settings; save: (p: Partial<Set
 						]}
 					/>
 				</Row>
+				<Row
+					label="Sidebar"
+					hint={
+						settings.sidebar === "full"
+							? "Down the whole window: the timeline starts beside it."
+							: "Beside the viewer: the timeline spans the whole window."
+					}
+				>
+					<Segmented
+						size="xs"
+						value={settings.sidebar}
+						onChange={(sidebar) => save({ sidebar })}
+						options={[
+							{ value: "viewer", label: "Beside the viewer" },
+							{ value: "full", label: "Full height" },
+						]}
+					/>
+				</Row>
 			</Group>
 			<Group title="Projects">
 				<Row label="Projects folder" hint={settings.projectsDir.replace(/^\/Users\/[^/]+/, "~")}>

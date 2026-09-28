@@ -12,6 +12,8 @@ import { chat, type LocalInventory, speakMac, transcribeLocal } from "./local-ai
 /** App-wide preferences (not per project). Stored in the app's data folder. */
 export const appSettingsSchema = z.object({
 	theme: z.enum(["dark", "light", "system"]).default("dark"),
+	/** The panels sidebar beside the viewer (the timeline spans the window), or down the full height (beside the timeline too). */
+	sidebar: z.enum(["viewer", "full"]).default("viewer"),
 	projectsDir: z.string().default(""),
 	/** Open the last project on launch instead of the projects overview. */
 	reopenLast: z.boolean().default(false),

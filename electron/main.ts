@@ -1102,9 +1102,13 @@ function sendUpdateStatus(status: UpdateStatus) {
 	if (win && !win.isDestroyed()) win.webContents.send("cue:updateStatus", status);
 }
 
-/** Help → Check for Updates… (the Cue menu on macOS). */
+/** Help → Check for Updates… (the Cue menu on macOS): Cue's own dialog, or the system's without a window. */
 async function checkForUpdatesDialog() {
 	if (!updater) return;
+	if (win && !win.isDestroyed()) {
+		win.webContents.send("cue:showUpdates");
+		return;
+	}
 	const status = await updater.check(true);
 	const show = (options: Electron.MessageBoxOptions) =>
 		win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options);

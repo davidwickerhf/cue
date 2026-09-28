@@ -20,6 +20,8 @@ export interface Layout {
 	timelineHeight: number;
 	/** Whether the timeline panel is visible; its height is kept when hidden. */
 	timelineOpen: boolean;
+	/** Folded to its tabs and toolbar, with the viewer taking the room; its height is kept. */
+	timelineCollapsed?: boolean;
 	panel: SidebarPanel;
 	sidebarOpen: boolean;
 	inspectorOpen: boolean;

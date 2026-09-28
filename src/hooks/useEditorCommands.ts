@@ -127,7 +127,7 @@ export function useEditorCommands() {
 					break;
 				case "showStyle":
 					styleSelection.set({ id: command.id });
-					editor.set({ panel: "generate" });
+					editor.set({ panel: "agent" });
 					layout.set({ sidebarOpen: true });
 					break;
 				case "showLibraryAsset":

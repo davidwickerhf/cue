@@ -21,6 +21,8 @@ export interface UpdateStatus {
 	installOnQuit?: boolean;
 	message?: string;
 	checkedAt?: string;
+	/** What's new in `version`, as plain text (from the release notes). */
+	notes?: string;
 }
 
 export type MacSignature =
@@ -84,3 +86,29 @@ export function updateSupport({ platform, isPackaged, env, signature }: SupportI
 
 /** How often to look for a new version while Cue is open. */
 export const UPDATE_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Release notes as plain text: GitHub gives them as HTML (or a list per version);
+ * list items keep their dash, everything else is text.
+ */
+export function notesText(notes: unknown): string | undefined {
+	const raw = Array.isArray(notes)
+		? notes.map((n) => (n as { note?: string | null })?.note ?? "").join("\n")
+		: typeof notes === "string"
+			? notes
+			: "";
+	const text = raw
+		.replace(/<li[^>]*>/gi, "\n- ")
+		.replace(/<\/(p|li|ul|ol|h\d)>|<br\s*\/?>/gi, "\n")
+		.replace(/<[^>]+>/g, "")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;|&apos;/g, "'")
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean)
+		.join("\n");
+	return text || undefined;
+}

@@ -257,6 +257,14 @@ const api = {
 			import("./core/updates").UpdateStatus | undefined
 		>,
 	installUpdate: () => ipcRenderer.invoke("cue:installUpdate") as Promise<void>,
+	/** Check for Updates… from the menu: show the updates dialog. */
+	onShowUpdates: (listener: () => void) => {
+		const handler = () => listener();
+		ipcRenderer.on("cue:showUpdates", handler);
+		return () => {
+			ipcRenderer.removeListener("cue:showUpdates", handler);
+		};
+	},
 	/** Windows: colours of the window buttons drawn over the header. */
 	setTitleBarColors: (color: string, symbolColor: string) =>
 		ipcRenderer.send("cue:titleBarColors", color, symbolColor),

@@ -1,10 +1,10 @@
-import { GitBranch, Plus, X } from "@phosphor-icons/react";
+import { CaretDown, CaretUp, GitBranch, Plus, X } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import type { ProjectSnapshot } from "../../../electron/core/types";
 import { run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { cn, nameFieldKeys } from "../../lib/utils";
-import { sequenceCompare } from "../../lib/workspace";
+import { layout, sequenceCompare } from "../../lib/workspace";
 
 /** "Main · alt 2" is an alternative of "Main". */
 const isBranch = (name: string) => / · alt \d+$/.test(name);
@@ -58,6 +58,7 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [compare, flip]);
 	const nameOf = (id: string) => all.find((q) => q.id === id)?.name ?? id;
+	const collapsed = layout.use((l) => !!l.timelineCollapsed);
 	// The open sequence can go too: its neighbour opens first. Undo brings it back.
 	const remove = async (id: string) => {
 		if (all.length < 2) return;
@@ -187,6 +188,19 @@ export function SequenceTabs({ project }: { project: ProjectSnapshot }) {
 					</button>
 				</div>
 			)}
+			{/* Folds the timeline to this row (its tools go too); the viewer takes the room. */}
+			<button
+				type="button"
+				onClick={() => layout.set({ timelineCollapsed: !collapsed })}
+				title={collapsed ? "Expand the timeline" : "Collapse the timeline"}
+				aria-label={collapsed ? "Expand the timeline" : "Collapse the timeline"}
+				className={cn(
+					"mb-0.5 flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-default hover:text-foreground",
+					!compare && "ml-auto",
+				)}
+			>
+				{collapsed ? <CaretUp className="size-3.5" /> : <CaretDown className="size-3.5" />}
+			</button>
 			{menu && (
 				<div
 					className="fixed z-[120] min-w-[160px] rounded-lg border border-border bg-overlay p-1 text-[12px] shadow-xl shadow-black/40"

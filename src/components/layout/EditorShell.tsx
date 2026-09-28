@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useEditorCommands } from "../../hooks/useEditorCommands";
 import { useShortcuts } from "../../hooks/useShortcuts";
 import { hasViewer, pageState } from "../../lib/pages";
-import { editor } from "../../lib/state";
+import { appSettings, editor } from "../../lib/state";
 import { clampLayout, layout } from "../../lib/workspace";
 import { ExportDialog } from "../ExportDialog";
 import { MotionPage } from "../pages/MotionPage";
@@ -33,6 +33,89 @@ export function EditorShell() {
 	// and playback keep their place; those pages show their own screen instead.
 	const viewer = hasViewer(page);
 
+	const fullSidebar = appSettings.use((s) => s.settings?.sidebar === "full");
+	const collapsed = layout.use((s) => !!s.timelineCollapsed);
+
+	const sidebar = (
+		<>
+			<ErrorBoundary name="sidebar">
+				<EditorSidebar />
+			</ErrorBoundary>
+			{sidebarOpen && <Splitter edge="sidebarWidth" />}
+		</>
+	);
+	const viewerRow = (
+		<>
+			<ErrorBoundary name="viewer">
+				<PreviewPanel />
+			</ErrorBoundary>
+			{dock !== "none" && <Splitter edge="dockWidth" invert />}
+			<ErrorBoundary name="panel">
+				<Dock />
+			</ErrorBoundary>
+			{inspectorOpen && <Splitter edge="inspectorWidth" invert />}
+			{inspectorOpen && (
+				<ErrorBoundary name="inspector">
+					<Inspector />
+				</ErrorBoundary>
+			)}
+		</>
+	);
+	const timeline = timelineOpen && (
+		<>
+			{collapsed ? (
+				<hr className="m-0 h-px shrink-0 border-0 bg-separator" />
+			) : (
+				<hr
+					aria-orientation="horizontal"
+					aria-label="Timeline height"
+					aria-valuenow={timelineHeight}
+					tabIndex={0}
+					// Arrow keys resize, like dragging.
+					onKeyDown={(e) => {
+						const step = e.shiftKey ? 64 : 16;
+						if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+						e.preventDefault();
+						e.stopPropagation();
+						layout.set(
+							clampLayout({
+								timelineHeight: timelineHeight + (e.key === "ArrowUp" ? step : -step),
+							}),
+						);
+					}}
+					className="relative m-0 h-px shrink-0 cursor-row-resize border-0 bg-separator after:absolute after:inset-x-0 after:-top-1.5 after:-bottom-1.5 after:content-[''] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+					onPointerDown={(e) => {
+						dragStart.current = { y: e.clientY, h: timelineHeight };
+						(e.target as HTMLElement).setPointerCapture(e.pointerId);
+					}}
+					onPointerMove={(e) => {
+						if (!dragStart.current) return;
+						layout.set(
+							clampLayout({
+								timelineHeight: dragStart.current.h - (e.clientY - dragStart.current.y),
+							}),
+						);
+					}}
+					onPointerUp={() => {
+						dragStart.current = null;
+					}}
+				/>
+			)}
+			<div
+				style={
+					collapsed
+						? undefined
+						: { height: `min(${timelineHeight}px, max(120px, calc(100dvh - 260px)))` }
+				}
+				className="shrink-0"
+			>
+				<ErrorBoundary name="timeline">
+					<Timeline />
+				</ErrorBoundary>
+			</div>
+		</>
+	);
+
 	return (
 		<div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
 			<EditorHeader />
@@ -48,70 +131,23 @@ export function EditorShell() {
 				</ErrorBoundary>
 			)}
 			<div className={viewer ? "contents" : "hidden"}>
-				<div className="flex min-h-0 flex-1">
-					<ErrorBoundary name="sidebar">
-						<EditorSidebar />
-					</ErrorBoundary>
-					{sidebarOpen && <Splitter edge="sidebarWidth" />}
-					<ErrorBoundary name="viewer">
-						<PreviewPanel />
-					</ErrorBoundary>
-					{dock !== "none" && <Splitter edge="dockWidth" invert />}
-					<ErrorBoundary name="panel">
-						<Dock />
-					</ErrorBoundary>
-					{inspectorOpen && <Splitter edge="inspectorWidth" invert />}
-					{inspectorOpen && (
-						<ErrorBoundary name="inspector">
-							<Inspector />
-						</ErrorBoundary>
-					)}
-				</div>
-				{timelineOpen && (
-					<hr
-						aria-orientation="horizontal"
-						aria-label="Timeline height"
-						aria-valuenow={timelineHeight}
-						tabIndex={0}
-						// Arrow keys resize, like dragging.
-						onKeyDown={(e) => {
-							const step = e.shiftKey ? 64 : 16;
-							if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-							e.preventDefault();
-							e.stopPropagation();
-							layout.set(
-								clampLayout({
-									timelineHeight: timelineHeight + (e.key === "ArrowUp" ? step : -step),
-								}),
-							);
-						}}
-						className="relative m-0 h-px shrink-0 cursor-row-resize border-0 bg-separator after:absolute after:inset-x-0 after:-top-1.5 after:-bottom-1.5 after:content-[''] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-						onPointerDown={(e) => {
-							dragStart.current = { y: e.clientY, h: timelineHeight };
-							(e.target as HTMLElement).setPointerCapture(e.pointerId);
-						}}
-						onPointerMove={(e) => {
-							if (!dragStart.current) return;
-							layout.set(
-								clampLayout({
-									timelineHeight: dragStart.current.h - (e.clientY - dragStart.current.y),
-								}),
-							);
-						}}
-						onPointerUp={() => {
-							dragStart.current = null;
-						}}
-					/>
-				)}
-				{timelineOpen && (
-					<div
-						style={{ height: `min(${timelineHeight}px, max(120px, calc(100dvh - 260px)))` }}
-						className="shrink-0"
-					>
-						<ErrorBoundary name="timeline">
-							<Timeline />
-						</ErrorBoundary>
+				{fullSidebar ? (
+					// The sidebar runs the whole height; the viewer row and the timeline share the rest.
+					<div className="flex min-h-0 flex-1">
+						{sidebar}
+						<div className="flex min-h-0 min-w-0 flex-1 flex-col">
+							<div className="flex min-h-0 flex-1">{viewerRow}</div>
+							{timeline}
+						</div>
 					</div>
+				) : (
+					<>
+						<div className="flex min-h-0 flex-1">
+							{sidebar}
+							{viewerRow}
+						</div>
+						{timeline}
+					</>
 				)}
 			</div>
 			<PageBar />

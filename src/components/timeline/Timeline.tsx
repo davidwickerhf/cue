@@ -805,6 +805,7 @@ export function Timeline() {
 		} else void run("import_media", { files, trackId, startMs: at });
 	};
 
+	const collapsed = layout.use((l) => !!l.timelineCollapsed);
 	const snapLine =
 		drag && (drag.kind === "move" || drag.kind === "trim" || drag.kind === "roll")
 			? drag.snapTo
@@ -814,15 +815,20 @@ export function Timeline() {
 		<section className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
 			<SequenceTabs project={project} />
 			{proposal && <ProposalBar proposal={proposal} />}
-			<Toolbar
-				project={project}
-				viewWidth={viewWidth}
-				scroller={scroller}
-				selectedLine={selectedLine ?? null}
-			/>
+			{!collapsed && (
+				<Toolbar
+					project={project}
+					viewWidth={viewWidth}
+					scroller={scroller}
+					selectedLine={selectedLine ?? null}
+				/>
+			)}
 			<div
 				ref={scroller}
-				className="custom-scrollbar relative min-h-0 flex-1 overflow-auto"
+				className={cn(
+					"custom-scrollbar relative min-h-0 flex-1 overflow-auto",
+					collapsed && "hidden",
+				)}
 				onPointerMove={onMove}
 				onPointerUp={onUp}
 				onPointerCancel={onUp}
@@ -1188,9 +1194,6 @@ function Toolbar({
 				>
 					Fit
 				</button>
-				<IconButton label="Close timeline" onPress={() => layout.set({ timelineOpen: false })}>
-					<X className="size-4" />
-				</IconButton>
 			</div>
 		</div>
 	);

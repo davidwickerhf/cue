@@ -1,6 +1,6 @@
 import { ArrowCircleUp } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { openSettings } from "../lib/state";
+import { openUpdates } from "./UpdateDialog";
 
 type UpdateStatus = Awaited<ReturnType<typeof window.cue.updateStatus>>;
 
@@ -20,7 +20,7 @@ export function UpdateBadge() {
 			type="button"
 			disabled={installing}
 			onClick={() => {
-				if (!ready) return openSettings("general");
+				if (!ready) return openUpdates();
 				setInstalling(true);
 				void window.cue.installUpdate().finally(() => setInstalling(false));
 			}}
@@ -29,8 +29,8 @@ export function UpdateBadge() {
 				ready
 					? `Cue ${status.version} has downloaded. Your project is saved before Cue restarts.`
 					: status.state === "downloading"
-						? `Downloading Cue ${status.version}. Open Updates for progress.`
-						: `Cue ${status.version} is available. Open Updates to choose whether to download it.`
+						? `Downloading Cue ${status.version}. Click for progress.`
+						: `Cue ${status.version} is available. Click to see what's new and download it.`
 			}
 		>
 			<ArrowCircleUp weight="fill" className="size-3.5" />

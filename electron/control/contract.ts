@@ -1375,7 +1375,7 @@ export const contract = {
 	},
 	update_ai: {
 		description:
-			"Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable.",
+			"Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel. ttsModel: keep gpt-4o-mini-tts (it follows OpenAI's newest speech model; a dated snapshot pins an old one), or tts-1-hd. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable.",
 		input: { ai: aiSchema.partial() },
 	},
 	add_marker: {

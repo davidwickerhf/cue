@@ -86,3 +86,17 @@ describe("update consent", () => {
 		expect(updater.status.installOnQuit).toBe(true);
 	});
 });
+
+describe("release notes in the update dialog", () => {
+	it("turns GitHub's HTML notes into text with the list kept", async () => {
+		const { notesText } = await import("../electron/core/updates");
+		expect(
+			notesText(
+				"<p>Show the agent what you mean.</p>\n<ul>\n<li>Paste &amp; drop screenshots</li>\n<li>Pinned clips</li>\n</ul>",
+			),
+		).toBe("Show the agent what you mean.\n- Paste & drop screenshots\n- Pinned clips");
+		expect(notesText([{ version: "0.2.8", note: "<p>Fixes</p>" }])).toBe("Fixes");
+		expect(notesText(null)).toBeUndefined();
+		expect(notesText("")).toBeUndefined();
+	});
+});

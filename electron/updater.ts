@@ -6,6 +6,7 @@ import { app } from "electron";
 import type { AppUpdater } from "electron-updater";
 import {
 	type MacSignature,
+	notesText,
 	parseCodesign,
 	type Support,
 	UPDATE_INTERVAL_MS,
@@ -181,6 +182,7 @@ export class Updater {
 				percent: installOnQuit ? 0 : undefined,
 				installOnQuit,
 				checkedAt: new Date().toISOString(),
+				notes: notesText(info.releaseNotes),
 			});
 		});
 		autoUpdater.on("download-progress", (progress) =>
@@ -190,7 +192,12 @@ export class Updater {
 			this.log(
 				`Downloaded ${info.version}; ${this.status.installOnQuit ? "installs on quit" : "awaiting user restart"}.`,
 			);
-			this.set({ state: "ready", version: info.version, installOnQuit: this.status.installOnQuit });
+			this.set({
+				state: "ready",
+				version: info.version,
+				installOnQuit: this.status.installOnQuit,
+				notes: notesText(info.releaseNotes) ?? this.status.notes,
+			});
 		});
 		autoUpdater.on("error", (error) => {
 			if (this.status.state === "ready") return;
