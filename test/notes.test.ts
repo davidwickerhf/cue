@@ -254,7 +254,7 @@ describe("recipes", () => {
 			focusWindow: () => {},
 			renderText: async () => ({}),
 			captureFrame: async () => "",
-			runtime: async () => ({ status: () => [] }) as unknown as AiRuntime,
+			runtime: async () => ({ status: () => [], connections: () => [] }) as unknown as AiRuntime,
 			recipesFile: path.join(dir, "recipes.json"),
 		});
 		controller.updateRecorder({ currentMs: 2500 });
