@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.21",
+		date: "2026-09-28",
+		summary: "Clearer failures, lighter contact sheets.",
+		changes: [
+			"When an export or any encode fails because the disk is full or a file is missing or damaged, Cue says so in one sentence instead of showing ffmpeg's log.",
+			"Contact sheets and motion-track reviews are sent to agents as JPEG, so big sheets (up to 60 frames) arrive instead of breaking the connection.",
+		],
+	},
+	{
 		version: "0.2.20",
 		date: "2026-09-28",
 		summary: "Music composed to an edit's structure works again.",
