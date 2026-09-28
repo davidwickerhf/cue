@@ -33,7 +33,6 @@ import {
 	recordCursor,
 	studioDir,
 } from "./core/cursor";
-import { ELEVEN_MUSIC_MODEL, ELEVEN_SOUND_MODEL } from "./core/elevenlabs";
 import type { Rasteriser } from "./core/exporter";
 import { downloadFound, type FoundMedia, findMedia } from "./core/findMedia";
 import { scanProjects, summarise } from "./core/library";
@@ -206,6 +205,7 @@ export class Controller extends EventEmitter {
 	agent: AgentStatus = { connected: false, lastSeenAt: null, requests: 0, controlPort: null };
 	aiConfigured = false;
 	aiStatus: import("./core/runtime").ProviderStatus[] = [];
+	aiConnections: import("./core/runtime").ConnectionStatus[] = [];
 	private recent: RecentProject[] = [];
 	private jobs: JobStatus[] = [];
 	private pending = new Map<string, PendingRecording>();
@@ -271,6 +271,7 @@ export class Controller extends EventEmitter {
 				configured: this.aiConfigured,
 				provider: this.aiConfigured ? "openai" : null,
 				status: this.aiStatus,
+				connections: this.aiConnections,
 			},
 		};
 	}
@@ -282,6 +283,7 @@ export class Controller extends EventEmitter {
 	async refreshAi(): Promise<void> {
 		const runtime = await this.hooks.runtime();
 		this.aiStatus = runtime.status();
+		this.aiConnections = runtime.connections();
 		this.aiConfigured = this.aiStatus.some((s) => s.ready);
 		this.changed();
 	}
@@ -2068,8 +2070,8 @@ export class Controller extends EventEmitter {
 					const { asset, clipId, trackId } = await this.store.addSound(file, actor, {
 						name: `SFX: ${name}${count > 1 ? ` #${i + 1}` : ""}`,
 						generation: {
-							provider: "elevenlabs",
-							model: ELEVEN_SOUND_MODEL,
+							provider: runtime.soundProvider().provider,
+							model: runtime.soundProvider().soundModel,
 							prompt: input.prompt,
 						},
 						place:
@@ -2087,18 +2089,23 @@ export class Controller extends EventEmitter {
 			case "list_voices": {
 				const { search } = parseInput("list_voices", params);
 				const runtime = await this.hooks.runtime();
-				const voices = await runtime.voices(search);
+				const { via, voices } = await runtime.voices(search);
 				const ai = this.store.isOpen ? this.store.current.ai : undefined;
+				const chosen = via === "fal" ? ai?.falVoice : ai?.elevenVoice;
 				return {
+					via,
 					voices: voices.map((v) => ({
 						id: v.id,
 						name: v.name,
 						category: v.category,
 						labels: v.labels,
 						previewUrl: v.previewUrl,
-						...(ai?.elevenVoice === v.id ? { chosen: true } : {}),
+						...(chosen === v.id ? { chosen: true } : {}),
 					})),
-					note: "Choose one with update_ai {ai: {elevenVoice: id, elevenVoiceName: name}}.",
+					note:
+						via === "fal"
+							? "ElevenLabs' default voices through fal. Choose one with update_ai {ai: {falVoice: name}}. The user's own and cloned voices need a direct ElevenLabs connection."
+							: "Choose one with update_ai {ai: {elevenVoice: id, elevenVoiceName: name}}.",
 				};
 			}
 			case "generate_clip":
@@ -2367,7 +2374,7 @@ export class Controller extends EventEmitter {
 				"ElevenLabs music is 3 seconds to 10 minutes long: set durationMs in that range.",
 			);
 		const runtime = await this.connected("sound");
-		const file = await this.job("Composing music with ElevenLabs", async () =>
+		const file = await this.job("Composing music", async () =>
 			this.saveGeneratedAudio(
 				await runtime.music(prompt, { lengthMs: durationMs, instrumental: input.instrumental }),
 				"generated",
@@ -2377,7 +2384,11 @@ export class Controller extends EventEmitter {
 		);
 		const { asset, clipId, trackId } = await this.store.addMusic(file, actor, {
 			name: `Music: ${prompt.replace(/\s+/g, " ").slice(0, 60)}`,
-			generation: { provider: "elevenlabs", model: ELEVEN_MUSIC_MODEL, prompt },
+			generation: {
+				provider: runtime.soundProvider().provider,
+				model: runtime.soundProvider().musicModel,
+				prompt,
+			},
 			place: input.place
 				? { trackId: input.trackId, startMs, durationMs, fadeInMs: 1000, fadeOutMs: 2500 }
 				: undefined,
@@ -2390,7 +2401,7 @@ export class Controller extends EventEmitter {
 		};
 	}
 
-	/** generate_clip: a Higgsfield clip, from a prompt and optionally a start picture. */
+	/** generate_clip: a clip from fal (or Higgsfield), from a prompt and optionally a start picture. */
 	private async generateClip(input: MethodInput<"generate_clip">, actor: Actor) {
 		const runtime = await this.connected("video");
 		const starts = [input.imageAssetId, input.imagePath, input.frameAtMs].filter(
@@ -2420,7 +2431,7 @@ export class Controller extends EventEmitter {
 			"generated",
 			`clip-${slugName(input.prompt).slice(0, 40) || "video"}-${Date.now().toString(36)}.mp4`,
 		);
-		const made = await this.job("Generating a video clip with Higgsfield", (progress) =>
+		const made = await this.job("Generating a video clip", (progress) =>
 			runtime.clip(
 				{
 					prompt: input.prompt,
@@ -2445,14 +2456,16 @@ export class Controller extends EventEmitter {
 			input.atMs !== undefined && trackId ? { trackId, startMs: input.atMs } : undefined,
 		);
 		if (!imported) throw new Error("Could not import the clip.");
-		const line = `Video generated with Higgsfield (${made.label}).`;
+		const service = made.model.startsWith("/") ? "higgsfield" : "fal";
+		const via = service === "fal" ? "fal" : "Higgsfield";
+		const line = `Video generated with ${made.label} via ${via}.`;
 		const patch = {
 			name: `AI clip: ${input.prompt.replace(/\s+/g, " ").slice(0, 60)}`,
 			origin: "generated" as const,
-			generation: { provider: "higgsfield", model: made.model, prompt: input.prompt },
+			generation: { provider: service, model: made.model, prompt: input.prompt },
 			credit: {
 				title: input.prompt.slice(0, 120),
-				creator: `Higgsfield (${made.label})`,
+				creator: `${made.label} via ${via}`,
 				licence: "Generated",
 				sourceUrl: made.url,
 				line,

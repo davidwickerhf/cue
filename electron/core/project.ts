@@ -5,6 +5,7 @@ import {
 	ELEVEN_MODEL_ID,
 	ELEVEN_VOICE_ID,
 } from "./elevenlabs";
+import { DEFAULT_FAL_VOICE, FAL_VOICES } from "./falModels";
 import { TRANSITION_KINDS } from "./transitions";
 import type {
 	AiSettings,
@@ -69,6 +70,7 @@ export const DEFAULT_AI: AiSettings = {
 	elevenVoice: DEFAULT_ELEVEN_VOICE,
 	elevenVoiceName: "George",
 	elevenModel: DEFAULT_ELEVEN_MODEL,
+	falVoice: DEFAULT_FAL_VOICE,
 };
 
 export const NO_CROP = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -287,6 +289,7 @@ export const aiSchema = z.object({
 	elevenVoice: z.string().regex(ELEVEN_VOICE_ID, "Not an ElevenLabs voice id"),
 	elevenVoiceName: z.string().max(120),
 	elevenModel: z.string().regex(ELEVEN_MODEL_ID, "Not an ElevenLabs speech model"),
+	falVoice: z.enum(FAL_VOICES),
 });
 
 export const mediaInfoSchema = z.object({

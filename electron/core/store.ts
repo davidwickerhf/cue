@@ -3715,7 +3715,8 @@ export class ProjectStore extends EventEmitter {
 		const size = ({ landscape: "1536x1024", portrait: "1024x1536", square: "1024x1024" } as const)[
 			options.orientation ?? "landscape"
 		];
-		const png = await runtime.image(prompt, { model: this.current.ai.imageModel, size });
+		const made = await runtime.image(prompt, { model: this.current.ai.imageModel, size });
+		const png = made.png;
 		const folder = path.join(this.projectDir, "generated");
 		await fs.mkdir(folder, { recursive: true });
 		const file = path.join(folder, `${slug(prompt).slice(0, 40)}-${Date.now().toString(36)}.png`);
@@ -3732,7 +3733,7 @@ export class ProjectStore extends EventEmitter {
 			hasAudio: false,
 			origin: "generated",
 			createdAt: new Date().toISOString(),
-			generation: { provider: "openai", model: this.current.ai.imageModel, prompt },
+			generation: { provider: made.provider, model: made.model, prompt },
 			actor,
 		};
 		this.apply({ type: "addAsset", asset, placeOn: options.place }, actor);

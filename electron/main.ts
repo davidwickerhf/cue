@@ -6,6 +6,7 @@ import { Readable } from "node:stream";
 import {
 	app,
 	BrowserWindow,
+	clipboard,
 	desktopCapturer,
 	dialog,
 	ipcMain,
@@ -31,10 +32,20 @@ import { startControlServer } from "./control/server";
 import { Controller } from "./controller";
 import type { AiCredentials } from "./core/ai";
 import { type CaptureSources, WALLPAPERS } from "./core/capture";
+import {
+	type ClipboardWatch,
+	type ConnectService,
+	KEY_PAGES,
+	matchKey,
+	redactKeys,
+	testOpenAI,
+	watchClipboard,
+} from "./core/connect";
 import { cursorBinary, studioDir } from "./core/cursor";
 import { diffSnapshot } from "./core/delta";
 import { testElevenLabs } from "./core/elevenlabs";
 import type { TextRender } from "./core/exporter";
+import { testFal } from "./core/fal";
 import { testHiggsfield } from "./core/higgsfield";
 import {
 	detectLocal,
@@ -55,10 +66,12 @@ import {
 } from "./core/runtime";
 import { captureBinary } from "./core/screenrec";
 import {
+	type HiggsfieldKey,
 	parseSecrets,
 	type SecretProvider,
 	type Secrets,
 	serializeSecrets,
+	withEnvironment,
 	withSecret,
 } from "./core/secrets";
 import { ProjectStore } from "./core/store";
@@ -385,15 +398,19 @@ async function readSecrets(): Promise<Secrets> {
 	}
 }
 
+/** Stored keys, with keys from the environment Cue was launched in for services that have none stored. */
+async function allKeys() {
+	return withEnvironment(await readSecrets(), process.env);
+}
+
 async function credentials(): Promise<AiCredentials | null> {
-	const { openai } = await readSecrets();
-	if (openai) return { apiKey: openai };
-	return process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : null;
+	const { openai } = (await allKeys()).keys;
+	return openai ? { apiKey: openai } : null;
 }
 
 async function connections(): Promise<Connections> {
-	const { elevenlabs, higgsfield } = await readSecrets();
-	return { elevenlabs, higgsfield };
+	const { keys, sources } = await allKeys();
+	return { fal: keys.fal, elevenlabs: keys.elevenlabs, higgsfield: keys.higgsfield, sources };
 }
 
 /** Stores (or with null removes) one provider's key, keeping the others. */
@@ -416,24 +433,110 @@ async function saveApiKey(key: string | null): Promise<void> {
 	await saveSecret("openai", key?.trim() || null);
 }
 
-/** Checks a connected provider's stored key with a cheap call; the reply never holds the key. */
-async function testConnection(provider: "elevenlabs" | "higgsfield"): Promise<{
-	ok: boolean;
-	message: string;
-}> {
-	const keys = await connections();
+type Service = "openai" | "fal" | "elevenlabs" | "higgsfield";
+const SERVICE_NAMES: Record<Service, string> = {
+	openai: "OpenAI",
+	fal: "fal",
+	elevenlabs: "ElevenLabs",
+	higgsfield: "Higgsfield",
+};
+
+/** A cheap authenticated call for each service; it throws with the service's message when a key fails. */
+function checkKey(service: Service, key: string | HiggsfieldKey): Promise<void> {
+	if (service === "higgsfield") return testHiggsfield(key as HiggsfieldKey);
+	const text = key as string;
+	return service === "fal"
+		? testFal(text)
+		: service === "openai"
+			? testOpenAI(text)
+			: testElevenLabs(text);
+}
+
+/** Checks a connected service's key (stored or from the environment); the reply never holds the key. */
+async function testConnection(service: Service): Promise<{ ok: boolean; message: string }> {
+	const { keys } = await allKeys();
+	const key = keys[service];
+	if (!key) return { ok: false, message: `${SERVICE_NAMES[service]} is not connected.` };
 	try {
-		if (provider === "elevenlabs") {
-			if (!keys.elevenlabs) return { ok: false, message: "No ElevenLabs key saved." };
-			await testElevenLabs(keys.elevenlabs);
-			return { ok: true, message: "ElevenLabs accepted the key." };
-		}
-		if (!keys.higgsfield) return { ok: false, message: "No Higgsfield key saved." };
-		await testHiggsfield(keys.higgsfield);
-		return { ok: true, message: "Higgsfield accepted the key." };
+		await checkKey(service, key);
+		return { ok: true, message: `${SERVICE_NAMES[service]} accepted the key.` };
 	} catch (error) {
-		return { ok: false, message: (error as Error).message };
+		return { ok: false, message: redactKeys((error as Error).message) };
 	}
+}
+
+/** A key typed or pasted by hand: checked first, then stored. */
+async function connectWithKey(
+	service: Service,
+	value: string | HiggsfieldKey,
+): Promise<{ ok: boolean; message: string }> {
+	let key: string | HiggsfieldKey;
+	if (service === "higgsfield") {
+		if (typeof value !== "object" || !value.id?.trim() || !value.secret?.trim())
+			return { ok: false, message: "Enter the key id and the secret." };
+		key = { id: value.id.trim(), secret: value.secret.trim() };
+	} else {
+		if (typeof value !== "string" || !value.trim())
+			return { ok: false, message: "That doesn't look like a key." };
+		key = matchKey(service, value) ?? value.trim();
+	}
+	try {
+		await checkKey(service, key);
+	} catch (error) {
+		return {
+			ok: false,
+			message: `${SERVICE_NAMES[service]} refused it: ${redactKeys((error as Error).message)}`,
+		};
+	}
+	await saveSecret(service, key as never);
+	await controller.refreshAi();
+	return { ok: true, message: `${SERVICE_NAMES[service]} connected.` };
+}
+
+/** The Connect flow in progress (one at a time): the key page is open and the clipboard watched. */
+type ConnectState = {
+	service: ConnectService | null;
+	state: "idle" | "pending" | "connected" | "timeout" | "cancelled";
+	message?: string;
+};
+let connectState: ConnectState = { service: null, state: "idle" };
+let connectWatch: ClipboardWatch | null = null;
+
+function setConnectState(next: ConnectState) {
+	connectState = next;
+	win?.webContents.send("cue:connectStatus", next);
+}
+
+function startConnect(service: ConnectService) {
+	connectWatch?.cancel();
+	void shell.openExternal(KEY_PAGES[service]);
+	const watch = watchClipboard({
+		service,
+		read: () => clipboard.readText(),
+		validate: (key) => checkKey(service, key),
+		onRejected: (message) =>
+			setConnectState({
+				service,
+				state: "pending",
+				message: `${SERVICE_NAMES[service]} refused that key: ${message}`,
+			}),
+	});
+	connectWatch = watch;
+	setConnectState({ service, state: "pending" });
+	void watch.result.then(async (outcome) => {
+		if (connectWatch === watch) connectWatch = null;
+		if (outcome.state === "connected") {
+			try {
+				await saveSecret(service, outcome.key);
+				await controller.refreshAi();
+			} catch (error) {
+				return setConnectState({ service, state: "cancelled", message: (error as Error).message });
+			}
+		}
+		// A newer flow owns the state now.
+		if (connectState.service === service && connectState.state === "pending")
+			setConnectState({ service, state: outcome.state });
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -1483,29 +1586,25 @@ function registerIpc() {
 		await localInventory(true);
 		await controller.refreshAi();
 	});
+	ipcMain.handle("cue:disconnect", async (_event, service: Service) => {
+		if (!(service in SERVICE_NAMES)) throw new Error(`Unknown service ${service}`);
+		await saveSecret(service, null);
+		await controller.refreshAi();
+	});
 	ipcMain.handle(
-		"cue:setConnection",
-		async (
-			_event,
-			provider: "elevenlabs" | "higgsfield",
-			value: string | { id: string; secret: string } | null,
-		) => {
-			if (provider === "elevenlabs")
-				await saveSecret("elevenlabs", typeof value === "string" ? value.trim() || null : null);
-			else if (provider === "higgsfield")
-				await saveSecret(
-					"higgsfield",
-					value && typeof value === "object" && value.id?.trim() && value.secret?.trim()
-						? { id: value.id.trim(), secret: value.secret.trim() }
-						: null,
-				);
-			else throw new Error(`Unknown provider ${provider}`);
-			await controller.refreshAi();
+		"cue:connectWithKey",
+		(_event, service: Service, value: string | { id: string; secret: string }) => {
+			if (!(service in SERVICE_NAMES)) throw new Error(`Unknown service ${service}`);
+			return connectWithKey(service, value);
 		},
 	);
-	ipcMain.handle("cue:testConnection", (_event, provider: "elevenlabs" | "higgsfield") =>
-		testConnection(provider),
-	);
+	ipcMain.handle("cue:testConnection", (_event, service: Service) => testConnection(service));
+	ipcMain.handle("cue:connectStart", (_event, service: ConnectService) => {
+		if (!(service in KEY_PAGES)) throw new Error(`Unknown service ${service}`);
+		startConnect(service);
+	});
+	ipcMain.handle("cue:connectCancel", () => connectWatch?.cancel());
+	ipcMain.handle("cue:connectState", () => connectState);
 	ipcMain.handle("cue:getAppSettings", () => appSettings);
 	ipcMain.handle("cue:setAppSettings", (_event, patch: Partial<AppSettings>) =>
 		saveAppSettings(patch),

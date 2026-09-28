@@ -76,8 +76,6 @@ interface Tool {
 	icon: ReactNode;
 	/** The model it needs (shown as "Set up" when it isn't ready). */
 	needs?: Capability;
-	/** The optional service behind it, which the user connects with their own key. */
-	service?: "ElevenLabs" | "Higgsfield";
 	/** Why it can't be used in this project yet, if it can't. */
 	unavailable?: (project: ProjectSnapshot) => string | null;
 }
@@ -116,7 +114,6 @@ const TOOLS: Tool[] = [
 		blurb: "A realistic sound from a description, at the playhead.",
 		icon: <Waveform className={icon} />,
 		needs: "sound",
-		service: "ElevenLabs",
 	},
 	{
 		id: "score",
@@ -125,7 +122,6 @@ const TOOLS: Tool[] = [
 		blurb: "A music bed from a description, on the music track.",
 		icon: <MusicNote className={icon} />,
 		needs: "sound",
-		service: "ElevenLabs",
 	},
 	{
 		id: "clip",
@@ -134,7 +130,6 @@ const TOOLS: Tool[] = [
 		blurb: "A short shot from a prompt or a still, at the playhead.",
 		icon: <VideoCamera className={icon} />,
 		needs: "video",
-		service: "Higgsfield",
 	},
 	{
 		id: "script",
@@ -228,6 +223,7 @@ export function GeneratePanel() {
 					{TOOLS.filter((t) => t.group === group).map((t) => {
 						const why = t.unavailable?.(project) ?? null;
 						const setUp = !ready(t.needs);
+						const need = status.find((x) => x.capability === t.needs);
 						return (
 							<button
 								key={t.id}
@@ -247,8 +243,8 @@ export function GeneratePanel() {
 									<span className="text-[12px] font-medium">{t.label}</span>
 									<span className="truncate text-[11px] text-muted">
 										{setUp
-											? t.service
-												? `Connect ${t.service} in Settings → AI.`
+											? need?.connect
+												? `${need.problem}.`
 												: "Set up its model in Settings → AI."
 											: (why ?? t.blurb)}
 									</span>
@@ -313,12 +309,19 @@ function VoiceTool({ project }: { project: ProjectSnapshot }) {
 	const settings = appSettings.use((s) => s.settings);
 	const ai = project.data.ai;
 	const missing = project.lines.filter((l) => l.status === "empty").length;
-	const provider = settings?.ai.tts ?? "openai";
+	// Which voices apply: the chosen provider, or (Auto) the one it resolved to.
+	const choice = settings?.ai.tts ?? "auto";
+	const provider =
+		choice !== "auto"
+			? choice
+			: tts?.provider.startsWith("ElevenLabs")
+				? "elevenlabs"
+				: tts?.provider === "macOS voices"
+					? "macos"
+					: "openai";
 	return (
 		<Section title="Voiceover">
-			{!tts?.ready && (
-				<Problem text={tts?.problem} action={provider === "elevenlabs" ? "Connect" : undefined} />
-			)}
+			{!tts?.ready && <Problem status={tts} />}
 			{provider === "elevenlabs" ? (
 				<ElevenVoice project={project} ready={!!tts?.ready} />
 			) : provider === "openai" ? (
@@ -398,7 +401,7 @@ function CaptionsTool() {
 				Transcribes the voiceover track and adds timed captions on a new track. Edit them like any
 				text clip.
 			</p>
-			{!stt?.ready && <Problem text={stt?.problem} />}
+			{!stt?.ready && <Problem status={stt} />}
 			<Button
 				variant="primary"
 				className="w-full gap-2"
@@ -421,7 +424,7 @@ function ImageTool({ project }: { project: ProjectSnapshot }) {
 	const [orientation, setOrientation] = useState<"landscape" | "portrait" | "square">("landscape");
 	return (
 		<Section title="Image">
-			{!image?.ready && <Problem text={image?.problem} />}
+			{!image?.ready && <Problem status={image} />}
 			<TextInput
 				multiline
 				rows={3}
@@ -477,7 +480,7 @@ function ScriptTool({ project }: { project: ProjectSnapshot }) {
 						Turns the speech in {video.name} into script lines, timed where they are spoken, so you
 						can re-record them.
 					</p>
-					{!stt?.ready && <Problem text={stt?.problem} />}
+					{!stt?.ready && <Problem status={stt} />}
 					<Button
 						variant="primary"
 						className="w-full gap-2"
@@ -498,16 +501,25 @@ function ScriptTool({ project }: { project: ProjectSnapshot }) {
 	);
 }
 
-function Problem({ text, action = "Set up" }: { text?: string; action?: string }) {
+/** Why a tool can't run, with a link that fixes it: the Connect flow for a missing key, else Settings. */
+function Problem({
+	status,
+}: {
+	status?: { problem?: string; connect?: "openai" | "fal" | "elevenlabs" | "higgsfield" };
+}) {
+	const service = status?.connect;
 	return (
 		<p className="rounded-md bg-warning/10 px-2.5 py-2 text-[12px] text-warning">
-			{(text ?? "Not set up").replace(/\.?$/, ".")}{" "}
+			{(status?.problem ?? "Not set up").replace(/\.?$/, ".")}{" "}
 			<button
 				type="button"
 				className="underline underline-offset-2"
-				onClick={() => openSettings("ai")}
+				onClick={() => {
+					openSettings("ai");
+					if (service && service !== "higgsfield") void window.cue.connectStart(service);
+				}}
 			>
-				{action}
+				{service ? "Connect" : "Set up"}
 			</button>
 		</p>
 	);
@@ -552,6 +564,8 @@ function ElevenVoice({ project, ready }: { project: ProjectSnapshot; ready: bool
 	const ai = project.data.ai;
 	const [search, setSearch] = useState("");
 	const [voices, setVoices] = useState<Voice[] | null>(null);
+	// ElevenLabs' own voices (direct key), or its default voices by name through fal.
+	const [via, setVia] = useState<"elevenlabs" | "fal">("elevenlabs");
 	const [loading, setLoading] = useState(false);
 	const [playing, setPlaying] = useState<string | null>(null);
 	const audio = useRef<HTMLAudioElement | null>(null);
@@ -561,11 +575,12 @@ function ElevenVoice({ project, ready }: { project: ProjectSnapshot; ready: bool
 		setLoading(true);
 		// Wait for typing to pause before asking ElevenLabs.
 		const timer = setTimeout(async () => {
-			const result = await run<{ voices: Voice[] }>("list_voices", {
+			const result = await run<{ voices: Voice[]; via: "elevenlabs" | "fal" }>("list_voices", {
 				search: search.trim() || undefined,
 			});
 			if (!stale) {
 				setVoices(result?.voices ?? []);
+				if (result) setVia(result.via);
 				setLoading(false);
 			}
 		}, 300);
@@ -603,8 +618,12 @@ function ElevenVoice({ project, ready }: { project: ProjectSnapshot; ready: bool
 				</select>
 			</Field>
 			<Field
-				label={`Voice: ${ai.elevenVoiceName ?? ai.elevenVoice}`}
-				hint="Steer the delivery with audio tags in the line itself, e.g. [whispers] or [excited] (v3)."
+				label={`Voice: ${via === "fal" ? ai.falVoice : (ai.elevenVoiceName ?? ai.elevenVoice)}`}
+				hint={
+					via === "fal"
+						? "ElevenLabs' default voices, through fal. Connect ElevenLabs for your own and cloned voices. Audio tags such as [whispers] work with v3."
+						: "Steer the delivery with audio tags in the line itself, e.g. [whispers] or [excited] (v3)."
+				}
 			>
 				<input
 					type="search"
@@ -626,7 +645,9 @@ function ElevenVoice({ project, ready }: { project: ProjectSnapshot; ready: bool
 								key={v.id}
 								className={cn(
 									"flex items-center gap-2 px-1.5 py-1",
-									v.id === ai.elevenVoice ? "bg-accent/15" : "hover:bg-default/60",
+									v.id === (via === "fal" ? ai.falVoice : ai.elevenVoice)
+										? "bg-accent/15"
+										: "hover:bg-default/60",
 								)}
 							>
 								<button
@@ -646,7 +667,10 @@ function ElevenVoice({ project, ready }: { project: ProjectSnapshot; ready: bool
 									type="button"
 									onClick={() =>
 										void run("update_ai", {
-											ai: { elevenVoice: v.id, elevenVoiceName: v.name.slice(0, 120) },
+											ai:
+												via === "fal"
+													? { falVoice: v.name }
+													: { elevenVoice: v.id, elevenVoiceName: v.name.slice(0, 120) },
 										})
 									}
 									className="flex min-w-0 flex-1 flex-col text-left"
@@ -693,7 +717,7 @@ function SoundTool() {
 	const [variants, setVariants] = useState("1");
 	return (
 		<Section title="Sound effect">
-			{!sound?.ready && <Problem text={sound?.problem} action="Connect" />}
+			{!sound?.ready && <Problem status={sound} />}
 			<TextInput
 				multiline
 				rows={3}
@@ -762,7 +786,7 @@ function MusicTool() {
 	const [instrumental, setInstrumental] = useState(true);
 	return (
 		<Section title="Music">
-			{!sound?.ready && <Problem text={sound?.problem} action="Connect" />}
+			{!sound?.ready && <Problem status={sound} />}
 			<TextInput
 				multiline
 				rows={3}
@@ -808,7 +832,8 @@ function ClipTool({ project }: { project: ProjectSnapshot }) {
 	const [imageId, setImageId] = useState(images[0]?.id ?? "");
 	const [modelId, setModelId] = useState(DEFAULT_CLIP_MODEL);
 	const withImage = start !== "none";
-	const models = CLIP_MODELS.filter((m) => (withImage ? m.imageToVideo : m.textToVideo));
+	const route = withImage ? "imageToVideo" : "textToVideo";
+	const models = CLIP_MODELS.filter((m) => m.fal?.[route] ?? m.higgsfield?.[route]);
 	const model = models.find((m) => m.id === modelId) ?? models[0];
 	const [duration, setDuration] = useState(String(model?.durations[0] ?? 5));
 	const seconds = model?.durations.includes(Number(duration))
@@ -816,7 +841,7 @@ function ClipTool({ project }: { project: ProjectSnapshot }) {
 		: (model?.durations[0] ?? 5);
 	return (
 		<Section title="Video clip">
-			{!video?.ready && <Problem text={video?.problem} action="Connect" />}
+			{!video?.ready && <Problem status={video} />}
 			<TextInput
 				multiline
 				rows={3}

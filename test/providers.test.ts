@@ -279,9 +279,15 @@ describe("Higgsfield", () => {
 	});
 
 	it("resolves models from the table or a raw path, and snaps lengths", () => {
-		expect(resolveClipModel(undefined, true).path).toBe(
-			"/kling-video/v2.5-turbo/pro/image-to-video",
-		);
+		expect(resolveClipModel(undefined, true)).toMatchObject({
+			service: "fal",
+			path: "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
+		});
+		expect(resolveClipModel(undefined, true, { fal: false, higgsfield: true })).toMatchObject({
+			service: "higgsfield",
+			path: "/kling-video/v2.5-turbo/pro/image-to-video",
+		});
+		expect(resolveClipModel("fal-ai/some-model/text-to-video", false).service).toBe("fal");
 		expect(resolveClipModel("/some-model/v1/text-to-video", false).path).toBe(
 			"/some-model/v1/text-to-video",
 		);
@@ -353,11 +359,12 @@ describe("settings", () => {
 		expect(status.find((s) => s.capability === "tts")).toMatchObject({
 			provider: "ElevenLabs",
 			ready: false,
-			problem: "Connect ElevenLabs in Settings → AI",
+			problem: "Connect fal in Settings → AI",
+			connect: "fal",
 		});
 		expect(status.find((s) => s.capability === "video")?.ready).toBe(false);
 		const calls = fakeFetch([]);
-		await expect(off.sound("a door", {})).rejects.toThrow("Connect ElevenLabs in Settings → AI.");
+		await expect(off.sound("a door", {})).rejects.toThrow("Connect fal in Settings → AI.");
 		expect(calls).toHaveLength(0);
 
 		const on = buildRuntime(settings, null, local, {

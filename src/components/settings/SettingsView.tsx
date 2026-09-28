@@ -1,6 +1,7 @@
 import { Button, Spinner } from "@heroui/react";
 import {
 	ArrowClockwise,
+	CaretRight,
 	CheckCircle,
 	Cpu,
 	Info,
@@ -334,6 +335,21 @@ function StatusPill({ ready, text }: { ready: boolean; text: string }) {
 	);
 }
 
+/** Which provider a task will use, or why none can. */
+function RouteStatus({
+	status,
+}: {
+	status?: { ready: boolean; provider: string; problem?: string };
+}) {
+	if (!status) return null;
+	return (
+		<StatusPill
+			ready={status.ready}
+			text={status.ready ? status.provider : (status.problem ?? "")}
+		/>
+	);
+}
+
 function AiSection({
 	settings,
 	save,
@@ -345,7 +361,6 @@ function AiSection({
 	const [inv, setInv] = useState<Inventory | null>(null);
 	const [busy, setBusy] = useState<string | null>(null);
 	const [progress, setProgress] = useState<Record<string, number>>({});
-	const [key, setKey] = useState("");
 	const refresh = useCallback(
 		async (force = false) => setInv(await window.cue.localInventory(force)),
 		[],
@@ -358,28 +373,25 @@ function AiSection({
 	}, [refresh]);
 	const ai = settings.ai;
 	const set = (patch: Partial<Settings["ai"]>) => save({ ai: { ...ai, ...patch } });
-	const openaiReady =
-		status.some((s) => s.provider === "OpenAI" && s.ready) ||
-		status.every((s) => s.provider !== "OpenAI") === false;
 	const st = (c: string) => status.find((s) => s.capability === c);
 	const local = inv?.inventory;
 
 	return (
 		<>
+			<Connections />
+
 			<Group
 				title="Providers"
-				description={`Choose, per task, whether Cue uses the cloud or models on ${thisComputer}.`}
+				description={`Which service does each task: the cloud (from your connections) or models on ${thisComputer}. Auto picks from what's connected.`}
 			>
 				<Row label="Voices" hint="Generated takes for script lines">
-					<StatusPill
-						ready={!!st("tts")?.ready}
-						text={st("tts")?.ready ? "Ready" : (st("tts")?.problem ?? "")}
-					/>
+					<RouteStatus status={st("tts")} />
 					<Segmented
 						size="xs"
 						value={ai.tts}
 						onChange={(tts) => set({ tts })}
 						options={[
+							{ value: "auto", label: "Auto" },
 							{ value: "openai", label: "OpenAI" },
 							{ value: "elevenlabs", label: "ElevenLabs" },
 							// The system voices are macOS's; elsewhere only a saved choice shows.
@@ -422,60 +434,26 @@ function AiSection({
 					/>
 				</Row>
 				<Row label="Images" hint="Title cards and stills">
-					<StatusPill
-						ready={!!st("image")?.ready}
-						text={st("image")?.ready ? "Ready" : (st("image")?.problem ?? "")}
-					/>
+					<RouteStatus status={st("image")} />
 					<Segmented
 						size="xs"
 						value={ai.image}
 						onChange={(image) => set({ image })}
 						options={[
+							{ value: "auto", label: "Auto" },
 							{ value: "openai", label: "OpenAI" },
+							{ value: "fal", label: "fal" },
 							{ value: "none", label: "Off" },
 						]}
 					/>
 				</Row>
+				<Row label="Sound effects and music" hint="ElevenLabs: your key if connected, else via fal">
+					<RouteStatus status={st("sound")} />
+				</Row>
+				<Row label="Video clips" hint="Kling and Hailuo: via fal, or Higgsfield">
+					<RouteStatus status={st("video")} />
+				</Row>
 			</Group>
-
-			<Group
-				title="OpenAI"
-				description={`The key is stored encrypted with your ${isMac ? "macOS keychain" : "system's credential store"}.`}
-			>
-				{openaiReady && status.some((s) => s.provider === "OpenAI" && s.ready) ? (
-					<Row label="API key" hint="Connected">
-						<Button
-							size="sm"
-							variant="ghost"
-							className="h-7 text-[12px] text-danger"
-							onPress={() => void window.cue.setApiKey(null).then(() => notify("Key removed"))}
-						>
-							Remove
-						</Button>
-					</Row>
-				) : (
-					<Row label="API key">
-						<input
-							type="password"
-							value={key}
-							placeholder="sk-…"
-							onChange={(e) => setKey(e.target.value)}
-							onKeyDown={(e) => e.stopPropagation()}
-							className="h-7 w-64 rounded-md border border-border bg-field px-2 text-[12px] outline-none focus:border-accent"
-						/>
-						<Button
-							size="sm"
-							className="h-7 text-[12px]"
-							isDisabled={key.trim().length < 20}
-							onPress={() => void window.cue.setApiKey(key.trim()).then(() => setKey(""))}
-						>
-							Save
-						</Button>
-					</Row>
-				)}
-			</Group>
-
-			<Connections />
 
 			<Group
 				title={isMac ? "On this Mac" : "On this computer"}
@@ -659,99 +637,187 @@ function AiSection({
 	);
 }
 
-const keyField =
-	"h-7 w-48 rounded-md border border-border bg-field px-2 text-[12px] outline-none focus:border-accent";
+type Service = "fal" | "openai" | "elevenlabs" | "higgsfield";
+type ConnectStatus = Awaited<ReturnType<typeof window.cue.connectState>>;
 
-/** Stores a key, then checks it with the provider and says how that went. */
-async function connect(
-	provider: "elevenlabs" | "higgsfield",
-	value: string | { id: string; secret: string } | null,
-) {
-	try {
-		await window.cue.setConnection(provider, value);
-		if (!value) return notify("Key removed");
-		const result = await window.cue.testConnection(provider);
-		notify(result.message, result.ok ? "success" : "danger");
-	} catch (error) {
-		notify((error as Error).message, "danger");
-	}
+const SERVICES: {
+	id: Exclude<Service, "higgsfield">;
+	name: string;
+	blurb: string;
+	recommended?: boolean;
+}[] = [
+	{
+		id: "fal",
+		name: "fal",
+		blurb: "One key for voice, sound, music, video and images.",
+		recommended: true,
+	},
+	{ id: "openai", name: "OpenAI", blurb: "OpenAI voices and images, transcription, text." },
+	{
+		id: "elevenlabs",
+		name: "ElevenLabs",
+		blurb: "Your own and cloned voices, and music, directly.",
+	},
+];
+
+const keyField =
+	"h-7 w-44 rounded-md border border-border bg-field px-2 text-[12px] outline-none focus:border-accent";
+
+/** The Connect flow's state, kept by the main process (it survives closing Settings). */
+function useConnectFlow(): ConnectStatus {
+	const [flow, setFlow] = useState<ConnectStatus>({ service: null, state: "idle" });
+	useEffect(() => {
+		void window.cue.connectState().then(setFlow);
+		return window.cue.onConnectStatus((next) => {
+			setFlow(next);
+			if (next.state === "connected" && next.service)
+				notify(`${SERVICES.find((s) => s.id === next.service)?.name} connected`, "success");
+		});
+	}, []);
+	return flow;
 }
 
-/** Settings → AI → Connections: optional providers, each with the user's own key. */
-function Connections() {
-	const status = useApp((s) => s.ai.status) ?? [];
-	const eleven = !!status.find((s) => s.capability === "sound")?.ready;
-	const higgs = !!status.find((s) => s.capability === "video")?.ready;
-	const [elevenKey, setElevenKey] = useState("");
-	const [higgsId, setHiggsId] = useState("");
-	const [higgsSecret, setHiggsSecret] = useState("");
-	const [testing, setTesting] = useState<string | null>(null);
-	const test = async (provider: "elevenlabs" | "higgsfield") => {
-		setTesting(provider);
-		const result = await window.cue.testConnection(provider).finally(() => setTesting(null));
-		notify(result.message, result.ok ? "success" : "danger");
-	};
-	const link = (href: string, label: string) => (
-		<a href={href} target="_blank" rel="noreferrer" className="text-accent hover:underline">
-			{label}
-		</a>
-	);
-	const connected = (provider: "elevenlabs" | "higgsfield") => (
+function useConnection(service: Service) {
+	return useApp((s) => s.ai.connections?.find((c) => c.service === service));
+}
+
+/** Checks a connected key and says how that went. */
+async function test(service: Service) {
+	const result = await window.cue.testConnection(service);
+	notify(result.message, result.ok ? "success" : "danger");
+}
+
+/** A key pasted by hand: the main process checks it with the service before storing it. */
+function PasteKey({
+	service,
+	onDone,
+}: {
+	service: Exclude<Service, "higgsfield">;
+	onDone: () => void;
+}) {
+	const [value, setValue] = useState("");
+	const [busy, setBusy] = useState(false);
+	return (
 		<>
-			<StatusPill ready text="Connected" />
+			<input
+				type="password"
+				value={value}
+				placeholder="Paste key"
+				aria-label={`${service} API key`}
+				onChange={(e) => setValue(e.target.value)}
+				onKeyDown={(e) => e.stopPropagation()}
+				className={keyField}
+			/>
 			<Button
 				size="sm"
-				variant="secondary"
 				className="h-7 text-[12px]"
-				isDisabled={testing === provider}
-				onPress={() => void test(provider)}
+				isDisabled={busy || value.trim().length < 16}
+				onPress={async () => {
+					setBusy(true);
+					const result = await window.cue
+						.connectWithKey(service, value)
+						.finally(() => setBusy(false));
+					notify(result.message, result.ok ? "success" : "danger");
+					if (result.ok) {
+						setValue("");
+						void window.cue.connectCancel();
+						onDone();
+					}
+				}}
 			>
-				{testing === provider ? <Spinner size="sm" /> : "Test"}
-			</Button>
-			<Button
-				size="sm"
-				variant="ghost"
-				className="h-7 text-[12px] text-danger"
-				onPress={() => void connect(provider, null)}
-			>
-				Remove
+				{busy ? <Spinner size="sm" /> : "Save"}
 			</Button>
 		</>
 	);
+}
+
+function ServiceRow({
+	service,
+	flow,
+}: {
+	service: (typeof SERVICES)[number];
+	flow: ConnectStatus;
+}) {
+	const connection = useConnection(service.id);
+	const [pasting, setPasting] = useState(false);
+	const [testing, setTesting] = useState(false);
+	const pending = flow.service === service.id && flow.state === "pending";
+	const timedOut = flow.service === service.id && flow.state === "timeout";
 	return (
-		<Group
-			title="Connections"
-			description="Optional services you pay for with your own key. Cue only calls them when you or an agent generate with them. Keys are stored encrypted and never shown again."
-		>
-			<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
+		<div className="flex flex-col gap-1.5 px-4 py-2.5">
+			<div className="flex min-h-7 items-center justify-between gap-6">
 				<div className="min-w-0">
-					<p className="text-[13px]">ElevenLabs</p>
-					<p className="text-[11px] text-muted">
-						Voices, sound effects and music.{" "}
-						{link("https://elevenlabs.io/app/settings/api-keys", "Get a key")}
+					<p className="flex items-center gap-2 text-[13px]">
+						{service.name}
+						{service.recommended && (
+							<span className="rounded bg-accent/15 px-1.5 py-px text-[10px] font-medium text-accent">
+								Recommended
+							</span>
+						)}
 					</p>
+					<p className="text-[11px] text-muted">{service.blurb}</p>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					{eleven ? (
-						connected("elevenlabs")
-					) : (
+					{connection?.connected ? (
 						<>
-							<input
-								type="password"
-								value={elevenKey}
-								placeholder="API key"
-								aria-label="ElevenLabs API key"
-								onChange={(e) => setElevenKey(e.target.value)}
-								onKeyDown={(e) => e.stopPropagation()}
-								className={keyField}
+							<StatusPill
+								ready
+								text={connection.source === "environment" ? "From your environment" : "Connected"}
 							/>
 							<Button
 								size="sm"
+								variant="secondary"
 								className="h-7 text-[12px]"
-								isDisabled={elevenKey.trim().length < 16}
-								onPress={() =>
-									void connect("elevenlabs", elevenKey.trim()).then(() => setElevenKey(""))
-								}
+								isDisabled={testing}
+								onPress={async () => {
+									setTesting(true);
+									await test(service.id).finally(() => setTesting(false));
+								}}
+							>
+								{testing ? <Spinner size="sm" /> : "Test"}
+							</Button>
+							{connection.source !== "environment" && (
+								<Button
+									size="sm"
+									variant="ghost"
+									className="h-7 text-[12px] text-danger"
+									onPress={() =>
+										void window.cue.disconnect(service.id).then(() => notify("Key removed"))
+									}
+								>
+									Remove
+								</Button>
+							)}
+						</>
+					) : pending ? (
+						<>
+							<span className="flex items-center gap-1.5 text-[11px] text-muted">
+								<Spinner size="sm" /> Copy your new key — Cue will pick it up
+							</span>
+							<Button
+								size="sm"
+								variant="ghost"
+								className="h-7 text-[12px]"
+								onPress={() => void window.cue.connectCancel()}
+							>
+								Cancel
+							</Button>
+						</>
+					) : (
+						<>
+							{!pasting && (
+								<button
+									type="button"
+									className="text-[11px] text-muted hover:text-foreground"
+									onClick={() => setPasting(true)}
+								>
+									Paste key
+								</button>
+							)}
+							<Button
+								size="sm"
+								className="h-7 text-[12px]"
+								onPress={() => void window.cue.connectStart(service.id)}
 							>
 								Connect
 							</Button>
@@ -759,58 +825,147 @@ function Connections() {
 					)}
 				</div>
 			</div>
-			<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
-				<div className="min-w-0">
-					<p className="text-[13px]">Higgsfield</p>
+			{!connection?.connected &&
+				(pending || timedOut || flow.message) &&
+				flow.service === service.id && (
 					<p className="text-[11px] text-muted">
-						Video clips from a prompt or a still. The key comes in two parts, an id and a secret.{" "}
-						{link("https://cloud.higgsfield.ai/api-keys", "Get a key")}
+						{flow.message ??
+							(timedOut
+								? "No key turned up. Try Connect again, or paste the key."
+								: "Create a key on the page that opened and copy it. Anything else you copy is ignored.")}
 					</p>
+				)}
+			{!connection?.connected && (pasting || pending) && (
+				<div className="flex items-center justify-end gap-2">
+					<PasteKey service={service.id} onDone={() => setPasting(false)} />
 				</div>
-				<div className="flex shrink-0 items-center gap-2">
-					{higgs ? (
-						connected("higgsfield")
-					) : (
-						<>
-							<input
-								type="password"
-								value={higgsId}
-								placeholder="Key id"
-								aria-label="Higgsfield key id"
-								onChange={(e) => setHiggsId(e.target.value)}
-								onKeyDown={(e) => e.stopPropagation()}
-								className={cn(keyField, "w-32")}
-							/>
-							<input
-								type="password"
-								value={higgsSecret}
-								placeholder="Key secret"
-								aria-label="Higgsfield key secret"
-								onChange={(e) => setHiggsSecret(e.target.value)}
-								onKeyDown={(e) => e.stopPropagation()}
-								className={cn(keyField, "w-40")}
-							/>
-							<Button
-								size="sm"
-								className="h-7 text-[12px]"
-								isDisabled={!higgsId.trim() || higgsSecret.trim().length < 8}
-								onPress={() =>
-									void connect("higgsfield", {
-										id: higgsId.trim(),
-										secret: higgsSecret.trim(),
-									}).then(() => {
-										setHiggsId("");
-										setHiggsSecret("");
-									})
-								}
-							>
-								Connect
-							</Button>
-						</>
-					)}
-				</div>
+			)}
+		</div>
+	);
+}
+
+/** Higgsfield (video; fal covers the same models): a key id and secret typed by hand. */
+function HiggsfieldRow() {
+	const connection = useConnection("higgsfield");
+	const [id, setId] = useState("");
+	const [secret, setSecret] = useState("");
+	const [busy, setBusy] = useState(false);
+	return (
+		<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
+			<div className="min-w-0">
+				<p className="text-[13px]">Higgsfield</p>
+				<p className="text-[11px] text-muted">
+					Kling and Hailuo video with a Higgsfield key (id and secret).{" "}
+					<a
+						href="https://cloud.higgsfield.ai/api-keys"
+						target="_blank"
+						rel="noreferrer"
+						className="text-accent hover:underline"
+					>
+						Get a key
+					</a>
+				</p>
 			</div>
-		</Group>
+			<div className="flex shrink-0 items-center gap-2">
+				{connection?.connected ? (
+					<>
+						<StatusPill ready text="Connected" />
+						<Button
+							size="sm"
+							variant="secondary"
+							className="h-7 text-[12px]"
+							onPress={() => void test("higgsfield")}
+						>
+							Test
+						</Button>
+						<Button
+							size="sm"
+							variant="ghost"
+							className="h-7 text-[12px] text-danger"
+							onPress={() =>
+								void window.cue.disconnect("higgsfield").then(() => notify("Key removed"))
+							}
+						>
+							Remove
+						</Button>
+					</>
+				) : (
+					<>
+						<input
+							type="password"
+							value={id}
+							placeholder="Key id"
+							aria-label="Higgsfield key id"
+							onChange={(e) => setId(e.target.value)}
+							onKeyDown={(e) => e.stopPropagation()}
+							className={cn(keyField, "w-28")}
+						/>
+						<input
+							type="password"
+							value={secret}
+							placeholder="Key secret"
+							aria-label="Higgsfield key secret"
+							onChange={(e) => setSecret(e.target.value)}
+							onKeyDown={(e) => e.stopPropagation()}
+							className={cn(keyField, "w-36")}
+						/>
+						<Button
+							size="sm"
+							className="h-7 text-[12px]"
+							isDisabled={busy || !id.trim() || secret.trim().length < 8}
+							onPress={async () => {
+								setBusy(true);
+								const result = await window.cue
+									.connectWithKey("higgsfield", { id, secret })
+									.finally(() => setBusy(false));
+								notify(result.message, result.ok ? "success" : "danger");
+								if (result.ok) {
+									setId("");
+									setSecret("");
+								}
+							}}
+						>
+							{busy ? <Spinner size="sm" /> : "Connect"}
+						</Button>
+					</>
+				)}
+			</div>
+		</div>
+	);
+}
+
+/** Settings → AI → Connections: the services Cue can use, each with the user's own key. */
+function Connections() {
+	const flow = useConnectFlow();
+	const [more, setMore] = useState(false);
+	return (
+		<section className="mb-7">
+			<h3 className="text-[13px] font-semibold">Connections</h3>
+			<p className="mt-0.5 text-[12px] text-muted">
+				Connect opens the service's key page; create a key and copy it, and Cue picks it up. Keys
+				are checked, stored encrypted with your{" "}
+				{isMac ? "macOS keychain" : "system's credential store"} and never shown again. Cue only
+				calls a service when you or an agent generate with it.
+			</p>
+			<div className="mt-3 divide-y divide-separator rounded-lg border border-border bg-background/30">
+				{SERVICES.map((s) => (
+					<ServiceRow key={s.id} service={s} flow={flow} />
+				))}
+			</div>
+			<button
+				type="button"
+				onClick={() => setMore((m) => !m)}
+				className="mt-2 flex items-center gap-1 text-[12px] text-muted hover:text-foreground"
+			>
+				<CaretRight className={cn("size-3 transition-transform", more && "rotate-90")} /> More
+				connections
+			</button>
+			{more && (
+				<div className="mt-2 rounded-lg border border-border bg-background/30">
+					<HiggsfieldRow />
+				</div>
+			)}
+		</section>
 	);
 }
 

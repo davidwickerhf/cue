@@ -18,10 +18,35 @@ import {
 	elevenSpeech,
 	elevenVoices,
 } from "./elevenlabs";
+import { falAudio, falClip, falImage, falSpeech } from "./fal";
+import {
+	DEFAULT_FAL_VOICE,
+	FAL_IMAGE_MODEL,
+	FAL_MUSIC_MODEL,
+	FAL_SOUND_MAX_SECONDS,
+	FAL_SOUND_MODEL,
+	FAL_VOICE_MODELS,
+	FAL_VOICES,
+} from "./falModels";
 import { generateClip } from "./higgsfield";
 import { chat, type LocalInventory, speakMac, transcribeLocal } from "./local-ai";
 import { ffmpeg } from "./media";
-import type { HiggsfieldKey } from "./secrets";
+import {
+	CONNECT_ELEVENLABS,
+	CONNECT_FAL,
+	CONNECT_HIGGSFIELD,
+	CONNECT_OPENAI,
+	clipRoute,
+	imageRoute,
+	type KeysPresent,
+	type Route,
+	type Service,
+	soundRoute,
+	voiceRoute,
+} from "./routing";
+import type { HiggsfieldKey, KeySource } from "./secrets";
+
+export { CONNECT_ELEVENLABS, CONNECT_FAL, CONNECT_HIGGSFIELD, CONNECT_OPENAI };
 
 /** App-wide preferences (not per project). Stored in the app's data folder. */
 export const appSettingsSchema = z.object({
@@ -37,20 +62,22 @@ export const appSettingsSchema = z.object({
 	autoInstallUpdates: z.boolean().default(false),
 	ai: z
 		.object({
-			tts: z.enum(["openai", "macos", "elevenlabs"]).default("openai"),
+			/** auto: OpenAI, else ElevenLabs (direct, else via fal), else the Mac's voices. */
+			tts: z.enum(["auto", "openai", "macos", "elevenlabs"]).default("auto"),
 			transcription: z.enum(["openai", "whisper"]).default("openai"),
 			text: z.enum(["openai", "ollama", "lmstudio", "none"]).default("openai"),
-			image: z.enum(["openai", "none"]).default("openai"),
+			/** auto: OpenAI, else GPT Image through fal. */
+			image: z.enum(["auto", "openai", "fal", "none"]).default("auto"),
 			macVoice: z.string().default("Samantha"),
 			macRate: z.number().min(80).max(400).optional(),
 			whisperModel: z.string().optional(),
 			textModel: z.string().optional(),
 		})
 		.default({
-			tts: "openai",
+			tts: "auto",
 			transcription: "openai",
 			text: "openai",
-			image: "openai",
+			image: "auto",
 			macVoice: "Samantha",
 		}),
 	agent: z
@@ -70,17 +97,16 @@ export const appSettingsSchema = z.object({
 });
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 
-/** sound: effects and music (ElevenLabs); video: generated clips (Higgsfield). */
+/** sound: effects and music (ElevenLabs, direct or via fal); video: generated clips (fal or Higgsfield). */
 export type Capability = "tts" | "transcription" | "text" | "image" | "sound" | "video";
 
-/** Keys for the optional providers the user connects in Settings → AI. */
+/** Keys for the services the user connects in Settings → AI (besides OpenAI's), and where each came from. */
 export interface Connections {
+	fal?: string;
 	elevenlabs?: string;
 	higgsfield?: HiggsfieldKey;
+	sources?: Partial<Record<Service, KeySource>>;
 }
-
-export const CONNECT_ELEVENLABS = "Connect ElevenLabs in Settings → AI";
-export const CONNECT_HIGGSFIELD = "Connect Higgsfield in Settings → AI";
 
 export interface ProviderStatus {
 	capability: Capability;
@@ -88,7 +114,16 @@ export interface ProviderStatus {
 	ready: boolean;
 	/** Why it is not ready, in words for the user. */
 	problem?: string;
+	/** The service to connect to make it ready. */
+	connect?: Service;
 	model?: string;
+}
+
+/** A connected service for the window: never the key, only whether there is one and where it came from. */
+export interface ConnectionStatus {
+	service: Service;
+	connected: boolean;
+	source?: KeySource;
 }
 
 /** Everything generative goes through this, whichever provider backs it. */
@@ -101,6 +136,8 @@ export interface AiRuntime {
 			model?: string;
 			/** The project's ElevenLabs voice and model, used when ElevenLabs speaks. */
 			elevenlabs?: { voice: string; model: string };
+			/** The project's voice for ElevenLabs through fal (one of ElevenLabs' default voices, by name). */
+			fal?: { voice: string };
 		},
 	): Promise<{ audio: Buffer; provider: string; model: string; voice: string }>;
 	transcribe(
@@ -110,16 +147,18 @@ export interface AiRuntime {
 	image(
 		prompt: string,
 		options: { size: "1536x1024" | "1024x1536" | "1024x1024"; model?: string },
-	): Promise<Buffer>;
+	): Promise<{ png: Buffer; provider: string; model: string }>;
 	chat(system: string, prompt: string): Promise<string>;
-	/** A sound effect from a description (ElevenLabs, MP3 bytes). */
+	/** A sound effect from a description (ElevenLabs direct or via fal, MP3 bytes). */
 	sound(
 		prompt: string,
 		options: { durationSeconds?: number; promptInfluence?: number; loop?: boolean },
 	): Promise<Buffer>;
-	/** Music from a description (ElevenLabs, MP3 bytes). */
+	/** Music from a description (ElevenLabs direct or via fal, MP3 bytes). */
 	music(prompt: string, options: { lengthMs: number; instrumental?: boolean }): Promise<Buffer>;
-	/** A video clip (Higgsfield), downloaded to `file`. */
+	/** Which service makes sounds and music, for generation metadata. */
+	soundProvider(): { provider: string; soundModel: string; musicModel: string };
+	/** A video clip (fal, else Higgsfield), downloaded to `file`. */
 	clip(
 		input: {
 			prompt: string;
@@ -131,8 +170,13 @@ export interface AiRuntime {
 		file: string,
 		onProgress?: (fraction: number) => void,
 	): Promise<{ file: string; url: string; model: string; label: string; durationSec: number }>;
-	/** The ElevenLabs voices the key can use, optionally searched. */
-	voices(search?: string): Promise<ElevenVoice[]>;
+	/**
+	 * Voices for ElevenLabs speech, optionally searched: the account's own (direct
+	 * key), or ElevenLabs' default voices by name (through fal).
+	 */
+	voices(search?: string): Promise<{ via: "elevenlabs" | "fal"; voices: ElevenVoice[] }>;
+	/** The services and whether each is connected (for the window: no keys). */
+	connections(): ConnectionStatus[];
 	/**
 	 * One short description per picture (for searching footage): what is shown,
 	 * where, notable objects, text and actions. Uses the text provider's vision
@@ -174,38 +218,38 @@ export function buildRuntime(
 				? local.lmStudio.models[0]
 				: "gpt-4.1-mini");
 
+	const present: KeysPresent = {
+		openai: !!creds,
+		fal: !!keys.fal,
+		elevenlabs: !!keys.elevenlabs,
+		higgsfield: !!keys.higgsfield,
+	};
+	const speech = voiceRoute(ai.tts, present, local.macVoices.length > 0);
+	const picture = imageRoute(ai.image, present);
+	const sounds = soundRoute(present);
+	const clips = clipRoute(present);
+	const row = <E extends string>(
+		capability: Capability,
+		route: Route<E>,
+		model?: string,
+	): ProviderStatus => ({
+		capability,
+		provider: route.provider,
+		ready: route.engine !== null,
+		...(route.problem ? { problem: route.problem } : {}),
+		...(route.connect ? { connect: route.connect } : {}),
+		...(model ? { model } : {}),
+	});
+
 	const status = (): ProviderStatus[] => [
-		ai.tts === "elevenlabs"
-			? {
-					capability: "tts",
-					provider: "ElevenLabs",
-					ready: !!keys.elevenlabs,
-					problem: keys.elevenlabs ? undefined : CONNECT_ELEVENLABS,
-				}
-			: ai.tts === "openai"
-				? {
-						capability: "tts",
-						provider: "OpenAI",
-						ready: !!creds,
-						problem: creds ? undefined : "Add an OpenAI API key",
-					}
-				: {
-						capability: "tts",
-						provider: "macOS voices",
-						ready: local.macVoices.length > 0,
-						model: ai.macVoice,
-						problem: local.macVoices.length
-							? undefined
-							: process.platform === "darwin"
-								? "No system voices found"
-								: "macOS voices are only available on a Mac; choose OpenAI",
-					},
+		row("tts", speech, speech.engine === "macos" ? ai.macVoice : undefined),
 		ai.transcription === "openai"
 			? {
 					capability: "transcription",
 					provider: "OpenAI",
 					ready: !!creds,
-					problem: creds ? undefined : "Add an OpenAI API key",
+					problem: creds ? undefined : CONNECT_OPENAI,
+					connect: creds ? undefined : ("openai" as const),
 				}
 			: {
 					capability: "transcription",
@@ -229,7 +273,8 @@ export function buildRuntime(
 					provider: "OpenAI",
 					ready: !!creds,
 					model: textModel,
-					problem: creds ? undefined : "Add an OpenAI API key",
+					problem: creds ? undefined : CONNECT_OPENAI,
+					connect: creds ? undefined : ("openai" as const),
 				}
 			: ai.text === "ollama"
 				? {
@@ -254,33 +299,15 @@ export function buildRuntime(
 							problem: local.lmStudio.running ? undefined : "Start the LM Studio server",
 						}
 					: { capability: "text", provider: "Off", ready: false, problem: "Text model turned off" },
-		ai.image === "openai"
-			? {
-					capability: "image",
-					provider: "OpenAI",
-					ready: !!creds,
-					problem: creds ? undefined : "Add an OpenAI API key",
-				}
-			: { capability: "image", provider: "Off", ready: false, problem: "Images turned off" },
-		{
-			capability: "sound",
-			provider: "ElevenLabs",
-			ready: !!keys.elevenlabs,
-			problem: keys.elevenlabs ? undefined : CONNECT_ELEVENLABS,
-		},
-		{
-			capability: "video",
-			provider: "Higgsfield",
-			ready: !!keys.higgsfield,
-			problem: keys.higgsfield ? undefined : CONNECT_HIGGSFIELD,
-		},
+		row("image", picture),
+		row("sound", sounds),
+		row("video", clips),
 	];
 
 	const need = (capability: Capability) => {
 		const s = status().find((x) => x.capability === capability);
-		// The optional providers' problem already says where to go.
-		if (!s?.ready && (capability === "sound" || capability === "video"))
-			throw new Error(`${s?.problem ?? "Not connected"}.`);
+		// A missing connection already says where to go.
+		if (!s?.ready && s?.connect) throw new Error(`${s.problem}.`);
 		if (!s?.ready)
 			throw new Error(
 				`${capability === "tts" ? "Voice" : capability === "text" ? "Text model" : capability[0].toUpperCase() + capability.slice(1)} is not set up: ${s?.problem ?? "unavailable"}. Open Cue → Settings → AI.`,
@@ -291,7 +318,7 @@ export function buildRuntime(
 		status,
 		async speak(text, options) {
 			need("tts");
-			if (ai.tts === "macos") {
+			if (speech.engine === "macos") {
 				const voice =
 					options.voice && local.macVoices.some((v) => v.name === options.voice)
 						? options.voice
@@ -303,7 +330,8 @@ export function buildRuntime(
 					voice,
 				};
 			}
-			if (ai.tts === "elevenlabs") {
+			const elevenModel = options.elevenlabs?.model ?? "eleven_v3";
+			if (speech.engine === "elevenlabs") {
 				// An OpenAI voice name (the project's other voice) is no ElevenLabs voice.
 				const asked =
 					options.voice &&
@@ -311,20 +339,26 @@ export function buildRuntime(
 					!TTS_VOICES.includes(options.voice)
 						? options.voice
 						: undefined;
-				const voice = asked ?? options.elevenlabs?.voice;
-				const model = options.elevenlabs?.model;
-				if (!voice || !model) throw new Error("Choose an ElevenLabs voice (Generate → Voiceover).");
+				const id = asked ?? options.elevenlabs?.voice;
+				if (!id) throw new Error("Choose an ElevenLabs voice (Generate → Voiceover).");
 				const spoken = await elevenSpeech(keys.elevenlabs as string, {
 					text,
-					voice,
-					model,
+					voice: id,
+					model: elevenModel,
 				});
 				return {
 					audio: await asWav(spoken.audio, spoken.format),
 					provider: "elevenlabs",
-					model,
-					voice,
+					model: elevenModel,
+					voice: id,
 				};
+			}
+			if (speech.engine === "fal") {
+				const named = (v?: string) => FAL_VOICES.find((n) => n.toLowerCase() === v?.toLowerCase());
+				const name = named(options.voice) ?? named(options.fal?.voice) ?? DEFAULT_FAL_VOICE;
+				const model = FAL_VOICE_MODELS[elevenModel] ?? FAL_VOICE_MODELS.eleven_v3;
+				const mp3 = await falSpeech(keys.fal as string, model, { text, voice: name });
+				return { audio: await asWav(mp3, "mp3"), provider: "fal", model, voice: name };
 			}
 			const model = options.model ?? "gpt-4o-mini-tts";
 			const voice = options.voice ?? "cedar";
@@ -342,19 +376,77 @@ export function buildRuntime(
 		},
 		async sound(prompt, options) {
 			need("sound");
-			return elevenSound(keys.elevenlabs as string, { text: prompt, ...options });
+			if (sounds.engine === "elevenlabs")
+				return elevenSound(keys.elevenlabs as string, { text: prompt, ...options });
+			return falAudio(keys.fal as string, FAL_SOUND_MODEL, {
+				text: prompt,
+				...(options.durationSeconds !== undefined
+					? {
+							duration_seconds: Math.min(
+								FAL_SOUND_MAX_SECONDS,
+								Math.max(0.5, options.durationSeconds),
+							),
+						}
+					: {}),
+				...(options.promptInfluence !== undefined
+					? { prompt_influence: options.promptInfluence }
+					: {}),
+				...(options.loop ? { loop: true } : {}),
+			});
 		},
 		async music(prompt, options) {
 			need("sound");
-			return elevenMusic(keys.elevenlabs as string, { prompt, ...options });
+			if (sounds.engine === "elevenlabs")
+				return elevenMusic(keys.elevenlabs as string, { prompt, ...options });
+			return falAudio(keys.fal as string, FAL_MUSIC_MODEL, {
+				prompt,
+				music_length_ms: Math.round(Math.min(600000, Math.max(3000, options.lengthMs))),
+				...(options.instrumental ? { force_instrumental: true } : {}),
+			});
+		},
+		soundProvider() {
+			return sounds.engine === "fal"
+				? { provider: "fal", soundModel: FAL_SOUND_MODEL, musicModel: FAL_MUSIC_MODEL }
+				: {
+						provider: "elevenlabs",
+						soundModel: "eleven_text_to_sound_v2",
+						musicModel: "music_v2_5",
+					};
 		},
 		async clip(input, file, onProgress) {
 			need("video");
-			return generateClip(keys.higgsfield as HiggsfieldKey, input, file, { onProgress });
+			// A raw Higgsfield path goes to Higgsfield; everything else to fal when it is connected.
+			const higgsfield =
+				keys.higgsfield && (clips.engine === "higgsfield" || input.model?.startsWith("/"));
+			if (higgsfield)
+				return generateClip(keys.higgsfield as HiggsfieldKey, input, file, { onProgress });
+			if (!keys.fal) throw new Error(`${CONNECT_FAL}.`);
+			return falClip(keys.fal, input, file, { onProgress });
 		},
 		async voices(search) {
-			if (!keys.elevenlabs) throw new Error(`${CONNECT_ELEVENLABS}.`);
-			return elevenVoices(keys.elevenlabs, { search });
+			if (keys.elevenlabs)
+				return { via: "elevenlabs", voices: await elevenVoices(keys.elevenlabs, { search }) };
+			if (keys.fal) {
+				const q = search?.trim().toLowerCase();
+				return {
+					via: "fal",
+					voices: FAL_VOICES.filter((n) => !q || n.toLowerCase().includes(q)).map((name) => ({
+						id: name,
+						name,
+						category: "default",
+						labels: {},
+					})),
+				};
+			}
+			throw new Error(`${CONNECT_FAL} (or ElevenLabs for your own voices).`);
+		},
+		connections() {
+			const sources = keys.sources ?? {};
+			return (["fal", "openai", "elevenlabs", "higgsfield"] as const).map((service) => ({
+				service,
+				connected: present[service],
+				...(present[service] ? { source: sources[service] ?? "stored" } : {}),
+			}));
 		},
 		async transcribe(file, options) {
 			need("transcription");
@@ -374,11 +466,20 @@ export function buildRuntime(
 		},
 		async image(prompt, options) {
 			need("image");
-			return generateImage(creds as AiCredentials, {
-				prompt,
-				model: options.model ?? "gpt-image-2.5-flare",
-				size: options.size,
-			});
+			if (picture.engine === "fal") {
+				const [width, height] = options.size.split("x").map(Number);
+				return {
+					png: await falImage(keys.fal as string, FAL_IMAGE_MODEL, { prompt, width, height }),
+					provider: "fal",
+					model: FAL_IMAGE_MODEL,
+				};
+			}
+			const model = options.model ?? "gpt-image-2.5-flare";
+			return {
+				png: await generateImage(creds as AiCredentials, { prompt, model, size: options.size }),
+				provider: "openai",
+				model,
+			};
 		},
 		async describeImages(files) {
 			need("text");

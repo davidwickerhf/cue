@@ -916,7 +916,7 @@ export const contract = {
 	// --- Generative tools --------------------------------------------------------------
 	generate_take: {
 		description:
-			"Generate a spoken take for a line with text-to-speech (placeholder or final voice) from the voice provider in Settings → AI (OpenAI, ElevenLabs or macOS). Optional voice and delivery instructions. With ElevenLabs, voice is an ElevenLabs voice id (list_voices; default: the project's elevenVoice) and instructions are ignored: steer delivery with audio tags in the text such as [whispers] or [excited] (model eleven_v3).",
+			"Generate a spoken take for a line with text-to-speech (placeholder or final voice) from the voice provider in Settings → AI (OpenAI, ElevenLabs directly or through fal, or macOS). Optional voice and delivery instructions. With ElevenLabs, voice comes from list_voices (an ElevenLabs voice id with a direct key, a default voice's name such as George through fal; default: the project's elevenVoice or falVoice) and instructions are ignored: steer delivery with audio tags in the text such as [whispers] or [excited] (model eleven_v3).",
 		input: {
 			lineId: z.string(),
 			voice: z.string().optional(),
@@ -1138,7 +1138,7 @@ export const contract = {
 	},
 	get_ai_status: {
 		description:
-			"Which providers handle voice, transcription, text and images (cloud or on this Mac), and whether each is ready; plus sound (sound effects and music from a description, ElevenLabs) and video (generated clips, Higgsfield), ready when the user has connected that provider.",
+			"Which providers handle voice, transcription, text and images (cloud or on this Mac), and whether each is ready; plus sound (sound effects and music from a description: ElevenLabs, directly or through fal) and video (generated clips: fal, or Higgsfield). Each says which provider it will use, or which service to connect (the user connects keys in Settings → AI; fal alone covers voice, sound, music, video and images).",
 		input: {},
 	},
 	generate_voiceover: {
@@ -1233,7 +1233,7 @@ export const contract = {
 	},
 	generate_image: {
 		description:
-			"Generate a still image (title card, B-roll, background). With trackId it is placed at startMs for 5 s.",
+			"Generate a still image (title card, B-roll, background) with OpenAI, or GPT Image 2 through fal when only fal is connected. With trackId it is placed at startMs for 5 s.",
 		input: {
 			prompt: z.string().min(3),
 			orientation: z.enum(["landscape", "portrait", "square"]).default("landscape"),
@@ -1326,12 +1326,12 @@ export const contract = {
 	},
 	list_voices: {
 		description:
-			"The ElevenLabs voices the user's key can use (their own and ElevenLabs' defaults), optionally searched by name or description: id, name, category, labels (accent, age, gender, use) and a preview URL. Set one for the project with update_ai {ai: {elevenVoice: id, elevenVoiceName: name}}. Needs ElevenLabs connected.",
+			"ElevenLabs voices, optionally searched. With a direct ElevenLabs key (via 'elevenlabs'): the account's own, cloned and default voices with id, name, category, labels (accent, age, gender, use) and a preview URL; set one with update_ai {ai: {elevenVoice: id, elevenVoiceName: name}}. Through fal (via 'fal'): ElevenLabs' default voices by name; set one with update_ai {ai: {falVoice: name}}.",
 		input: { search: z.string().max(100).optional() },
 	},
 	generate_sound: {
 		description:
-			"Generate a realistic, specific sound effect from a description with ElevenLabs (needs the user's ElevenLabs key; get_ai_status 'sound'). Describe the sound concretely: the source, material, action, space and length, e.g. 'heavy wooden door slams shut in a stone hallway, short echo' or 'soft cardboard box sliding across a desk'. durationSeconds 0.5–30 (default: the model decides); promptInfluence 0–1 (higher follows the words more literally, default 0.3); loop makes a seamless loop (ambiences). variants makes several takes; atMs (one time or one per variant) places them on a free SFX track; with one atMs only the first variant is placed and the others wait in the media as alternatives. No credit needed.",
+			"Generate a realistic, specific sound effect from a description with ElevenLabs, directly or through fal (get_ai_status 'sound'). Describe the sound concretely: the source, material, action, space and length, e.g. 'heavy wooden door slams shut in a stone hallway, short echo' or 'soft cardboard box sliding across a desk'. durationSeconds 0.5–30, at most 22 through fal (default: the model decides); promptInfluence 0–1 (higher follows the words more literally, default 0.3); loop makes a seamless loop (ambiences). variants makes several takes; atMs (one time or one per variant) places them on a free SFX track; with one atMs only the first variant is placed and the others wait in the media as alternatives. No credit needed.",
 		input: {
 			prompt: z.string().min(3).max(1000),
 			durationSeconds: z.number().min(0.5).max(30).optional(),
@@ -1345,7 +1345,7 @@ export const contract = {
 	},
 	generate_clip: {
 		description:
-			"Generate a short video clip with Higgsfield (needs the user's Higgsfield key; get_ai_status 'video'): from a prompt alone, or animating a start picture (imageAssetId of an image in the project, imagePath of a PNG/JPEG/WebP file, or frameAtMs for the edit's frame at that time). Describe the shot like a director: subject, action, camera move, light and style. model: kling-2.5-turbo-pro (default; text or picture), kling-2.5-turbo-standard (picture only, cheaper) or hailuo-2.3, or a raw Higgsfield model path such as /kling-video/v2.5-turbo/pro/image-to-video. durationSec snaps to what the model makes (5 or 10 for Kling, 6 or 10 for Hailuo). Takes one to a few minutes (reply {status: 'running'}: use wait_for). The MP4 is saved in the project's generated folder and added to the media, marked AI with its prompt; with atMs it is placed there (on trackId or the first video track). Clips have no sound.",
+			"Generate a short video clip through fal (or Higgsfield when only that is connected; get_ai_status 'video'): from a prompt alone, or animating a start picture (imageAssetId of an image in the project, imagePath of a PNG/JPEG/WebP file, or frameAtMs for the edit's frame at that time). Describe the shot like a director: subject, action, camera move, light and style. model: kling-2.5-turbo-pro (default; text or picture), kling-2.5-turbo-standard (picture only, cheaper) or hailuo-2.3, or a raw fal model id such as fal-ai/kling-video/v2.5-turbo/pro/image-to-video (a path starting with / goes to Higgsfield). durationSec snaps to what the model makes (5 or 10 for Kling, 6 or 10 for Hailuo). Takes one to a few minutes (reply {status: 'running'}: use wait_for). The MP4 is saved in the project's generated folder and added to the media, marked AI with its prompt; with atMs it is placed there (on trackId or the first video track). Clips have no sound.",
 		input: {
 			prompt: z.string().min(3).max(2500),
 			imageAssetId: z.string().optional(),
@@ -1373,7 +1373,7 @@ export const contract = {
 	},
 	generate_music: {
 		description:
-			"Make an original, royalty-free music bed to measure (no credit needed), in one of two ways. With mood, Cue composes it on this computer: calm (soft piano arpeggios over a pad: explainers, tutorials, study or assignment videos), lofi (jazzy chords, soft beat, vinyl), ambient (slow open chords), tension (dark minor pulse), uplifting (bright arpeggios, light beat) or documentary (dark drone); optional key (C, D, E, F, G, A, B and sharps) and bpm. With prompt, ElevenLabs composes real-sounding music from a description (needs the user's ElevenLabs key; get_ai_status 'sound'): genre, mood, instruments, tempo and how it develops, e.g. 'warm acoustic guitar and soft piano, gentle and hopeful, 90 bpm, builds slightly at the end'; instrumental true keeps vocals out (use it under a voice); 3 s to 10 min. It is durationMs long (lengthMs is the same; default: to the end of the timeline), laid on the music track from startMs (atMs is the same) with fades, ducked under the voice, unless place is false.",
+			"Make an original, royalty-free music bed to measure (no credit needed), in one of two ways. With mood, Cue composes it on this computer: calm (soft piano arpeggios over a pad: explainers, tutorials, study or assignment videos), lofi (jazzy chords, soft beat, vinyl), ambient (slow open chords), tension (dark minor pulse), uplifting (bright arpeggios, light beat) or documentary (dark drone); optional key (C, D, E, F, G, A, B and sharps) and bpm. With prompt, ElevenLabs composes real-sounding music from a description (directly or through fal; get_ai_status 'sound'): genre, mood, instruments, tempo and how it develops, e.g. 'warm acoustic guitar and soft piano, gentle and hopeful, 90 bpm, builds slightly at the end'; instrumental true keeps vocals out (use it under a voice); 3 s to 10 min. It is durationMs long (lengthMs is the same; default: to the end of the timeline), laid on the music track from startMs (atMs is the same) with fades, ducked under the voice, unless place is false.",
 		input: {
 			mood: z.enum(["calm", "lofi", "ambient", "tension", "uplifting", "documentary"]).optional(),
 			prompt: z.string().min(3).max(2000).optional(),
@@ -1414,7 +1414,7 @@ export const contract = {
 	},
 	update_ai: {
 		description:
-			"Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel, and for ElevenLabs voices elevenVoice (a voice id from list_voices), elevenVoiceName and elevenModel (eleven_v3: most expressive, 70+ languages, audio tags like [whispers]; eleven_multilingual_v2: stable long-form; eleven_flash_v2_5: fast). ttsModel: keep gpt-4o-mini-tts (it follows OpenAI's newest speech model; a dated snapshot pins an old one), or tts-1-hd. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable. Which provider speaks is an app setting (update_app_settings {ai: {tts: 'openai' | 'elevenlabs' | 'macos'}}).",
+			"Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel, and for ElevenLabs voices elevenVoice (a voice id from list_voices), elevenVoiceName, falVoice (a default voice's name, used through fal) and elevenModel (eleven_v3: most expressive, 70+ languages, audio tags like [whispers]; eleven_multilingual_v2: stable long-form; eleven_flash_v2_5: fast). ttsModel: keep gpt-4o-mini-tts (it follows OpenAI's newest speech model; a dated snapshot pins an old one), or tts-1-hd. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable. Which provider speaks is an app setting (update_app_settings {ai: {tts: 'auto' | 'openai' | 'elevenlabs' | 'macos'}}; auto uses what is connected).",
 		input: { ai: aiSchema.partial() },
 	},
 	add_marker: {

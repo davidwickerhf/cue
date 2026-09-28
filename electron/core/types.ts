@@ -549,6 +549,8 @@ export interface AiSettings {
 	elevenVoice: string;
 	elevenVoiceName?: string;
 	elevenModel: string;
+	/** Voice for ElevenLabs through fal: one of ElevenLabs' default voices, by name. */
+	falVoice: string;
 }
 
 /** A timeline that is not open right now (the open one lives in ProjectData.tracks/clips/markers). */
@@ -683,11 +685,18 @@ export interface AppState {
 	ai: {
 		configured: boolean;
 		provider: "openai" | null;
+		/** Connected services (never keys), and where each key came from. */
+		connections?: {
+			service: "openai" | "fal" | "elevenlabs" | "higgsfield";
+			connected: boolean;
+			source?: "stored" | "environment";
+		}[];
 		status: {
 			capability: "tts" | "transcription" | "text" | "image" | "sound" | "video";
 			provider: string;
 			ready: boolean;
 			problem?: string;
+			connect?: "openai" | "fal" | "elevenlabs" | "higgsfield";
 			model?: string;
 		}[];
 	};

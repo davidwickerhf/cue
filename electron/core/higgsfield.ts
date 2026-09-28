@@ -186,7 +186,9 @@ export async function generateClip(
 		sleep?: (ms: number) => Promise<void>;
 	} = {},
 ): Promise<{ file: string; url: string; model: string; label: string; durationSec: number }> {
-	const model = resolveClipModel(input.model, !!input.image);
+	const model = resolveClipModel(input.model, !!input.image, { fal: false, higgsfield: true });
+	if (model.service !== "higgsfield")
+		throw new Error(`${model.label} runs on fal, not Higgsfield: connect fal in Settings → AI.`);
 	const duration = snapDuration(input.durationSec, model.durations);
 	const progress = options.onProgress ?? (() => {});
 	progress(0.02);

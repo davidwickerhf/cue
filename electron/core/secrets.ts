@@ -5,6 +5,8 @@
  */
 export interface Secrets {
 	openai?: string;
+	/** One key for voice, sound, music, video and images through fal.ai. */
+	fal?: string;
 	elevenlabs?: string;
 	/** Higgsfield keys come in two parts. */
 	higgsfield?: HiggsfieldKey;
@@ -32,6 +34,8 @@ export function parseSecrets(json: string): Secrets {
 	const out: Secrets = {};
 	const openai = text(raw.openai);
 	if (openai) out.openai = openai;
+	const fal = text(raw.fal);
+	if (fal) out.fal = fal;
 	const elevenlabs = text(raw.elevenlabs);
 	if (elevenlabs) out.elevenlabs = elevenlabs;
 	const hf = raw.higgsfield as Record<string, unknown> | undefined;
@@ -57,4 +61,33 @@ export function withSecret<P extends SecretProvider>(
 	if (value === null || value === undefined) delete next[provider];
 	else next[provider] = value;
 	return parseSecrets(JSON.stringify(next));
+}
+
+/** Where a connected key came from: saved in Cue, or the environment Cue was started in. */
+export type KeySource = "stored" | "environment";
+
+/**
+ * Keys from the environment (as for OPENAI_API_KEY before), used when none is
+ * stored for that service. Returns the keys and where each came from.
+ */
+export function withEnvironment(
+	stored: Secrets,
+	env: Record<string, string | undefined>,
+): { keys: Secrets; sources: Partial<Record<SecretProvider, KeySource>> } {
+	const keys: Secrets = { ...stored };
+	const sources: Partial<Record<SecretProvider, KeySource>> = {};
+	const fromEnv: [Exclude<SecretProvider, "higgsfield">, string | undefined][] = [
+		["openai", env.OPENAI_API_KEY],
+		["fal", env.FAL_KEY],
+		["elevenlabs", env.ELEVENLABS_API_KEY ?? env.XI_API_KEY],
+	];
+	for (const [provider, value] of fromEnv) {
+		if (keys[provider]) sources[provider] = "stored";
+		else if (value?.trim()) {
+			keys[provider] = value.trim();
+			sources[provider] = "environment";
+		}
+	}
+	if (keys.higgsfield) sources.higgsfield = "stored";
+	return { keys, sources };
 }

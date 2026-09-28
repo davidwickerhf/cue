@@ -10,6 +10,13 @@ import type {
 	RecorderStatus,
 } from "./core/types";
 
+/** Where a Connect flow is (its key never reaches the window). */
+export interface ConnectStatus {
+	service: "fal" | "openai" | "elevenlabs" | null;
+	state: "idle" | "pending" | "connected" | "timeout" | "cancelled";
+	message?: string;
+}
+
 const api = {
 	/** The same methods agents use, performed as the user. */
 	call: <T = unknown>(method: MethodName, params?: unknown) =>
@@ -199,14 +206,33 @@ const api = {
 		ipcRenderer.invoke("cue:chooseFolder", options) as Promise<string | null>,
 	reveal: (file: string) => ipcRenderer.invoke("cue:reveal", file),
 	setApiKey: (key: string | null) => ipcRenderer.invoke("cue:setApiKey", key),
-	/** Stores (null removes) an ElevenLabs key or a Higgsfield key id and secret. */
-	setConnection: (
-		provider: "elevenlabs" | "higgsfield",
-		value: string | { id: string; secret: string } | null,
-	) => ipcRenderer.invoke("cue:setConnection", provider, value) as Promise<void>,
-	/** Checks a stored key with a cheap call to the provider. */
-	testConnection: (provider: "elevenlabs" | "higgsfield") =>
-		ipcRenderer.invoke("cue:testConnection", provider) as Promise<{ ok: boolean; message: string }>,
+	/** Forgets a service's stored key. */
+	disconnect: (service: "openai" | "fal" | "elevenlabs" | "higgsfield") =>
+		ipcRenderer.invoke("cue:disconnect", service) as Promise<void>,
+	/** Checks a key typed or pasted by hand, and stores it if the service accepts it. */
+	connectWithKey: (
+		service: "openai" | "fal" | "elevenlabs" | "higgsfield",
+		value: string | { id: string; secret: string },
+	) =>
+		ipcRenderer.invoke("cue:connectWithKey", service, value) as Promise<{
+			ok: boolean;
+			message: string;
+		}>,
+	/** Checks a connected key with a cheap call to the service. */
+	testConnection: (service: "openai" | "fal" | "elevenlabs" | "higgsfield") =>
+		ipcRenderer.invoke("cue:testConnection", service) as Promise<{ ok: boolean; message: string }>,
+	/** Opens the service's key page and picks up a new key copied from it. */
+	connectStart: (service: "fal" | "openai" | "elevenlabs") =>
+		ipcRenderer.invoke("cue:connectStart", service) as Promise<void>,
+	connectCancel: () => ipcRenderer.invoke("cue:connectCancel") as Promise<void>,
+	connectState: () => ipcRenderer.invoke("cue:connectState") as Promise<ConnectStatus>,
+	onConnectStatus: (listener: (status: ConnectStatus) => void) => {
+		const handler = (_event: IpcRendererEvent, status: ConnectStatus) => listener(status);
+		ipcRenderer.on("cue:connectStatus", handler);
+		return () => {
+			ipcRenderer.removeListener("cue:connectStatus", handler);
+		};
+	},
 	getAppSettings: () =>
 		ipcRenderer.invoke("cue:getAppSettings") as Promise<import("./core/runtime").AppSettings>,
 	setAppSettings: (patch: Partial<import("./core/runtime").AppSettings>) =>
