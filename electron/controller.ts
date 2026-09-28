@@ -2442,14 +2442,18 @@ export class Controller extends EventEmitter {
 	}
 
 	/** A video or picture clip with its asset, for tracking. */
-	private trackable(id: string) {
+	/** A picture clip with its asset: video or pictures are tracked; motion graphics can also be pinned or follow. */
+	private trackable(id: string, as: "tracked" | "target" = "tracked") {
 		const clip = this.store.current.clips.find((c) => c.id === id);
 		if (!clip) throw new Error(`No clip ${id}.`);
-		if (clip.type !== "media")
-			throw new Error("Only video and picture clips can be tracked or pinned.");
+		const kinds = as === "target" ? ["video", "image", "lottie"] : ["video", "image"];
+		const what =
+			as === "target"
+				? "Video, picture and motion graphic clips can be pinned or follow a track."
+				: "Only video and picture clips can be tracked.";
+		if (clip.type !== "media") throw new Error(what);
 		const asset = this.store.current.assets.find((a) => a.id === clip.assetId);
-		if (!asset || (asset.kind !== "video" && asset.kind !== "image"))
-			throw new Error("Only video and picture clips can be tracked or pinned.");
+		if (!asset || !kinds.includes(asset.kind)) throw new Error(what);
 		return { clip, asset, file: this.store.assetPath(asset.id) };
 	}
 
@@ -2550,7 +2554,7 @@ export class Controller extends EventEmitter {
 		if (!tracker?.result?.length)
 			throw new Error("That clip has no motion track yet: use track_motion first.");
 		if (targetId === source.id) throw new Error("Pin or move another clip, not the tracked one.");
-		const { clip: target, asset } = this.trackable(targetId);
+		const { clip: target, asset } = this.trackable(targetId, "target");
 		const sourceAsset = this.trackable(source.id).asset;
 		const { canvas } = this.store.current;
 		const from = Math.max(source.startMs, target.startMs);
