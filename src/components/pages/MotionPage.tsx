@@ -13,6 +13,7 @@ import {
 	type Dispatch,
 	type PointerEvent as ReactPointerEvent,
 	type SetStateAction,
+	useCallback,
 	useEffect,
 	useMemo,
 	useRef,
@@ -31,15 +32,16 @@ import {
 	layerAt,
 	layerAtPoint,
 	layerBox,
-	listLayers,
 	moveLayer,
 	reorderLayer,
 	updateLayer,
 } from "../../../electron/core/motionLayers";
+import { compileMotion } from "../../../electron/core/motionSpec";
 import { buildTemplate, MOTION_TEMPLATES } from "../../../electron/core/motionTemplates";
+import type { KeySel } from "../../../electron/core/motionTimeline";
 import type { Asset } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
-import { drawMotion, onMotionReady } from "../../lib/motion";
+import { drawMotion, forgetMotion, onMotionReady, provideMotion } from "../../lib/motion";
 import { goToPage, pageState } from "../../lib/pages";
 import { playback } from "../../lib/playback";
 import { editor, useProject } from "../../lib/state";
@@ -54,7 +56,8 @@ import {
 	TextInput,
 	Toggle,
 } from "../ui/controls";
-import { AnimationFields, KeyStrip, type PickedKey } from "./MotionKeys";
+import { KeyGlyph, KeysSection, PresetSection, type PresetSel } from "./MotionKeys";
+import { MotionTimeline } from "./MotionTimeline";
 
 type Json = Record<string, unknown>;
 
@@ -66,13 +69,20 @@ const FONTS = [
 	{ value: "mono", label: "Mono" },
 ] as const;
 
+const HEIGHT_KEY = "cue.motion.timelineHeight";
+
+function storedHeight(): number {
+	const v = Number(localStorage.getItem(HEIGHT_KEY));
+	return Number.isFinite(v) && v >= 120 ? v : 300;
+}
+
 /**
  * The Motion page: one motion graphic at a time, like an After Effects
- * composition. Its layers on the left, a large preview with its own transport
- * in the middle (click a layer to pick it, drag it to move it), and the chosen
- * layer's properties (or a template's fields) on the right, its keys on a strip
- * under the preview. Every change is one undoable update of the graphic, and
- * clips using it update everywhere.
+ * composition. The graphics on the left, a large preview with the picked
+ * layer's box to drag in the middle, its still properties (or a template's
+ * fields, or the picked keys) on the right, and across the bottom a timeline
+ * with the layers, their properties and keys. Every change is one undoable
+ * update of the graphic, and clips using it update everywhere.
  */
 export function MotionPage() {
 	const project = useProject();
@@ -83,8 +93,13 @@ export function MotionPage() {
 	);
 	const asset = graphics.find((a) => a.id === wanted) ?? graphics[0];
 	const [selected, setSelected] = useState<number[] | null>(null);
-	const [picked, setPicked] = useState<PickedKey>(null);
-	// The preview's time, in the graphic's frames: shared by the preview, the key strip and the inspector.
+	const [keySel, setKeySel] = useState<KeySel[]>([]);
+	const [presetSel, setPresetSel] = useState<PresetSel | null>(null);
+	const [playing, setPlaying] = useState(false);
+	// A drag's result, shown (timeline and preview) until it is saved.
+	const [draft, setDraft] = useState<Json | null>(null);
+	const [timelineH, setTimelineH] = useState(storedHeight);
+	// The preview's time, in the graphic's frames: shared by the preview, the timeline and the inspector.
 	const info = asset?.motion;
 	const inFrame = info?.inFrame ?? 0;
 	const outFrame = info?.outFrame ?? 60;
@@ -94,227 +109,293 @@ export function MotionPage() {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the graphic changes
 	useEffect(() => {
 		setSelected(null);
-		setFrame(inFrame + (outFrame - inFrame) * 0.6);
+		setKeySel([]);
+		setPresetSel(null);
+		setDraft(null);
+		setPlaying(false);
+		setFrame(Math.round(inFrame + (outFrame - inFrame) * 0.6));
 	}, [asset?.id]);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: a key belongs to the layer it was picked on
-	useEffect(() => setPicked(null), [selected?.join(".")]);
-	if (!project) return null;
 
-	const canvas = project.data.canvas;
+	// Stopped playback rests on a whole frame, where keys go.
+	useEffect(() => {
+		if (!playing) setFrame((f) => Math.round(f));
+	}, [playing]);
+
+	const canvas = project?.data.canvas;
 	const source = asset?.motionSource;
 	const template = source?.template
 		? MOTION_TEMPLATES.find((t) => t.id === source.template)
 		: undefined;
-	let spec: Json | null = null;
-	try {
-		spec = source?.spec
-			? (source.spec as Json)
-			: template
-				? (buildTemplate(template.id, source?.params ?? {}, canvas) as unknown as Json)
-				: null;
-	} catch {
-		spec = null;
-	}
+	const saved = useMemo(() => {
+		if (!canvas) return null;
+		try {
+			return source?.spec
+				? (source.spec as Json)
+				: template
+					? (buildTemplate(template.id, source?.params ?? {}, canvas) as unknown as Json)
+					: null;
+		} catch {
+			return null;
+		}
+	}, [source, template, canvas]);
+	// The saved graphic changed (a save landed, or an undo): drafts are done.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the saved graphic changes
+	useEffect(() => setDraft(null), [saved]);
+	const save = useCallback(
+		async (next: Json) => {
+			if (!asset) return;
+			await run("update_motion_graphic", { assetId: asset.id, spec: next });
+		},
+		[asset],
+	);
+	const commit = useCallback(
+		async (next: Json) => {
+			setDraft(next);
+			await save(next);
+			setDraft(null);
+		},
+		[save],
+	);
+	if (!project || !canvas) return null;
+
+	const spec = draft ?? saved;
 	const editable = !!source?.spec;
-	const save = async (next: Json) => {
-		if (!asset) return;
-		await run("update_motion_graphic", { assetId: asset.id, spec: next });
-	};
 	const layer = spec && selected ? layerAt(spec, selected) : undefined;
-	const applyToLayer = (patch: Json) =>
-		spec && selected ? save(updateLayer(spec, selected, patch)) : Promise.resolve();
-	const atMs = (frame / fps) * 1000;
+	// Edits happen on whole frames, where keys sit.
+	const atMs = (Math.round(frame) / fps) * 1000;
+	const seekMs = (ms: number) => {
+		setPlaying(false);
+		setFrame(Math.min(outFrame, Math.max(inFrame, Math.round((ms / 1000) * fps))));
+	};
+	const pick = (path: number[] | null) => {
+		if (path?.join(".") !== selected?.join(".")) setPresetSel(null);
+		setSelected(path);
+	};
+
+	const startResize = (e: ReactPointerEvent) => {
+		e.preventDefault();
+		const y0 = e.clientY;
+		const h0 = timelineH;
+		let h = h0;
+		const onMove = (ev: PointerEvent) => {
+			h = Math.round(Math.min(window.innerHeight - 220, Math.max(120, h0 - (ev.clientY - y0))));
+			setTimelineH(h);
+		};
+		const onUp = () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			localStorage.setItem(HEIGHT_KEY, String(h));
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+	};
 
 	return (
-		<div className="flex min-h-0 flex-1">
-			<aside className="custom-scrollbar flex w-64 shrink-0 flex-col overflow-y-auto border-r border-separator bg-surface">
-				<Section title="Graphics">
-					{graphics.length === 0 && (
-						<p className="text-[12px] leading-relaxed text-muted">
-							No motion graphics yet. Make one from a template in the Asset library, or ask your
-							agent to design one.
-						</p>
-					)}
-					<div className="custom-scrollbar -mx-1 flex max-h-[32vh] flex-col gap-0.5 overflow-y-auto px-1">
-						{graphics.map((g) => (
-							<button
-								key={g.id}
-								type="button"
-								onClick={() => pageState.set({ motionAssetId: g.id })}
-								className={cn(
-									"flex h-7 items-center gap-2 rounded-md px-2 text-left text-[12px]",
-									g.id === asset?.id
-										? "bg-default text-foreground"
-										: "text-foreground/80 hover:bg-default/60",
-								)}
-							>
-								<ShootingStar className="size-3.5 shrink-0 text-muted" />
-								<span className="min-w-0 flex-1 truncate">{g.name}</span>
-							</button>
-						))}
-					</div>
-					<Button
-						size="sm"
-						variant="ghost"
-						className="h-7 w-full gap-1.5 text-[12px]"
-						onPress={() => {
-							editor.set({ panel: "library" });
-							goToPage("edit");
-						}}
-					>
-						<Plus className="size-3.5" /> New from a template…
-					</Button>
-				</Section>
-				{spec && (
-					<Section title="Layers">
-						{!editable && template && (
-							<p className="text-[11px] leading-relaxed text-muted">
-								Made from the {template.name} template. Change its fields on the right, or pick any
-								layer to change it directly: the graphic then becomes your own design.
+		<div className="flex min-h-0 flex-1 flex-col">
+			<div className="flex min-h-0 flex-1">
+				<aside className="custom-scrollbar flex w-60 shrink-0 flex-col overflow-y-auto border-r border-separator bg-surface">
+					<Section title="Graphics">
+						{graphics.length === 0 && (
+							<p className="text-[12px] leading-relaxed text-muted">
+								No motion graphics yet. Make one from a template in the Asset library, or ask your
+								agent to design one.
 							</p>
 						)}
 						<div className="flex flex-col gap-0.5">
-							{listLayers(spec).map((row) => {
-								const on = selected?.join() === row.path.join();
-								return (
-									<button
-										key={row.path.join(".")}
-										type="button"
-										onClick={() => setSelected(row.path)}
-										style={{ paddingLeft: 8 + row.depth * 14 }}
-										className={cn(
-											"flex h-7 items-center gap-2 rounded-md pr-2 text-left text-[12px] disabled:cursor-default",
-											on
-												? "bg-accent/20 text-foreground"
-												: "text-foreground/80 enabled:hover:bg-default/60",
-											row.layer.hidden ? "opacity-50" : "",
-										)}
-									>
-										<span className="w-12 shrink-0 text-[10px] text-muted uppercase">
-											{row.type}
-										</span>
-										<span className="min-w-0 flex-1 truncate">{row.name}</span>
-									</button>
-								);
-							})}
+							{graphics.map((g) => (
+								<button
+									key={g.id}
+									type="button"
+									onClick={() => pageState.set({ motionAssetId: g.id })}
+									className={cn(
+										"flex h-7 items-center gap-2 rounded-md px-2 text-left text-[12px]",
+										g.id === asset?.id
+											? "bg-default text-foreground"
+											: "text-foreground/80 hover:bg-default/60",
+									)}
+								>
+									<ShootingStar className="size-3.5 shrink-0 text-muted" />
+									<span className="min-w-0 flex-1 truncate">{g.name}</span>
+								</button>
+							))}
 						</div>
+						<Button
+							size="sm"
+							variant="ghost"
+							className="h-7 w-full gap-1.5 text-[12px]"
+							onPress={() => {
+								editor.set({ panel: "library" });
+								goToPage("edit");
+							}}
+						>
+							<Plus className="size-3.5" /> New from a template…
+						</Button>
+						{spec && !editable && template && (
+							<p className="text-[11px] leading-relaxed text-muted">
+								Made from the {template.name} template. Change its fields on the right, or change
+								any layer in the timeline: the graphic then becomes your own design.
+							</p>
+						)}
 					</Section>
-				)}
-			</aside>
+				</aside>
 
-			<main className="flex min-w-0 flex-1 flex-col bg-background">
-				{asset ? (
-					<>
+				<main className="flex min-w-0 flex-1 flex-col bg-background">
+					{asset ? (
 						<Stage
 							asset={asset}
 							url={project.assetUrls[asset.id]}
 							spec={spec}
+							draft={draft}
+							canvas={canvas}
 							selected={selected}
-							onSelect={setSelected}
+							onSelect={pick}
 							onMove={(path, dx, dy) => {
-								if (spec) void save(moveLayer(spec, path, dx, dy));
+								if (spec) void commit(moveLayer(spec, path, dx, dy));
 							}}
 							frame={frame}
 							setFrame={setFrame}
+							playing={playing}
+							setPlaying={setPlaying}
 						/>
-						{spec && layer && (
-							<KeyStrip
-								spec={spec}
-								layer={layer}
-								fps={fps}
-								inFrame={inFrame}
-								outFrame={outFrame}
-								frame={frame}
-								onSeek={setFrame}
-								picked={picked}
-								onPick={setPicked}
-								apply={applyToLayer}
-							/>
-						)}
-					</>
-				) : (
-					<div className="flex flex-1 items-center justify-center text-[13px] text-muted">
-						Pick or make a motion graphic to design it here.
-					</div>
-				)}
-			</main>
+					) : (
+						<div className="flex flex-1 items-center justify-center text-[13px] text-muted">
+							Pick or make a motion graphic to design it here.
+						</div>
+					)}
+				</main>
 
-			<aside className="custom-scrollbar w-80 shrink-0 overflow-y-auto border-l border-separator bg-surface">
-				{asset && (
-					<div className="flex flex-col">
-						<Section title={asset.name}>
-							<div className="flex flex-wrap gap-1.5">
-								<Button
-									size="sm"
-									variant="secondary"
-									className="h-7 text-[12px]"
-									onPress={() => {
-										void run("add_clips", {
-											clips: [
-												{
-													type: "media",
-													assetId: asset.id,
-													trackId: topPictureTrack(project.data.tracks) ?? "V1",
-													startMs: Math.round(playback.currentMs),
-												},
-											],
-										}).then(() => notify("Placed at the playhead", "success"));
-									}}
-								>
-									Place at playhead
-								</Button>
-								{spec && (
+				<aside className="custom-scrollbar w-80 shrink-0 overflow-y-auto border-l border-separator bg-surface">
+					{asset && (
+						<div className="flex flex-col">
+							<Section title={asset.name}>
+								<div className="flex flex-wrap gap-1.5">
 									<Button
 										size="sm"
-										variant="ghost"
-										className="h-7 gap-1.5 text-[12px]"
-										onPress={() =>
-											void run<Asset>("create_motion_graphic", {
-												spec,
-												name: `${asset.name} copy`,
-											}).then((made) => made && pageState.set({ motionAssetId: made.id }))
-										}
+										variant="secondary"
+										className="h-7 text-[12px]"
+										onPress={() => {
+											void run("add_clips", {
+												clips: [
+													{
+														type: "media",
+														assetId: asset.id,
+														trackId: topPictureTrack(project.data.tracks) ?? "V1",
+														startMs: Math.round(playback.currentMs),
+													},
+												],
+											}).then(() => notify("Placed at the playhead", "success"));
+										}}
 									>
-										<Copy className="size-3.5" /> Duplicate
+										Place at playhead
 									</Button>
-								)}
-							</div>
-						</Section>
-						{template && !editable && !layer && <TemplateSection asset={asset} />}
-						{editable && spec && !layer && <CompositionFields spec={spec} save={save} />}
-						{spec && layer && selected && !editable && template && (
-							<p className="mx-4 mt-3 rounded-lg border border-border bg-default/40 p-3 text-[11px] leading-relaxed text-muted">
-								Changing a layer makes this graphic your own design: the {template.name}{" "}
-								template&apos;s fields stop applying to it (clips using it keep working). Pick
-								nothing to see the template&apos;s fields again.
-							</p>
-						)}
-						{spec && layer && selected && (
-							<LayerFields
-								key={selected.join(".")}
-								spec={spec}
-								path={selected}
-								layer={layer}
-								save={save}
-								onPath={setSelected}
-								atMs={atMs}
-								onSeekMs={(ms) => setFrame((ms / 1000) * fps)}
-								picked={picked}
-								onPick={setPicked}
-							/>
-						)}
-						{!spec && (
-							<Section title="Imported animation">
-								<p className="text-[12px] leading-relaxed text-muted">
-									This Lottie file came from outside Cue (After Effects or LottieFiles): change its
-									text and colours in the Inspector on the Edit page. Graphics made in Cue can be
-									edited layer by layer here.
-								</p>
+									{spec && (
+										<Button
+											size="sm"
+											variant="ghost"
+											className="h-7 gap-1.5 text-[12px]"
+											onPress={() =>
+												void run<Asset>("create_motion_graphic", {
+													spec,
+													name: `${asset.name} copy`,
+												}).then((made) => made && pageState.set({ motionAssetId: made.id }))
+											}
+										>
+											<Copy className="size-3.5" /> Duplicate
+										</Button>
+									)}
+								</div>
 							</Section>
-						)}
+							{spec && keySel.length > 0 && (
+								<KeysSection
+									spec={spec}
+									sel={keySel}
+									fps={fps}
+									commit={(next) => void commit(next)}
+									onSel={setKeySel}
+								/>
+							)}
+							{spec && presetSel && (
+								<PresetSection spec={spec} sel={presetSel} commit={(next) => void commit(next)} />
+							)}
+							{template && !editable && !layer && <TemplateSection asset={asset} />}
+							{editable && spec && !layer && <CompositionFields spec={spec} save={commit} />}
+							{spec && layer && selected && !editable && template && (
+								<p className="mx-4 mt-3 rounded-lg border border-border bg-default/40 p-3 text-[11px] leading-relaxed text-muted">
+									Changing a layer makes this graphic your own design: the {template.name}{" "}
+									template&apos;s fields stop applying to it (clips using it keep working). Pick
+									nothing to see the template&apos;s fields again.
+								</p>
+							)}
+							{spec && layer && selected && (
+								<LayerFields
+									key={selected.join(".")}
+									spec={spec}
+									path={selected}
+									layer={layer}
+									save={commit}
+									onPath={(path) => {
+										setKeySel([]);
+										pick(path);
+									}}
+									atMs={atMs}
+									onKeyed={(prop, ms) => setKeySel([{ path: selected, prop, ms }])}
+								/>
+							)}
+							{!spec && (
+								<Section title="Imported animation">
+									<p className="text-[12px] leading-relaxed text-muted">
+										This Lottie file came from outside Cue (After Effects or LottieFiles): change
+										its text and colours in the Inspector on the Edit page. Graphics made in Cue can
+										be edited layer by layer here.
+									</p>
+								</Section>
+							)}
+						</div>
+					)}
+				</aside>
+			</div>
+
+			{asset && spec && (
+				<>
+					<hr
+						aria-orientation="horizontal"
+						aria-label="Timeline height"
+						aria-valuenow={timelineH}
+						tabIndex={0}
+						onKeyDown={(e) => {
+							if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+							e.preventDefault();
+							e.stopPropagation();
+							const h = Math.min(
+								window.innerHeight - 220,
+								Math.max(120, timelineH + (e.key === "ArrowUp" ? 32 : -32)),
+							);
+							setTimelineH(h);
+							localStorage.setItem(HEIGHT_KEY, String(h));
+						}}
+						onPointerDown={startResize}
+						className="relative m-0 h-px shrink-0 cursor-row-resize border-0 bg-separator after:absolute after:inset-x-0 after:-top-1.5 after:-bottom-1.5 after:content-[''] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+					/>
+					<div className="flex shrink-0 flex-col" style={{ height: timelineH }}>
+						<MotionTimeline
+							spec={spec}
+							fps={fps}
+							atMs={atMs}
+							onSeekMs={seekMs}
+							playing={playing}
+							onTogglePlay={() => setPlaying((p) => !p)}
+							selected={selected}
+							onSelect={pick}
+							keySel={keySel}
+							onKeySel={setKeySel}
+							presetSel={presetSel}
+							onPresetSel={setPresetSel}
+							commit={commit}
+							preview={setDraft}
+						/>
 					</div>
-				)}
-			</aside>
+				</>
+			)}
 		</div>
 	);
 }
@@ -323,25 +404,97 @@ function topPictureTrack(tracks: { id: string; kind: string; locked?: boolean }[
 	return tracks.find((t) => t.kind === "video" && !t.locked)?.id;
 }
 
+const DRAFT_PREFIX = "motion-draft:";
+let draftCount = 0;
+
+function hasImages(layers: unknown): boolean {
+	return (
+		Array.isArray(layers) && layers.some((l: Json) => l?.type === "image" || hasImages(l?.layers))
+	);
+}
+
+/**
+ * An unsaved version of the graphic compiled here, so the preview follows a
+ * drag live (at most every few frames); saved versions come from the file.
+ * Graphics with pictures wait for the save (their files are read by the app).
+ */
+function useDraftMotion(
+	draft: Json | null,
+	comp: { width: number; height: number; fps: number },
+): string | null {
+	const [key, setKey] = useState<string | null>(null);
+	const pending = useRef<Json | null>(null);
+	const timer = useRef<number | null>(null);
+	const lastAt = useRef(0);
+	const made = useRef<string[]>([]);
+	useEffect(() => {
+		pending.current = draft;
+		if (!draft || hasImages(draft.layers)) {
+			if (timer.current !== null) window.clearTimeout(timer.current);
+			timer.current = null;
+			setKey(null);
+			return;
+		}
+		if (timer.current !== null) return;
+		const build = () => {
+			timer.current = null;
+			lastAt.current = performance.now();
+			const next = pending.current;
+			if (!next) return;
+			try {
+				// Only the size and rate: the project's own background is not the graphic's.
+				const { width, height, fps } = comp;
+				const json = compileMotion({ width, height, fps, ...next });
+				const k = `${DRAFT_PREFIX}${++draftCount}`;
+				provideMotion(k, json);
+				// Keep the last few (the preview shows the newest that has loaded), free the rest.
+				made.current.push(k);
+				while (made.current.length > 3) forgetMotion(made.current.shift() as string);
+				setKey(k);
+			} catch {
+				// A draft that doesn't compile keeps showing the last one that did.
+			}
+		};
+		const wait = Math.max(0, 70 - (performance.now() - lastAt.current));
+		timer.current = window.setTimeout(build, wait);
+	}, [draft, comp]);
+	useEffect(
+		() => () => {
+			if (timer.current !== null) window.clearTimeout(timer.current);
+		},
+		[],
+	);
+	return key;
+}
+
 /** The preview: the graphic drawn at a frame, a transport, and the chosen layer's box to drag. */
 function Stage({
 	asset,
 	url,
 	spec,
+	draft,
+	canvas: comp,
 	selected,
 	onSelect,
 	onMove,
 	frame,
 	setFrame,
+	playing,
+	setPlaying,
 }: {
 	asset: Asset;
 	url: string | undefined;
 	spec: Json | null;
+	/** An unsaved change (a drag on the timeline): drawn from a local compile until it is saved. */
+	draft: Json | null;
+	canvas: { width: number; height: number; fps: number };
 	selected: number[] | null;
 	onSelect: (path: number[] | null) => void;
 	onMove: (path: number[], dx: number, dy: number) => void;
 	frame: number;
 	setFrame: Dispatch<SetStateAction<number>>;
+	playing: boolean;
+	setPlaying: Dispatch<SetStateAction<boolean>>;
 }) {
 	const info = asset.motion;
 	const inFrame = info?.inFrame ?? 0;
@@ -349,9 +502,6 @@ function Stage({
 	const fps = info?.fps ?? 30;
 	const W = Number(spec?.width ?? 1920);
 	const H = Number(spec?.height ?? 1080);
-	const [playing, setPlaying] = useState(false);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the graphic changes
-	useEffect(() => setPlaying(false), [asset.id]);
 	const [area, setArea] = useState({ w: 800, h: 450 });
 	const [drag, setDrag] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
 	const holder = useRef<HTMLDivElement>(null);
@@ -372,12 +522,23 @@ function Stage({
 	const scale = Math.min(area.w / W, area.h / H) * 0.94;
 	const w = Math.max(2, Math.round(W * scale));
 	const h = Math.max(2, Math.round(H * scale));
+	const draftKey = useDraftMotion(draft, comp);
+	// What was drawn last: shown while a new version loads, so edits never blink.
+	const lastGood = useRef<string | null>(null);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: redraw when loaded (ready) too
 	useEffect(() => {
 		const ctx = canvas.current?.getContext("2d");
-		if (!ctx || !url) return;
-		drawMotion(ctx, url, undefined, frame);
-	}, [url, frame, w, h, ready]);
+		const src = draftKey ?? url;
+		if (!ctx || !src) return;
+		if (drawMotion(ctx, src, undefined, frame)) {
+			if (lastGood.current !== src) {
+				const old = lastGood.current;
+				lastGood.current = src;
+				if (old?.startsWith(DRAFT_PREFIX)) forgetMotion(old);
+			}
+		} else if (lastGood.current && lastGood.current !== src)
+			drawMotion(ctx, lastGood.current, undefined, frame);
+	}, [url, draftKey, frame, w, h, ready]);
 	useEffect(() => {
 		if (!playing) return;
 		let raf = 0;
@@ -480,10 +641,11 @@ function Stage({
 					)}
 				</div>
 			</div>
-			<div className="flex h-11 shrink-0 items-center gap-3 border-t border-separator bg-surface px-4">
+			<div className="flex h-9 shrink-0 items-center gap-3 border-t border-separator bg-surface px-3">
 				<button
 					type="button"
 					aria-label={playing ? "Pause" : "Play"}
+					title={playing ? "Pause (Space)" : "Play (Space)"}
 					onClick={() => setPlaying(!playing)}
 					className="flex size-7 items-center justify-center rounded-md hover:bg-default"
 				>
@@ -493,22 +655,10 @@ function Stage({
 						<Play weight="fill" className="size-4" />
 					)}
 				</button>
-				<input
-					type="range"
-					aria-label="Time in the graphic"
-					min={inFrame}
-					max={outFrame}
-					step={0.01}
-					value={frame}
-					onChange={(e) => {
-						setPlaying(false);
-						setFrame(Number(e.target.value));
-					}}
-					className="min-w-0 flex-1 accent-[var(--accent)]"
-				/>
-				<span className="w-24 text-right font-mono text-[11px] text-muted tabular">
+				<span className="font-mono text-[11px] text-muted tabular">
 					{seconds(frame)} / {seconds(outFrame)} s
 				</span>
+				<span className="flex-1" />
 				<Segmented
 					size="xs"
 					value={backdrop}
@@ -559,9 +709,7 @@ function LayerFields({
 	save,
 	onPath,
 	atMs,
-	onSeekMs,
-	picked,
-	onPick,
+	onKeyed,
 }: {
 	spec: Json;
 	path: number[];
@@ -569,9 +717,8 @@ function LayerFields({
 	save: (next: Json) => Promise<void>;
 	onPath: (path: number[] | null) => void;
 	atMs: number;
-	onSeekMs: (ms: number) => void;
-	picked: PickedKey;
-	onPick: (picked: PickedKey) => void;
+	/** A change landed on a key (of an animated property): pick it on the timeline. */
+	onKeyed: (prop: KeyProp, ms: number) => void;
 }) {
 	const type = String(layer.type);
 	const apply = (patch: Json) => save(updateLayer(spec, path, patch));
@@ -580,23 +727,41 @@ function LayerFields({
 	const num = (key: string, label: string, fallback: number, step = 1, digits = 0) => {
 		// An animated property shows its value at the playhead, and a change keys it there.
 		const keyed = animated.includes(key as KeyProp) && keyableProps(layer).includes(key as KeyProp);
+		const input = (
+			<NumberInput
+				className={keyed ? "w-28" : undefined}
+				value={
+					keyed
+						? Number(valueAt(spec, layer, key as KeyProp, atMs))
+						: Number(layer[key] ?? fallback)
+				}
+				step={step}
+				digits={digits}
+				onCommit={(v) => {
+					if (!keyed) return set({ [key]: v });
+					const r = setKey(layer, key as KeyProp, atMs, v);
+					void apply(r.patch).then(() => onKeyed(key as KeyProp, Math.round(atMs)));
+				}}
+			/>
+		);
+		if (!keyed)
+			return (
+				<Field label={label} inline>
+					{input}
+				</Field>
+			);
 		return (
-			<Field label={keyed ? `${label} (animated)` : label} inline>
-				<NumberInput
-					value={
-						keyed
-							? Number(valueAt(spec, layer, key as KeyProp, atMs))
-							: Number(layer[key] ?? fallback)
-					}
-					step={step}
-					digits={digits}
-					onCommit={(v) => {
-						if (!keyed) return set({ [key]: v });
-						const r = setKey(layer, key as KeyProp, atMs, v);
-						void apply(r.patch).then(() => onPick({ prop: key as KeyProp, index: r.index }));
-					}}
-				/>
-			</Field>
+			// biome-ignore lint/a11y/noLabelWithoutControl: the input is inside
+			<label className="flex items-center justify-between gap-1 text-[12px]">
+				<span
+					className="flex items-center gap-1.5 text-muted"
+					title="Animated: this is its value at the playhead, and a change sets a key there"
+				>
+					{label}
+					<KeyGlyph glyph={{ in: "linear", out: "linear" }} selected className="scale-75" />
+				</span>
+				{input}
+			</label>
 		);
 	};
 	return (
@@ -726,17 +891,6 @@ function LayerFields({
 				)}
 				{num("rotation", "Rotation", 0, 1, 1)}
 				{num("opacity", "Opacity", 1, 0.05, 2)}
-			</Section>
-			<Section title="Animation">
-				<AnimationFields
-					spec={spec}
-					layer={layer}
-					atMs={atMs}
-					onSeekMs={onSeekMs}
-					picked={picked}
-					onPick={onPick}
-					apply={apply}
-				/>
 			</Section>
 		</>
 	);

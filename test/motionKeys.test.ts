@@ -3,6 +3,7 @@ import {
 	addPreset,
 	animatedProps,
 	clearKeys,
+	type Key,
 	keyableProps,
 	poseAt,
 	presetsOf,
@@ -18,6 +19,35 @@ import {
 } from "../electron/core/motionKeys";
 import { layerAt, moveLayer, updateLayer } from "../electron/core/motionLayers";
 import { compileMotion, parseMotionSpec } from "../electron/core/motionSpec";
+import {
+	clampKeyDelta,
+	clampSlide,
+	copyKeys,
+	deleteKeys,
+	easeFromHandles,
+	easeKeys,
+	interpolateKeys,
+	interpolationOf,
+	type KeySel,
+	keyGlyph,
+	keyIndexAt,
+	keysAsSel,
+	layerSpan,
+	moveKeys,
+	nextKeyTime,
+	pasteKeys,
+	resizePreset,
+	restPatch,
+	selId,
+	setInterpolation,
+	setValueAt,
+	slideLayer,
+	snapTime,
+	startAnimating,
+	stopAnimating,
+	toggleKeyAt,
+	trimLayer,
+} from "../electron/core/motionTimeline";
 
 type Json = Record<string, unknown>;
 
@@ -225,5 +255,328 @@ describe("editing enter and exit presets", () => {
 		expect(updatePreset(layer, "exit", 0, { atMs: 250.6 })).toEqual({
 			exit: [{ preset: "fade", atMs: 251 }],
 		});
+	});
+});
+
+describe("the timeline: picked keys", () => {
+	const keyed = (): Json =>
+		edit(spec, [0], {
+			keys: {
+				x: [
+					[0, 100, "outExpo"],
+					[500, 300],
+					[1000, 500],
+				],
+				opacity: [
+					[0, 0],
+					[400, 1],
+				],
+			},
+		});
+
+	it("moves picked keys across properties together, replacing keys they land on", () => {
+		const s = keyed();
+		const sel: KeySel[] = [
+			{ path: [0], prop: "x", ms: 0 },
+			{ path: [0], prop: "opacity", ms: 400 },
+		];
+		const r = moveKeys(s, sel, 500);
+		expect(() => parseMotionSpec(r.spec)).not.toThrow();
+		expect(keysAt(r.spec, [0]).x).toEqual([
+			[500, 100, "outExpo"],
+			[1000, 500],
+		]);
+		expect(keysAt(r.spec, [0]).opacity).toEqual([
+			[0, 0],
+			[900, 1],
+		]);
+		expect(r.sel.map(selId).sort()).toEqual(["0|opacity|900", "0|x|500"]);
+		// Clamped to the graphic: nothing before 0 or past its end.
+		expect(clampKeyDelta(s, sel, -900)).toBe(0);
+		expect(clampKeyDelta(s, [{ path: [0], prop: "x", ms: 1000 }], 5000)).toBe(2000);
+		expect(moveKeys(s, sel, 0).spec).toBe(s);
+	});
+
+	it("deletes picked keys and stops animating a property left without any", () => {
+		const r = deleteKeys(keyed(), [
+			{ path: [0], prop: "opacity", ms: 0 },
+			{ path: [0], prop: "opacity", ms: 400 },
+			{ path: [0], prop: "x", ms: 500 },
+		]);
+		expect(() => compileMotion(r)).not.toThrow();
+		expect(keysAt(r, [0])).toEqual({
+			x: [
+				[0, 100, "outExpo"],
+				[1000, 500],
+			],
+		});
+		expect(keysAsSel(layerAt(r, [0]) as Json, [0]).map(selId)).toEqual(["0|x|0", "0|x|1000"]);
+	});
+
+	it("copies keys and pastes them at the playhead on the same properties", () => {
+		const s = keyed();
+		const clip = copyKeys(s, [
+			{ path: [0], prop: "x", ms: 500 },
+			{ path: [0], prop: "x", ms: 1000 },
+			{ path: [0], prop: "opacity", ms: 400 },
+		]);
+		expect(clip).toEqual([
+			{ prop: "opacity", offsetMs: 0, value: 1, ease: undefined },
+			{ prop: "x", offsetMs: 100, value: 300, ease: undefined },
+			{ prop: "x", offsetMs: 600, value: 500, ease: undefined },
+		]);
+		const r = pasteKeys(s, [0], clip, 2000);
+		expect(() => parseMotionSpec(r.spec)).not.toThrow();
+		expect(keysAt(r.spec, [0]).x).toEqual([
+			[0, 100, "outExpo"],
+			[500, 300],
+			[1000, 500],
+			[2100, 300],
+			[2600, 500],
+		]);
+		expect(r.sel.map(selId)).toEqual(["0|opacity|2000", "0|x|2100", "0|x|2600"]);
+		// Onto a text layer: it can't animate width, so width keys are skipped; nothing lands past the end.
+		const w = pasteKeys(spec, [1, 0], [{ prop: "width", offsetMs: 0, value: 10 }], 0);
+		expect(w.sel).toEqual([]);
+		expect(pasteKeys(s, [0], clip, 2800).sel.map(selId)).toEqual(["0|opacity|2800", "0|x|2900"]);
+	});
+});
+
+describe("the timeline: interpolation", () => {
+	const ks: Key[] = [
+		[0, 0],
+		[500, 1],
+		[1000, 0],
+	];
+	it("draws key glyphs from the eases on each side", () => {
+		expect(keyGlyph(ks, 1)).toEqual({ in: "linear", out: "linear" });
+		const eased: Key[] = [
+			[0, 0, "out"],
+			[500, 1, "hold"],
+			[1000, 0],
+		];
+		// "out" slows into its next key: an eased arrival there, a straight departure here.
+		expect(keyGlyph(eased, 0)).toEqual({ in: "linear", out: "linear" });
+		expect(keyGlyph(eased, 1)).toEqual({ in: "eased", out: "hold" });
+		expect(keyGlyph(eased, 2)).toEqual({ in: "hold", out: "linear" });
+		expect(keyGlyph([[0, 0, "outExpo"]], 0)).toEqual({ in: "eased", out: "eased" });
+	});
+
+	it("applies Easy Ease, Ease In, Ease Out, Linear and Hold like After Effects", () => {
+		// Easy Ease on the middle key: the stretch before ends eased, the one after starts eased.
+		let next = setInterpolation(ks, 1, "easy");
+		expect(next).toEqual([
+			[0, 0, "out"],
+			[500, 1, "in"],
+			[1000, 0],
+		]);
+		expect(interpolationOf(next, 1)).toBe("easy");
+		// Both ends of a stretch eased read as the named ease-in-out.
+		next = setInterpolation(next, 0, "easy");
+		expect(next[0]).toEqual([0, 0, "inOut"]);
+		// Ease In changes only the arrival; Ease Out only the departure.
+		expect(setInterpolation(ks, 1, "easeIn")).toEqual([
+			[0, 0, "out"],
+			[500, 1],
+			[1000, 0],
+		]);
+		expect(interpolationOf(setInterpolation(ks, 1, "easeOut"), 1)).toBe("easeOut");
+		// A curve that matches no name is kept as handles.
+		const expo: Key[] = [
+			[0, 0, "outExpo"],
+			[500, 1],
+		];
+		expect(setInterpolation(expo, 1, "easeIn")[0]).toEqual([0, 0, [0.16, 1, 0.58, 1]]);
+		expect(easeFromHandles([0.16, 1, 0.3, 1])).toBe("outExpo");
+		expect(easeFromHandles([0, 0, 1, 1])).toBeUndefined();
+		// Hold, then Linear straightens both sides again.
+		const held = setInterpolation(next, 1, "hold");
+		expect(held[1]).toEqual([500, 1, "hold"]);
+		expect(interpolationOf(held, 1)).toBe("hold");
+		const straight = setInterpolation(held, 1, "linear");
+		expect(straight[1]).toEqual([500, 1]);
+		expect(straight[0]).toEqual([0, 0, "in"]);
+		expect(interpolationOf(straight, 1)).toBe("linear");
+	});
+
+	it("eases picked keys in a spec, and the result compiles", () => {
+		const s = edit(spec, [0], { keys: { x: ks, y: ks } });
+		const sel: KeySel[] = [
+			{ path: [0], prop: "x", ms: 500 },
+			{ path: [0], prop: "y", ms: 0 },
+		];
+		const eased = interpolateKeys(s, sel, "easy");
+		expect(() => compileMotion(eased)).not.toThrow();
+		expect(keysAt(eased, [0]).x).toEqual([
+			[0, 0, "out"],
+			[500, 1, "in"],
+			[1000, 0],
+		]);
+		expect((keysAt(eased, [0]).y as Key[])[0]).toEqual([0, 0, "in"]);
+		const custom = easeKeys(s, sel, [0.2, 0.8, 0.3, 1]);
+		expect(() => parseMotionSpec(custom)).not.toThrow();
+		expect((keysAt(custom, [0]).x as Key[])[1]).toEqual([500, 1, [0.2, 0.8, 0.3, 1]]);
+	});
+});
+
+describe("the timeline: one property", () => {
+	it("turns the stopwatch on and off, keeping the value at the playhead", () => {
+		const box = layerAt(spec, [0]) as Json;
+		let s = edit(spec, [0], startAnimating(spec, box, "x", 500));
+		expect(keysAt(s, [0]).x).toEqual([[500, 300]]);
+		s = edit(s, [0], setValueAt(layerAt(s, [0]) as Json, "x", 1500, 700));
+		expect(keysAt(s, [0]).x).toEqual([
+			[500, 300],
+			[1500, 700],
+		]);
+		// Off at 1000: the keys go and x stays where it was then.
+		s = edit(s, [0], stopAnimating(s, layerAt(s, [0]) as Json, "x", 1000));
+		expect(layerAt(s, [0])).toMatchObject({ x: 500 });
+		expect(layerAt(s, [0])?.keys).toBeUndefined();
+		// A still property takes the value itself.
+		expect(setValueAt(layerAt(s, [0]) as Json, "rotation", 0, 45)).toEqual({ rotation: 45 });
+		// A rect has no still trim: setting one starts animating it.
+		expect(setValueAt(box, "trimEnd", 200, 0.5)).toEqual({ keys: { trimEnd: [[200, 0.5]] } });
+	});
+
+	it("writes still values in the layer's own form", () => {
+		const box = layerAt(spec, [0]) as Json;
+		expect(restPatch(box, "color", "#00ff00")).toEqual({ fill: "#00ff00" });
+		expect(restPatch({ type: "line", stroke: "#fff" }, "color", "#000000")).toEqual({
+			stroke: "#000000",
+		});
+		expect(restPatch({ type: "rect", scale: [2, 1] }, "scale", 4)).toEqual({ scale: [4, 2] });
+		expect(restPatch({ type: "rect" }, "scaleY", 3)).toEqual({ scale: [1, 3] });
+		expect(restPatch({ type: "arc" }, "trimEnd", 0.5)).toEqual({ to: 0.5 });
+		expect(restPatch(box, "opacity", 4)).toEqual({ opacity: 1 });
+	});
+
+	it("adds or removes the key at the playhead, and finds the keys around it", () => {
+		const label = layerAt(spec, [1, 0]) as Json;
+		expect(keyIndexAt(label, "opacity", 500.3)).toBe(1);
+		const removed = toggleKeyAt(spec, label, "opacity", 500.3);
+		expect(removed).toEqual({ keys: { opacity: [[0, 0, "outCubic"]] } });
+		const added = toggleKeyAt(spec, label, "opacity", 250);
+		expect(((added.keys as Json).opacity as Key[])[1][0]).toBe(250);
+		expect(nextKeyTime(spec, label, 0, 1, "opacity")).toBe(500);
+		expect(nextKeyTime(spec, label, 500, 1, "opacity")).toBeUndefined();
+		expect(nextKeyTime(spec, label, 400, -1, "opacity")).toBe(0);
+		// J and K also stop at the layer's in and out points.
+		expect(nextKeyTime(spec, label, 500, 1)).toBe(3000);
+	});
+
+	it("snaps to whole frames and to targets nearby", () => {
+		expect(snapTime(40, 30)).toBeCloseTo(33.333, 2);
+		expect(snapTime(40, 30, [50], 12)).toBe(50);
+		expect(snapTime(40, 30, [100], 12)).toBeCloseTo(33.333, 2);
+	});
+});
+
+describe("the timeline: a layer's time", () => {
+	const timed = (): Json =>
+		edit(spec, [0], {
+			startMs: 500,
+			keys: {
+				x: [
+					[600, 100],
+					[1200, 400],
+				],
+			},
+			enter: { preset: "fade", atMs: 500 },
+			exit: [{ preset: "fade", atMs: 2600 }],
+		});
+
+	it("trims the start and end, taking entrances and exits along", () => {
+		const s = timed();
+		let t = trimLayer(s, [0], "start", 800);
+		expect(() => compileMotion(t)).not.toThrow();
+		expect(layerAt(t, [0])).toMatchObject({
+			startMs: 800,
+			enter: [{ preset: "fade", atMs: 800 }],
+			keys: {
+				x: [
+					[600, 100],
+					[1200, 400],
+				],
+			},
+		});
+		t = trimLayer(t, [0], "end", 2000);
+		expect(layerAt(t, [0])).toMatchObject({ endMs: 2000, exit: [{ preset: "fade", atMs: 1600 }] });
+		expect(layerSpan(t, layerAt(t, [0]) as Json)).toEqual({ start: 800, end: 2000 });
+		// Back to the end of the graphic: no end written.
+		t = trimLayer(t, [0], "end", 5000);
+		expect(layerAt(t, [0])).not.toHaveProperty("endMs");
+		// A preset away from the edge stays, until the edge passes it.
+		const later = edit(s, [0], { enter: { preset: "fade", atMs: 1000 } });
+		expect(layerAt(trimLayer(later, [0], "start", 800), [0])).toMatchObject({
+			enter: [{ atMs: 1000 }],
+		});
+		expect(layerAt(trimLayer(later, [0], "start", 1300), [0])).toMatchObject({
+			enter: [{ atMs: 1300 }],
+		});
+		// A start can't pass the end.
+		expect(layerAt(trimLayer(s, [0], "start", 9000), [0])).toMatchObject({ startMs: 2990 });
+		// To 0: no start written.
+		expect(layerAt(trimLayer(s, [0], "start", -40), [0])).not.toHaveProperty("startMs");
+	});
+
+	it("slides a layer with its keys, presets and a group's layers", () => {
+		const s = timed();
+		const slid = slideLayer(s, [0], 300);
+		expect(() => compileMotion(slid)).not.toThrow();
+		expect(layerAt(slid, [0])).toMatchObject({
+			startMs: 800,
+			endMs: 3300,
+			keys: {
+				x: [
+					[900, 100],
+					[1500, 400],
+				],
+			},
+			enter: { preset: "fade", atMs: 800 },
+			exit: [{ preset: "fade", atMs: 2900 }],
+		});
+		// Back again: the same as before (no end written at the graphic's end).
+		expect(layerAt(slideLayer(slid, [0], -300), [0])).toEqual(layerAt(s, [0]));
+		// Nothing goes before 0.
+		expect(clampSlide(s, [0], -2000)).toBe(-500);
+		// A group moves what is in it.
+		const group = slideLayer(spec, [1], 200);
+		expect(() => compileMotion(group)).not.toThrow();
+		expect(layerAt(group, [1])).toMatchObject({ startMs: 200, endMs: 3200 });
+		expect(layerAt(group, [1, 0])).toMatchObject({
+			keys: {
+				opacity: [
+					[200, 0, "outCubic"],
+					[700, 1],
+				],
+			},
+		});
+	});
+
+	it("drags a preset's edges or the whole preset", () => {
+		const s = timed();
+		const layer = layerAt(s, [0]) as Json;
+		let t = edit(s, [0], resizePreset(s, layer, "enter", 0, "end", 1400));
+		expect(presetsOf(layerAt(t, [0]) as Json, "enter")).toEqual([
+			{ preset: "fade", atMs: 500, durationMs: 900 },
+		]);
+		t = edit(t, [0], resizePreset(t, layerAt(t, [0]) as Json, "exit", 0, "start", 2200));
+		expect(presetsOf(layerAt(t, [0]) as Json, "exit")).toEqual([
+			{ preset: "fade", atMs: 2200, durationMs: 800 },
+		]);
+		t = edit(t, [0], resizePreset(t, layerAt(t, [0]) as Json, "exit", 0, "move", 2000));
+		expect(presetsOf(layerAt(t, [0]) as Json, "exit")[0]).toMatchObject({ atMs: 2000 });
+		// Never shorter than the minimum.
+		t = edit(t, [0], resizePreset(t, layerAt(t, [0]) as Json, "enter", 0, "end", 0));
+		expect(presetsOf(layerAt(t, [0]) as Json, "enter")[0].durationMs).toBe(10);
+	});
+});
+
+describe("hidden layers", () => {
+	it("are kept in the spec but not drawn", () => {
+		const shown = compileMotion(spec) as { layers: unknown[] };
+		const hidden = compileMotion(edit(spec, [0], { hidden: true })) as { layers: unknown[] };
+		expect(hidden.layers.length).toBe(shown.layers.length - 1);
 	});
 });

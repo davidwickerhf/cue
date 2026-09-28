@@ -117,6 +117,8 @@ const shadow = z.object({
 
 const base = {
 	name: z.string().max(80).optional(),
+	/** Kept in the spec but not drawn (the eye in the Motion page's timeline). */
+	hidden: z.boolean().optional(),
 	x: z.number().optional(),
 	y: z.number().optional(),
 	/** 1 = 100%; [x, y] scales the axes separately. */
@@ -1488,6 +1490,7 @@ function groupLayer(layer: MotionGroup, ctx: Context): LottieJson {
 function compileLayers(layers: Layer[], ctx: Context): LottieJson[] {
 	const out: LottieJson[] = [];
 	for (const l of layers) {
+		if (l.hidden) continue;
 		const compiled =
 			l.type === "text"
 				? l.runs?.length
