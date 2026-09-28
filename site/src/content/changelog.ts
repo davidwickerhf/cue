@@ -9,6 +9,16 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.16",
+		date: "2026-09-28",
+		summary: "Video clips through Higgsfield work end to end.",
+		changes: [
+			"Starting a clip from a picture or the frame at the playhead uploads correctly to Higgsfield.",
+			"Any start picture is fitted to a standard frame first, so models don't reject its size.",
+			"A dropped connection while a clip renders no longer fails it: Cue asks again and downloads it when it's ready.",
+		],
+	},
+	{
 		version: "0.2.15",
 		date: "2026-09-28",
 		summary: "Music works on a free ElevenLabs plan when fal is connected.",
