@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.24",
+		date: "2026-09-28",
+		summary: "No more black frames at cuts.",
+		changes: [
+			"Exports no longer show a single black frame before a cut when a clip starts between two frames; every clip now starts and ends on a whole frame.",
+		],
+	},
+	{
 		version: "0.2.23",
 		date: "2026-09-28",
 		summary: "Transitions no longer move the rest of the track.",
