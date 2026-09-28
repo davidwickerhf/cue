@@ -392,3 +392,17 @@ describe("clipboard connect", () => {
 		expect(h2.cleared).toBe(true);
 	});
 });
+
+describe("keys pasted by hand", () => {
+	it("finds the key in what was pasted, ignoring invisible characters and labels", async () => {
+		const { findKey } = await import("../electron/core/connect");
+		const key = `sk_${"a1".repeat(24)}`;
+		expect(findKey("elevenlabs", `  ${key}\n`)).toEqual({ key });
+		expect(findKey("elevenlabs", `​${key}﻿`)).toEqual({ key });
+		expect(findKey("elevenlabs", `API key: "${key}"`)).toEqual({ key });
+		const long = findKey("elevenlabs", `${key}x`);
+		expect(long.key).toBeNull();
+		expect(long.key === null && long.reason).toMatch(/51 characters.*52/);
+		expect(findKey("elevenlabs", "sk_abc").key).toBeNull();
+	});
+});

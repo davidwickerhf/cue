@@ -31,6 +31,46 @@ export function matchKey(service: ConnectService, text: string): string | null {
 	return KEY_FORMATS[service].test(candidate) ? candidate : null;
 }
 
+/** Characters that ride along when copying from a web page and break a key (zero-width, BOM, soft hyphen). */
+const INVISIBLE = /[\u00AD\u200B-\u200D\u2060\uFEFF]/g;
+
+/**
+ * The key in text typed or pasted by hand: the one key-shaped run in it (so a
+ * label, quotes or a stray character around it don't matter). Null when there
+ * is none, with a plain reason for the user.
+ */
+export function findKey(
+	service: ConnectService,
+	text: string,
+): { key: string } | { key: null; reason: string } {
+	const clean = text.replace(INVISIBLE, "").trim();
+	const exact = matchKey(service, clean);
+	if (exact) return { key: exact };
+	const inner = new RegExp(
+		KEY_FORMATS[service].source.replace(/^\^/, "").replace(/\$$/, ""),
+		KEY_FORMATS[service].flags.replace("g", "") + "g",
+	);
+	const found = [...new Set(clean.match(inner) ?? [])];
+	// Exactly one candidate that isn't part of a longer run of key characters.
+	const whole = found.filter(
+		(k) => !new RegExp(`[A-Za-z0-9_-]${escape(k)}|${escape(k)}[A-Za-z0-9_-]`).test(clean),
+	);
+	if (whole.length === 1) return { key: whole[0] };
+	const compact = clean.replace(/\s+/g, "");
+	return { key: null, reason: HINTS[service](compact) };
+}
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const HINTS: Record<ConnectService, (text: string) => string> = {
+	elevenlabs: (t) =>
+		`That isn't an ElevenLabs key: they start with sk_ and have 51 characters (letters and digits), and this has ${t.length}${t.startsWith("sk_") ? "" : " and doesn't start with sk_"}. Copy it again from ElevenLabs → Developers → API keys (it's shown in full only when created).`,
+	openai: (t) =>
+		`That isn't an OpenAI API key: they start with sk- (sk-proj-… for project keys)${t.startsWith("sk-") ? ", and this one has characters a key can't have" : ""}.`,
+	fal: () =>
+		"That isn't a fal key: it's two parts joined by a colon, an id like 1a2b3c4d-… and the secret. Copy the whole key from fal's dashboard.",
+};
+
 /** A provider's message with anything that looks like a key (even masked) taken out. */
 export function redactKeys(message: string): string {
 	return message.replace(/\b(sk[-_][A-Za-z0-9*_-]{4,}|[0-9a-f-]{36}:\S+)/gi, "…");

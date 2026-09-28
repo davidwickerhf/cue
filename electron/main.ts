@@ -35,8 +35,8 @@ import { type CaptureSources, WALLPAPERS } from "./core/capture";
 import {
 	type ClipboardWatch,
 	type ConnectService,
+	findKey,
 	KEY_PAGES,
-	matchKey,
 	redactKeys,
 	testOpenAI,
 	watchClipboard,
@@ -471,6 +471,7 @@ async function connectWithKey(
 	value: string | HiggsfieldKey,
 ): Promise<{ ok: boolean; message: string }> {
 	let key: string | HiggsfieldKey;
+	let shapeHint: string | undefined;
 	if (service === "higgsfield") {
 		if (typeof value !== "object" || !value.id?.trim() || !value.secret?.trim())
 			return { ok: false, message: "Enter the key id and the secret." };
@@ -478,14 +479,21 @@ async function connectWithKey(
 	} else {
 		if (typeof value !== "string" || !value.trim())
 			return { ok: false, message: "That doesn't look like a key." };
-		key = matchKey(service, value) ?? value.trim();
+		const found = findKey(service, value);
+		// Not the shape we know: a single unbroken token is still tried (formats change), with the reason kept.
+		const token = value.replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/g, "").trim();
+		if (found.key === null && /\s/.test(token)) return { ok: false, message: found.reason };
+		key = found.key ?? token;
+		shapeHint = found.key === null ? found.reason : undefined;
 	}
 	try {
 		await checkKey(service, key);
 	} catch (error) {
 		return {
 			ok: false,
-			message: `${SERVICE_NAMES[service]} refused it: ${redactKeys((error as Error).message)}`,
+			message:
+				shapeHint ??
+				`${SERVICE_NAMES[service]} refused it: ${redactKeys((error as Error).message)}`,
 		};
 	}
 	await saveSecret(service, key as never);
