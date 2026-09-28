@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.17",
+		date: "2026-09-28",
+		summary: "Agents review a whole edit in seconds.",
+		changes: [
+			"New contact_sheet tool: up to 60 frames of the edit in one image, spread over a range or at chosen times, so agents check pacing and framing without exporting.",
+		],
+	},
+	{
 		version: "0.2.16",
 		date: "2026-09-28",
 		summary: "Video clips through Higgsfield work end to end.",
