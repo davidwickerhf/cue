@@ -184,15 +184,15 @@ editor.subscribe(() => {
 export const clampLayout = (l: Partial<Layout>): Partial<Layout> => ({
 	...l,
 	...(l.sidebarWidth !== undefined
-		? { sidebarWidth: Math.min(560, Math.max(220, l.sidebarWidth)) }
+		? { sidebarWidth: Math.min(900, Math.max(220, l.sidebarWidth)) }
 		: {}),
 	...(l.inspectorWidth !== undefined
-		? { inspectorWidth: Math.min(520, Math.max(240, l.inspectorWidth)) }
+		? { inspectorWidth: Math.min(760, Math.max(240, l.inspectorWidth)) }
 		: {}),
 	...(l.headerWidth !== undefined
 		? { headerWidth: Math.min(380, Math.max(170, l.headerWidth)) }
 		: {}),
-	...(l.dockWidth !== undefined ? { dockWidth: Math.min(640, Math.max(220, l.dockWidth)) } : {}),
+	...(l.dockWidth !== undefined ? { dockWidth: Math.min(900, Math.max(220, l.dockWidth)) } : {}),
 	...(l.timelineHeight !== undefined
 		? { timelineHeight: Math.min(720, Math.max(160, l.timelineHeight)) }
 		: {}),

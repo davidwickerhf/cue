@@ -26,7 +26,7 @@ export function Dock() {
 	return (
 		<aside
 			className="flex shrink-0 flex-col border-l border-separator bg-surface"
-			style={{ width, maxWidth: "25vw" }}
+			style={{ width, maxWidth: "max(260px, calc(100vw - 760px))" }}
 		>
 			<header className="flex h-10 shrink-0 items-center justify-between border-b border-separator pr-2 pl-4">
 				<h2 className="text-[12px] font-semibold">{TITLES[dock]}</h2>

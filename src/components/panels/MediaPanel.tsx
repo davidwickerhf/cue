@@ -1,9 +1,11 @@
-import { Button } from "@heroui/react";
+import { Button, Dropdown } from "@heroui/react";
 import {
 	CaretRight,
+	Check as CheckIcon,
 	FilmSlate,
 	FolderPlus,
 	FolderSimple,
+	FunnelSimple,
 	Image as ImageIcon,
 	LinkBreak,
 	ListBullets,
@@ -14,13 +16,22 @@ import {
 	RecordIcon,
 	Sparkle,
 	SquaresFour,
+	Stack,
 	Star,
 	Trash,
 	UploadSimple,
 	Waveform,
 	X,
 } from "@phosphor-icons/react";
-import { type DragEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type DragEvent,
+	type MouseEvent,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import {
 	binTree,
 	filterMedia,
@@ -37,7 +48,7 @@ import { createStore, editor, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
 import { recordDialog } from "../RecordDialog";
 import { locate } from "../RelinkMedia";
-import { Empty, IconButton, Section, Segmented } from "../ui/controls";
+import { Empty, IconButton } from "../ui/controls";
 
 type Kind = "all" | "video" | "audio" | "image" | "takes";
 
@@ -244,98 +255,139 @@ export function MediaPanel() {
 				if (e.key === "Escape") editor.set({ selectedAssetIds: [] });
 			}}
 		>
-			<Section>
-				<div className="flex gap-1.5">
-					<Button
-						variant="secondary"
-						className="flex-1 gap-2"
-						onPress={() => void window.cue.importDialog()}
-					>
-						<UploadSimple className="size-4" /> Import media
-					</Button>
-					<IconButton label="New bin" variant="secondary" size="md" onPress={() => void newBin()}>
-						<FolderPlus className="size-4" />
-					</IconButton>
-				</div>
-				<Button
-					variant="ghost"
-					size="sm"
-					className="h-7 w-full gap-1.5 text-[12px]"
-					onPress={() => recordDialog.set({ open: true })}
-				>
-					<RecordIcon weight="fill" className="size-3.5 text-danger" /> Record screen or camera…
-				</Button>
-				<Button
-					variant="ghost"
-					size="sm"
-					className="h-7 w-full text-[12px]"
-					onPress={() =>
-						void run("add_adjustment_layer", { startMs: Math.round(playback.currentMs) })
-					}
-				>
-					New adjustment layer at the playhead
-				</Button>
-				<Button
-					variant="ghost"
-					size="sm"
-					className="h-7 w-full gap-1.5 text-[12px]"
-					onPress={() => void addProject()}
-				>
-					<FilmSlate className="size-3.5" /> Add another project as media…
-				</Button>
-				<label className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-field px-2 focus-within:border-accent">
-					<MagnifyingGlass className="size-3.5 shrink-0 text-muted" />
-					<input
-						value={view.query}
-						placeholder="Search names, tags, notes and speech"
-						onChange={(e) => mediaView.set({ query: e.target.value })}
-						onKeyDown={(e) => {
-							e.stopPropagation();
-							if (e.key === "Escape") mediaView.set({ query: "" });
-						}}
-						className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted"
-					/>
-					{view.query && (
-						<button
-							type="button"
-							aria-label="Clear search"
-							onClick={() => mediaView.set({ query: "" })}
-							className="text-muted hover:text-foreground"
-						>
-							<X className="size-3" />
-						</button>
-					)}
-				</label>
-				<Segmented
-					value={view.kind}
-					onChange={(kind) => mediaView.set({ kind })}
-					size="xs"
-					options={[
-						{ value: "all", label: "All" },
-						{ value: "video", label: "Video" },
-						{ value: "audio", label: "Audio" },
-						{ value: "image", label: "Images" },
-						{ value: "takes", label: "Takes" },
-					]}
-				/>
+			<div className="flex flex-col gap-2 border-b border-separator px-3 py-3">
 				<div className="flex items-center gap-1.5">
-					<Chip active={view.unused} onClick={() => mediaView.set({ unused: !view.unused })}>
-						Unused
-					</Chip>
-					<Chip active={view.rated} onClick={() => mediaView.set({ rated: !view.rated })}>
-						<Star weight="fill" className="size-2.5" /> Rated
-					</Chip>
-					<select
-						aria-label="Sort by"
-						value={view.sort}
-						onChange={(e) => mediaView.set({ sort: e.target.value as MediaSort })}
-						className="ml-auto h-6 rounded-md border border-border bg-field px-1 text-[11px] text-foreground outline-none"
-					>
-						<option value="name">Name</option>
-						<option value="added">Newest</option>
-						<option value="duration">Longest</option>
-						<option value="rating">Rating</option>
-					</select>
+					<label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-field px-2 focus-within:border-accent">
+						<MagnifyingGlass className="size-3.5 shrink-0 text-muted" />
+						<input
+							value={view.query}
+							placeholder="Search media and speech"
+							onChange={(e) => mediaView.set({ query: e.target.value })}
+							onKeyDown={(e) => {
+								e.stopPropagation();
+								if (e.key === "Escape") mediaView.set({ query: "" });
+							}}
+							className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted"
+						/>
+						{view.query && (
+							<button
+								type="button"
+								aria-label="Clear search"
+								onClick={() => mediaView.set({ query: "" })}
+								className="text-muted hover:text-foreground"
+							>
+								<X className="size-3" />
+							</button>
+						)}
+					</label>
+					{/* Everything that brings media in, in one place. */}
+					<Dropdown>
+						<Button size="sm" variant="primary" className="h-8 shrink-0 gap-1 px-2.5 text-[12px]">
+							<Plus weight="bold" className="size-3.5" /> Add
+						</Button>
+						<Dropdown.Popover placement="bottom end">
+							<Dropdown.Menu
+								aria-label="Add media"
+								onAction={(key) => {
+									if (key === "import") void window.cue.importDialog();
+									if (key === "record") recordDialog.set({ open: true });
+									if (key === "project") void addProject();
+									if (key === "adjustment")
+										void run("add_adjustment_layer", { startMs: Math.round(playback.currentMs) });
+									if (key === "bin") void newBin();
+								}}
+							>
+								<Dropdown.Item id="import" textValue="Import files">
+									<MenuRow
+										icon={<UploadSimple className="size-4" />}
+										label="Import files…"
+										hint="or drop them here"
+									/>
+								</Dropdown.Item>
+								<Dropdown.Item id="record" textValue="Record">
+									<MenuRow
+										icon={<RecordIcon weight="fill" className="size-4 text-danger" />}
+										label="Record screen or camera…"
+									/>
+								</Dropdown.Item>
+								<Dropdown.Item id="project" textValue="Another project">
+									<MenuRow
+										icon={<FilmSlate className="size-4" />}
+										label="Another project…"
+										hint="placed as one clip"
+									/>
+								</Dropdown.Item>
+								<Dropdown.Item id="adjustment" textValue="Adjustment layer">
+									<MenuRow
+										icon={<Stack className="size-4" />}
+										label="Adjustment layer"
+										hint="at the playhead"
+									/>
+								</Dropdown.Item>
+								<Dropdown.Item id="bin" textValue="New bin">
+									<MenuRow icon={<FolderPlus className="size-4" />} label="New bin" />
+								</Dropdown.Item>
+							</Dropdown.Menu>
+						</Dropdown.Popover>
+					</Dropdown>
+				</div>
+				<div className="flex items-center gap-1">
+					<div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto [scrollbar-width:none]">
+						{KINDS.map((k) => (
+							<button
+								key={k.value}
+								type="button"
+								onClick={() => mediaView.set({ kind: k.value })}
+								className={cn(
+									"h-6 shrink-0 rounded-md px-2 text-[12px] transition-colors",
+									view.kind === k.value
+										? "bg-default text-foreground"
+										: "text-muted hover:text-foreground",
+								)}
+							>
+								{k.label}
+							</button>
+						))}
+					</div>
+					<Dropdown>
+						<Button
+							isIconOnly
+							size="sm"
+							variant="ghost"
+							aria-label="Filter and sort"
+							className={cn(
+								"relative size-7 min-w-7",
+								(view.unused || view.rated) && "text-accent",
+							)}
+						>
+							<FunnelSimple className="size-3.5" />
+							{(view.unused || view.rated) && (
+								<span className="absolute top-1 right-1 size-1.5 rounded-full bg-accent" />
+							)}
+						</Button>
+						<Dropdown.Popover placement="bottom end">
+							<Dropdown.Menu
+								aria-label="Filter and sort"
+								onAction={(key) => {
+									if (key === "unused") mediaView.set({ unused: !view.unused });
+									else if (key === "rated") mediaView.set({ rated: !view.rated });
+									else mediaView.set({ sort: String(key).replace("sort-", "") as MediaSort });
+								}}
+							>
+								<Dropdown.Item id="unused" textValue="Only unused">
+									<Check on={view.unused} label="Only unused" />
+								</Dropdown.Item>
+								<Dropdown.Item id="rated" textValue="Only rated">
+									<Check on={view.rated} label="Only rated" />
+								</Dropdown.Item>
+								{SORTS.map((o) => (
+									<Dropdown.Item key={o.value} id={`sort-${o.value}`} textValue={o.label}>
+										<Check on={view.sort === o.value} label={`Sort by ${o.label.toLowerCase()}`} />
+									</Dropdown.Item>
+								))}
+							</Dropdown.Menu>
+						</Dropdown.Popover>
+					</Dropdown>
 					<IconButton
 						label={view.view === "grid" ? "Show as list" : "Show as grid"}
 						onPress={() => mediaView.set({ view: view.view === "grid" ? "list" : "grid" })}
@@ -347,7 +399,7 @@ export function MediaPanel() {
 						)}
 					</IconButton>
 				</div>
-			</Section>
+			</div>
 
 			<nav className="flex min-h-8 flex-wrap items-center gap-0.5 px-3 pt-2 text-[12px]">
 				{everywhere ? (
@@ -451,32 +503,6 @@ export function MediaPanel() {
 				</div>
 			)}
 		</div>
-	);
-}
-
-function Chip({
-	active,
-	onClick,
-	children,
-}: {
-	active: boolean;
-	onClick: () => void;
-	children: React.ReactNode;
-}) {
-	return (
-		<button
-			type="button"
-			aria-pressed={active}
-			onClick={onClick}
-			className={cn(
-				"flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors",
-				active
-					? "border-accent/60 bg-accent/15 text-foreground"
-					: "border-border text-muted hover:text-foreground",
-			)}
-		>
-			{children}
-		</button>
 	);
 }
 
@@ -702,6 +728,40 @@ function AssetCard({ asset, project, used, selected, onSelect, onDragStart }: It
 }
 
 /** Pick a Cue project and place it in this one as media (rendered, and kept up to date). */
+const KINDS = [
+	{ value: "all", label: "All" },
+	{ value: "video", label: "Video" },
+	{ value: "audio", label: "Audio" },
+	{ value: "image", label: "Images" },
+	{ value: "takes", label: "Takes" },
+] as const;
+
+const SORTS: { value: MediaSort; label: string }[] = [
+	{ value: "name", label: "Name" },
+	{ value: "added", label: "Newest" },
+	{ value: "duration", label: "Length" },
+	{ value: "rating", label: "Rating" },
+];
+
+function MenuRow({ icon, label, hint }: { icon: ReactNode; label: string; hint?: string }) {
+	return (
+		<span className="flex items-center gap-2.5 text-[12px]">
+			<span className="flex w-4 justify-center text-muted">{icon}</span>
+			<span>{label}</span>
+			{hint && <span className="text-[11px] text-muted">{hint}</span>}
+		</span>
+	);
+}
+
+function Check({ on, label }: { on: boolean; label: string }) {
+	return (
+		<span className="flex items-center gap-2 text-[12px]">
+			<CheckIcon className={cn("size-3.5", on ? "text-accent" : "opacity-0")} />
+			{label}
+		</span>
+	);
+}
+
 async function addProject() {
 	const file = await window.cue.chooseFile({
 		title: "Choose a project to place in this one",

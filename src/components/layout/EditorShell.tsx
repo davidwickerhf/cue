@@ -3,7 +3,7 @@ import { useEditorCommands } from "../../hooks/useEditorCommands";
 import { useShortcuts } from "../../hooks/useShortcuts";
 import { hasViewer, pageState } from "../../lib/pages";
 import { appSettings, editor } from "../../lib/state";
-import { clampLayout, layout } from "../../lib/workspace";
+import { BUILT_IN, clampLayout, layout } from "../../lib/workspace";
 import { ExportDialog } from "../ExportDialog";
 import { MotionPage } from "../pages/MotionPage";
 import { PageBar } from "../pages/PageBar";
@@ -189,18 +189,35 @@ function Splitter({
 				const step = (e.shiftKey ? 64 : 16) * (e.key === "ArrowRight" ? 1 : -1) * (invert ? -1 : 1);
 				layout.set(clampLayout({ [edge]: layout.get()[edge] + step }));
 			}}
-			className="relative z-10 -mx-[3px] my-0 w-[6px] shrink-0 cursor-col-resize border-0 after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-transparent hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent"
+			// Double-click puts the pane back to its workspace width.
+			onDoubleClick={() => {
+				const id = layout.get().id;
+				const base = (id && BUILT_IN[id]?.layout) || BUILT_IN.editing.layout;
+				layout.set({ [edge]: base[edge] });
+			}}
+			title="Drag to resize · double-click to reset"
+			className="relative z-10 -mx-[4px] my-0 h-auto w-[8px] shrink-0 self-stretch cursor-col-resize border-0 after:absolute after:inset-y-0 after:left-[3px] after:w-[2px] after:bg-transparent after:transition-colors hover:after:bg-accent/70 active:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent"
 			onPointerDown={(e) => {
+				if (e.button !== 0) return;
+				e.preventDefault();
 				start.current = { x: e.clientX, w: layout.get()[edge] };
-				(e.target as HTMLElement).setPointerCapture(e.pointerId);
-			}}
-			onPointerMove={(e) => {
-				if (!start.current) return;
-				const delta = (e.clientX - start.current.x) * (invert ? -1 : 1);
-				layout.set(clampLayout({ [edge]: start.current.w + delta }));
-			}}
-			onPointerUp={() => {
-				start.current = null;
+				// The window follows the drag, so nothing under the pointer can end it early.
+				const move = (m: PointerEvent) => {
+					if (!start.current) return;
+					const delta = (m.clientX - start.current.x) * (invert ? -1 : 1);
+					layout.set(clampLayout({ [edge]: start.current.w + delta }));
+				};
+				const up = () => {
+					start.current = null;
+					document.body.style.removeProperty("cursor");
+					window.removeEventListener("pointermove", move);
+					window.removeEventListener("pointerup", up);
+					window.removeEventListener("pointercancel", up);
+				};
+				document.body.style.cursor = "col-resize";
+				window.addEventListener("pointermove", move);
+				window.addEventListener("pointerup", up);
+				window.addEventListener("pointercancel", up);
 			}}
 		/>
 	);

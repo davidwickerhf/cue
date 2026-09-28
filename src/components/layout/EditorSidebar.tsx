@@ -96,7 +96,7 @@ export function EditorSidebar() {
 			</nav>
 			<div
 				className={cn("flex min-h-0 flex-col", !open && "hidden")}
-				style={{ width: sidebarWidth, maxWidth: "25vw" }}
+				style={{ width: sidebarWidth, maxWidth: "max(260px, calc(100vw - 760px))" }}
 			>
 				<header className="flex h-10 shrink-0 items-center border-b border-separator px-4">
 					<h2 className="text-[12px] font-semibold">{TITLES[panel]}</h2>
