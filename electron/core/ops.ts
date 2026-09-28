@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DEFAULT_CURVE, splitKeyframes, splitZooms, withKeyframe } from "./anim";
 import { binPath } from "./bins";
 import type { MotionSettings } from "./motion";
+import { splitPin } from "./pin";
 import {
 	aiSchema,
 	assertUnique,
@@ -38,6 +39,7 @@ import {
 	NO_EFFECTS,
 	newId,
 	normaliseLine,
+	pinSchema,
 	settingsSchema,
 	shapeSchema,
 	sortLines,
@@ -45,6 +47,7 @@ import {
 	textStyleSchema,
 	trackCompressorSchema,
 	trackEqSchema,
+	trackerSchema,
 	transformSchema,
 	transitionSchema,
 	voiceoverTrack,
@@ -158,6 +161,8 @@ export const clipPatch = z
 		label: z.enum(CLIP_LABELS).nullable(),
 		mask: maskSchema.partial().nullable(),
 		key: keySchema.partial().nullable(),
+		pin: pinSchema.nullable(),
+		tracker: trackerSchema.nullable(),
 		effects: effectsSchema.partial().nullable(),
 		blend: z.enum(BLEND_MODES).nullable(),
 		wiggle: wiggleSchema.partial().nullable(),
@@ -382,6 +387,22 @@ export const opSchema = z.discriminatedUnion("type", [
 				}),
 			)
 			.min(1),
+	}),
+	// A motion track kept on its clip and, in the same step, a clip pinned onto it or moved with it.
+	z.object({
+		type: z.literal("applyTrack"),
+		clipId: z.string(),
+		tracker: trackerSchema.nullable().optional(),
+		target: z
+			.object({
+				clipId: z.string(),
+				pin: pinSchema.nullable().optional(),
+				/** Replace these properties' keyframes. */
+				keyframes: z
+					.partialRecord(z.enum(KEYFRAME_PROPS), z.array(keyframeSchema).max(5000))
+					.optional(),
+			})
+			.optional(),
 	}),
 	z.object({
 		type: z.literal("clearKeyframes"),
@@ -917,6 +938,7 @@ function splitOne(
 			if (r?.length) (keyframes[1] as Record<string, unknown>)[prop] = r;
 		}
 		const [zoomsLeft, zoomsRight] = splitZooms(c.zooms, leftLength);
+		const [pinLeft, pinRight] = splitPin(c.pin, leftLength);
 		right = {
 			...c,
 			id: newId("c"),
@@ -926,6 +948,7 @@ function splitOne(
 			fadeInMs: 0,
 			keyframes: c.keyframes ? keyframes[1] : undefined,
 			zooms: zoomsRight,
+			...(pinRight ? { pin: pinRight } : {}),
 		};
 		// The cut itself is the right half's entrance, so it has no transition.
 		delete (right as MediaClip).transitionIn;
@@ -935,6 +958,7 @@ function splitOne(
 			fadeOutMs: 0,
 			keyframes: c.keyframes ? keyframes[0] : undefined,
 			zooms: zoomsLeft,
+			...(pinLeft ? { pin: pinLeft } : {}),
 		};
 		if (!c.keyframes) {
 			delete (left as MediaClip).keyframes;
@@ -1471,6 +1495,8 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				label,
 				mask,
 				key,
+				pin,
+				tracker,
 				effects,
 				frame,
 				motion,
@@ -1504,6 +1530,11 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 									? undefined
 									: keySchema.parse({ ...DEFAULT_KEY, ...current.key, ...key }),
 						}),
+				// A pin or tracker is replaced whole (null removes it).
+				...(pin === undefined || current.type !== "media" ? {} : { pin: pin ?? undefined }),
+				...(tracker === undefined || current.type !== "media"
+					? {}
+					: { tracker: tracker ?? undefined }),
 				...(effects === undefined || current.type !== "media"
 					? {}
 					: {
@@ -2361,6 +2392,36 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			return {
 				data: replaceClip(data, { ...c, keyframes: lists }),
 				summary: `${verb} ${count} on ${c.name ?? c.id}`,
+			};
+		}
+		case "applyTrack": {
+			let next = data;
+			const source = media(next, op.clipId);
+			if (op.tracker !== undefined) {
+				unlocked(next, source.trackId);
+				next = replaceClip(next, { ...source, tracker: op.tracker ?? undefined });
+			}
+			if (op.target) {
+				const t = media(next, op.target.clipId);
+				unlocked(next, t.trackId);
+				const keyframes = op.target.keyframes
+					? { ...t.keyframes, ...op.target.keyframes }
+					: t.keyframes;
+				next = replaceClip(next, {
+					...t,
+					...(op.target.pin === undefined ? {} : { pin: op.target.pin ?? undefined }),
+					...(keyframes ? { keyframes } : {}),
+				});
+			}
+			return {
+				data: next,
+				summary: op.target
+					? op.target.pin
+						? "Pinned a clip onto a motion track"
+						: op.target.keyframes
+							? "Made a clip follow a motion track"
+							: "Changed a motion track"
+					: "Tracked motion",
 			};
 		}
 		case "clearKeyframes": {

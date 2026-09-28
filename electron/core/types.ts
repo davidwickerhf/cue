@@ -256,6 +256,41 @@ export interface ChromaKey {
 	blend: number;
 }
 
+/** Four corners (top-left, top-right, bottom-right, bottom-left), each [x, y] as shares of the canvas. */
+export type Corners = [[number, number], [number, number], [number, number], [number, number]];
+
+/**
+ * Corner pin: the picture is stretched onto four corners that may move (a laptop
+ * screen, a sign, a wall), like After Effects' corner pin. Between keys the corners
+ * move in straight lines; one key holds still. Position, scale and rotation are
+ * not used while a clip is pinned.
+ */
+export interface CornerPin {
+	/** In clip-local ms, in order. */
+	keys: { atMs: number; corners: Corners }[];
+}
+
+/**
+ * A motion tracker on a clip: what to follow and what was found, kept so it can
+ * be corrected (another anchor) and applied again. screen: a green or blue screen,
+ * found by its colour. surface: a flat thing given its four corners. object:
+ * anything, given a box, followed in position, size and rotation.
+ */
+export interface Tracker {
+	mode: "screen" | "surface" | "object";
+	/** Key colour for screens. */
+	color?: string;
+	/**
+	 * Corners set by hand at moments; tracking runs both ways from each. Times here are
+	 * in the source media (ms), so trimming, splitting or slipping the clip keeps them.
+	 */
+	anchors: { atMs: number; corners: Corners }[];
+	/** The tracked corners, one per frame (source ms), with how sure the tracker was (0–1). */
+	result?: { atMs: number; corners: Corners; confidence: number }[];
+	/** Clips that follow this tracker: pinned onto its corners, or moved with it. */
+	targets?: { clipId: string; as: "pin" | "follow" }[];
+}
+
 export interface ColorGrade {
 	/** -1–1, 0 is neutral. */
 	brightness: number;
@@ -327,6 +362,10 @@ export interface MediaClip {
 	color?: ColorGrade;
 	mask?: Mask;
 	key?: ChromaKey;
+	/** Stretched onto four (moving) corners instead of placed by transform. */
+	pin?: CornerPin;
+	/** A motion tracker on this clip's picture. */
+	tracker?: Tracker;
 	effects?: Effects;
 	frame?: Frame;
 	/** Blend with the tracks below; none is normal. */

@@ -457,3 +457,37 @@ describe("Higgsfield keys", () => {
 		await expect(watch.result).resolves.toEqual({ state: "connected", key: `${id}:${secret}` });
 	});
 });
+
+describe("where video clips are made", () => {
+	const local: LocalInventory = {
+		macVoices: [],
+		whisper: { binary: null, models: [] },
+		ollama: { installed: false, running: false, models: [] },
+		lmStudio: { running: false, models: [] },
+	};
+	const both = () =>
+		buildRuntime(appSettingsSchema.parse({}), null, local, {
+			fal: FAL_KEY,
+			higgsfield: { id: "0".repeat(8), secret: "x".repeat(32) },
+		});
+
+	it("sends a model only Higgsfield has there, even with fal connected", async () => {
+		const calls = fakeFetch([() => json({ detail: "stop here" }, 400)]);
+		await expect(
+			both().clip({ prompt: "a lighthouse", model: "seedance-2.0" }, "/tmp/never.mp4"),
+		).rejects.toThrow(/Higgsfield 400/);
+		expect(calls[0].url).toContain("higgsfield.ai/bytedance/seedance-2.0/text-to-video");
+	});
+
+	it("falls back to Higgsfield when the fal key stopped working", async () => {
+		const calls = fakeFetch([
+			() => json({ detail: "The credential has been revoked" }, 401),
+			() => json({ detail: "stop here" }, 400),
+		]);
+		await expect(
+			both().clip({ prompt: "a lighthouse", model: "kling-2.5-turbo-pro" }, "/tmp/never.mp4"),
+		).rejects.toThrow(/Higgsfield 400/);
+		expect(calls[0].url).toContain("fal.run");
+		expect(calls[1].url).toContain("higgsfield.ai/kling-video/v2.5-turbo/pro/text-to-video");
+	});
+});

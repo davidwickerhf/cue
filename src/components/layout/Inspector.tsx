@@ -12,15 +12,23 @@ import { useEffect, useRef, useState } from "react";
 import { valueAt } from "../../../electron/core/anim";
 import type { MotionSettings } from "../../../electron/core/motion";
 import { MOTION_TEMPLATES, MOTION_THEMES } from "../../../electron/core/motionTemplates";
+import { placement, sourceMsOf, trackedAt } from "../../../electron/core/pin";
 import { TRANSITIONS } from "../../../electron/core/transitions";
-import type { Asset, MediaClip, ProjectSnapshot, TextClip } from "../../../electron/core/types";
+import type {
+	Asset,
+	Corners,
+	MediaClip,
+	ProjectSnapshot,
+	TextClip,
+} from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
+import { askAbout, draftMessage } from "../../lib/chat";
 import { goToPage, pageState } from "../../lib/pages";
 import { isMac, keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
 import { editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
-import { layout } from "../../lib/workspace";
+import { layout, revealSection } from "../../lib/workspace";
 import { AssetInspector } from "../panels/MediaInfo";
 import {
 	ColorInput,
@@ -34,6 +42,7 @@ import {
 	TextInput,
 	Toggle,
 } from "../ui/controls";
+import { trackDraft } from "./CornerOverlay";
 
 const FONTS = [
 	"DM Sans Variable",
@@ -361,6 +370,11 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 				</p>
 			</Section>
 			<Timing clip={clip} />
+			{/* Pinning and tracking change what the clip is, so they come first while on. */}
+			{visual && clip.pin && <PinSection clip={clip} project={project} />}
+			{visual && asset?.kind === "video" && clip.tracker && (
+				<TrackingSection clip={clip} project={project} />
+			)}
 			{asset?.kind === "lottie" && asset.motionSource?.template && (
 				<TemplateSection clip={clip} asset={asset} />
 			)}
@@ -490,7 +504,7 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 					</div>
 				</Section>
 			)}
-			{visual && (
+			{visual && !clip.pin && (
 				<Section title="Transform">
 					<Field label="Scale">
 						<div className="flex items-center gap-1.5">
@@ -640,6 +654,9 @@ function MediaInspector({ clip, project }: { clip: MediaClip; project: ProjectSn
 			{visual && !adjustment && <FrameSection clip={clip} />}
 			{visual && <MaskSection clip={clip} />}
 			{visual && asset?.kind === "video" && <KeySection clip={clip} />}
+			{visual && asset?.kind === "video" && !clip.tracker && (
+				<TrackingSection clip={clip} project={project} />
+			)}
 			{visual && <TransitionSection clip={clip} project={project} />}
 			{visual && asset?.kind === "video" && asset.hasAudio && clip.volume > 0 && (
 				<Section>
@@ -2301,4 +2318,369 @@ function KeySection({ clip }: { clip: MediaClip }) {
 			</Field>
 		</Section>
 	);
+}
+
+/** Motion tracking on a video clip: follow a screen, a surface or an object, then pin or move other clips with it. */
+function TrackingSection({ clip, project }: { clip: MediaClip; project: ProjectSnapshot }) {
+	const tracker = clip.tracker;
+	const draft = trackDraft.use((s) => (s.clipId === clip.id ? s.corners : null));
+	const [mode, setMode] = useState<"surface" | "object">("surface");
+	const [busy, setBusy] = useState(false);
+	const [target, setTarget] = useState("");
+	const asset = project.data.assets.find((a) => a.id === clip.assetId);
+	const end = clip.startMs + clip.durationMs;
+	// Clips it could carry: pictures on other video tracks, on at the same time.
+	const candidates = project.data.clips.filter(
+		(c): c is MediaClip =>
+			c.type === "media" &&
+			c.id !== clip.id &&
+			c.startMs < end &&
+			c.startMs + c.durationMs > clip.startMs &&
+			project.data.tracks.find((t) => t.id === c.trackId)?.kind === "video",
+	);
+	const chosen = candidates.find((c) => c.id === target) ?? candidates[0];
+	const track = async (params: Record<string, unknown>) => {
+		setBusy(true);
+		try {
+			await run("track_motion", { clipId: clip.id, review: 0, ...params });
+			trackDraft.set({ clipId: null, corners: null });
+		} finally {
+			setBusy(false);
+		}
+	};
+	/** Corners to drag onto the thing: the tracked ones at the playhead, else a box in the middle. */
+	const startDraft = (as: "surface" | "object") => {
+		setMode(as);
+		let corners: Corners =
+			as === "object"
+				? [
+						[0.4, 0.38],
+						[0.6, 0.38],
+						[0.6, 0.62],
+						[0.4, 0.62],
+					]
+				: [
+						[0.3, 0.28],
+						[0.7, 0.28],
+						[0.7, 0.72],
+						[0.3, 0.72],
+					];
+		if (tracker?.result?.length && asset) {
+			const local = localNow(clip);
+			const at = trackedAt(tracker.result, sourceMsOf(clip, local));
+			const place = placement(clip, asset, project.data.canvas, local);
+			corners = at.corners.map((p) => place.toCanvas(p)) as Corners;
+		}
+		trackDraft.set({ clipId: clip.id, corners });
+	};
+	const trackDraftNow = () =>
+		void track({
+			mode: tracker && tracker.mode !== "screen" ? tracker.mode : mode,
+			atMs: Math.round(playback.currentMs),
+			corners: draft,
+		});
+	const mean = tracker?.result?.length
+		? tracker.result.reduce((s, r) => s + r.confidence, 0) / tracker.result.length
+		: 0;
+
+	if (draft)
+		return (
+			<Section title="Motion tracking">
+				<p className="text-[11px] text-muted">
+					Drag the four corners onto the{" "}
+					{mode === "object"
+						? "thing to follow (a box around it)"
+						: "flat surface (a screen, a sign, a wall)"}{" "}
+					in the viewer, at a frame where it's clear, then track. Tracking runs both ways from here.
+				</p>
+				<div className="flex gap-1.5">
+					<Button
+						size="sm"
+						className="h-7 flex-1 text-[12px]"
+						isDisabled={busy}
+						onPress={trackDraftNow}
+					>
+						{busy ? "Tracking…" : "Track"}
+					</Button>
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-7 text-[12px]"
+						onPress={() => trackDraft.set({ clipId: null, corners: null })}
+					>
+						Cancel
+					</Button>
+				</div>
+			</Section>
+		);
+
+	if (!tracker)
+		return (
+			<Section title="Motion tracking">
+				<div className="flex gap-1.5">
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						isDisabled={busy}
+						onPress={() => void track({ mode: "screen", color: clip.key?.color })}
+					>
+						{busy ? "Tracking…" : "Green screen"}
+					</Button>
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						onPress={() => startDraft("surface")}
+					>
+						Surface
+					</Button>
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						onPress={() => startDraft("object")}
+					>
+						Object
+					</Button>
+				</div>
+				<p className="text-[11px] text-muted">
+					Follow a screen, a flat surface or anything moving, then pin a clip onto it or make a
+					title follow it.
+				</p>
+			</Section>
+		);
+
+	return (
+		<Section
+			title="Motion tracking"
+			action={
+				<Button
+					size="sm"
+					variant="ghost"
+					className="h-6 text-[11px]"
+					onPress={() => void run("update_clip", { id: clip.id, patch: { tracker: null } })}
+				>
+					Remove
+				</Button>
+			}
+		>
+			<div className="text-[12px]">
+				{tracker.mode === "screen" ? "Screen" : tracker.mode === "surface" ? "Surface" : "Object"} ·{" "}
+				{tracker.result?.length ?? 0} frames · {Math.round(mean * 100)}% sure
+			</div>
+			<ConfidenceStrip result={tracker.result ?? []} />
+			{(tracker.targets ?? []).map((t) => {
+				const other = project.data.clips.find((c) => c.id === t.clipId);
+				if (!other) return null;
+				return (
+					<div key={t.clipId} className="flex items-center gap-2 text-[12px]">
+						<span className="min-w-0 flex-1 truncate">
+							{t.as === "pin" ? "Pins" : "Moves"} <b>{clipName(project, other)}</b>
+						</span>
+						<Button
+							size="sm"
+							variant="ghost"
+							className="h-6 text-[11px]"
+							onPress={() => {
+								window.cue?.selectClips([other.id]);
+								revealSection(t.as === "pin" ? "Corner pin" : "Transform");
+							}}
+						>
+							Select
+						</Button>
+					</div>
+				);
+			})}
+			<div className="flex gap-1.5">
+				{tracker.mode === "screen" ? (
+					<Button
+						size="sm"
+						variant="secondary"
+						className="h-7 flex-1 text-[12px]"
+						isDisabled={busy}
+						onPress={() => void track({ mode: "screen" })}
+					>
+						{busy ? "Tracking…" : "Track again"}
+					</Button>
+				) : null}
+				<Button
+					size="sm"
+					variant="secondary"
+					className="h-7 flex-1 text-[12px]"
+					onPress={() => startDraft(tracker.mode === "object" ? "object" : "surface")}
+					isDisabled={busy}
+				>
+					Fix corners here
+				</Button>
+				<Button
+					size="sm"
+					variant="secondary"
+					className="h-7 text-[12px]"
+					onPress={() => {
+						askAbout([clip.id, ...(tracker.targets ?? []).map((t) => t.clipId)]);
+						draftMessage(
+							"Check the motion track on this clip with review_track, fix where it slips (give the right corners there with track_motion), then apply it again.",
+						);
+					}}
+				>
+					Ask the agent
+				</Button>
+			</div>
+			{candidates.length > 0 ? (
+				<>
+					<Field label="Clip">
+						<select
+							className="h-8 w-full rounded-lg border border-border bg-field px-2 text-[12px]"
+							value={chosen?.id ?? ""}
+							onChange={(e) => setTarget(e.target.value)}
+						>
+							{candidates.map((c) => (
+								<option key={c.id} value={c.id}>
+									{c.name ?? project.data.assets.find((a) => a.id === c.assetId)?.name ?? c.id}
+								</option>
+							))}
+						</select>
+					</Field>
+					<div className="flex gap-1.5">
+						<Button
+							size="sm"
+							className="h-7 flex-1 text-[12px]"
+							isDisabled={!chosen}
+							onPress={() =>
+								chosen &&
+								void run("apply_track", { fromClipId: clip.id, toClipId: chosen.id, as: "pin" })
+							}
+						>
+							Pin onto it
+						</Button>
+						<Button
+							size="sm"
+							variant="secondary"
+							className="h-7 flex-1 text-[12px]"
+							isDisabled={!chosen}
+							onPress={() =>
+								chosen &&
+								void run("apply_track", {
+									fromClipId: clip.id,
+									toClipId: chosen.id,
+									as: "follow",
+									followScale: tracker.mode !== "screen",
+									followRotation: tracker.mode === "object",
+								})
+							}
+						>
+							Follow it
+						</Button>
+					</div>
+				</>
+			) : (
+				<p className="text-[11px] text-muted">
+					Put a clip on another video track at the same time to pin it or make it follow.
+				</p>
+			)}
+		</Section>
+	);
+}
+
+/** How sure the tracker was along the clip: cyan sure, amber unsure, red lost. */
+function ConfidenceStrip({
+	result,
+}: {
+	result: NonNullable<MediaClip["tracker"]>["result"] & object;
+}) {
+	if (!result.length) return null;
+	const bins = 60;
+	const cells = Array.from({ length: bins }, (_, i) => {
+		const slice = result.slice(
+			Math.floor((i * result.length) / bins),
+			Math.max(
+				Math.floor((i * result.length) / bins) + 1,
+				Math.floor(((i + 1) * result.length) / bins),
+			),
+		);
+		return Math.min(...slice.map((r) => r.confidence));
+	});
+	return (
+		<div className="flex h-1.5 overflow-hidden rounded-full">
+			{cells.map((c, i) => (
+				<div
+					// biome-ignore lint/suspicious/noArrayIndexKey: fixed bins
+					key={i}
+					className="flex-1"
+					style={{ background: c >= 0.6 ? "#38bdf8" : c >= 0.3 ? "#fbbf24" : "#f87171" }}
+				/>
+			))}
+		</div>
+	);
+}
+
+/** A clip stretched onto four corners: edit them on the viewer, re-follow its track, or let go. */
+function PinSection({ clip, project }: { clip: MediaClip; project: ProjectSnapshot }) {
+	const pin = clip.pin;
+	if (!pin) return null;
+	const source = project.data.clips.find(
+		(c): c is MediaClip =>
+			c.type === "media" &&
+			!!c.tracker?.targets?.some((t) => t.clipId === clip.id && t.as === "pin"),
+	);
+	return (
+		<Section
+			title="Corner pin"
+			action={
+				<Button
+					size="sm"
+					variant="ghost"
+					className="h-6 text-[11px]"
+					onPress={() => void run("update_clip", { id: clip.id, patch: { pin: null } })}
+				>
+					Remove
+				</Button>
+			}
+		>
+			{source ? (
+				<div className="flex items-center gap-2 text-[12px]">
+					<span className="min-w-0 flex-1 truncate">
+						On the motion track of <b>{clipName(project, source)}</b>
+					</span>
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-6 text-[11px]"
+						onPress={() => {
+							window.cue?.selectClips([source.id]);
+							revealSection("Motion tracking");
+						}}
+					>
+						Select
+					</Button>
+				</div>
+			) : null}
+			<p className="text-[11px] text-muted">
+				{pin.keys.length === 1
+					? "Held on four corners."
+					: `${pin.keys.length} keys${source ? ", one per frame of the track" : ""}.`}{" "}
+				Position and scale come from the corners: drag one in the viewer to move it
+				{pin.keys.length > 1 ? " at the playhead" : ""}.
+			</p>
+			{source && (
+				<Button
+					size="sm"
+					variant="secondary"
+					className="h-7 text-[12px]"
+					onPress={() =>
+						void run("apply_track", { fromClipId: source.id, toClipId: clip.id, as: "pin" })
+					}
+				>
+					Follow the track again
+				</Button>
+			)}
+		</Section>
+	);
+}
+
+function clipName(project: ProjectSnapshot, clip: MediaClip | TextClip): string {
+	return clip.type === "text"
+		? clip.text
+		: (clip.name ?? project.data.assets.find((a) => a.id === clip.assetId)?.name ?? "a clip");
 }

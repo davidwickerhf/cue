@@ -292,16 +292,22 @@ export function keyframeExpr(
 ): string {
 	if (!keyframes || keyframes.length === 0) return n(fallback);
 	const pts = keyframes.map((k) => ({ ...k, s: k.atMs / 1000 }));
-	let expr = n(pts[pts.length - 1].value);
-	for (let i = pts.length - 2; i >= 0; i--) {
+	if (pts.length === 1) return n(pts[0].value);
+	const segment = (i: number) => {
 		const a = pts[i];
 		const b = pts[i + 1];
 		const p = `((${T})-${n(a.s)})/${n(Math.max(0.001, b.s - a.s))}`;
-		const eased = easeExpr(a, p);
-		const segment = `${n(a.value)}+(${n(b.value - a.value)})*(${eased})`;
-		expr = `if(lt(${T},${n(b.s)}),${segment},${expr})`;
-	}
-	return `if(lt(${T},${n(pts[0].s)}),${n(pts[0].value)},${expr})`;
+		return `${n(a.value)}+(${n(b.value - a.value)})*(${easeExpr(a, p)})`;
+	};
+	// ffmpeg's expressions can't nest much deeper than ~60 levels, so the segment is
+	// found by halving (log2 of the keyframes deep) rather than one if per keyframe.
+	const tree = (lo: number, hi: number): string => {
+		if (hi - lo === 1) return segment(lo);
+		const mid = (lo + hi) >> 1;
+		return `if(lt(${T},${n(pts[mid].s)}),${tree(lo, mid)},${tree(mid, hi)})`;
+	};
+	const last = pts[pts.length - 1];
+	return `if(lt(${T},${n(pts[0].s)}),${n(pts[0].value)},if(lt(${T},${n(last.s)}),${tree(0, pts.length - 1)},${n(last.value)}))`;
 }
 
 /** Expressions for the zoom scale and focus over variable `T` (seconds). */

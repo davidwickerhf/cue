@@ -10,6 +10,7 @@ import {
 	TTS_VOICES,
 	transcribe,
 } from "./ai";
+import { resolveClipModel } from "./clipModels";
 import {
 	ELEVEN_VOICE_ID,
 	type ElevenVoice,
@@ -17,6 +18,7 @@ import {
 	elevenSound,
 	elevenSpeech,
 	elevenVoices,
+	type MusicSection,
 } from "./elevenlabs";
 import { falAudio, falClip, falImage, falSpeech } from "./fal";
 import {
@@ -152,6 +154,8 @@ export interface AiRuntime {
 			size: "1536x1024" | "1024x1536" | "1024x1024";
 			model?: string;
 			quality?: "low" | "medium" | "high" | "auto";
+			/** Files of pictures to build on (OpenAI only). */
+			references?: string[];
 		},
 	): Promise<{ png: Buffer; provider: string; model: string }>;
 	chat(system: string, prompt: string): Promise<string>;
@@ -161,7 +165,10 @@ export interface AiRuntime {
 		options: { durationSeconds?: number; promptInfluence?: number; loop?: boolean },
 	): Promise<Buffer>;
 	/** Music from a description (ElevenLabs direct or via fal, MP3 bytes). */
-	music(prompt: string, options: { lengthMs: number; instrumental?: boolean }): Promise<Buffer>;
+	music(
+		prompt: string,
+		options: { lengthMs: number; instrumental?: boolean; sections?: MusicSection[] },
+	): Promise<Buffer>;
 	/** Which service makes sounds and music, for generation metadata. */
 	soundProvider(): { provider: string; soundModel: string; musicModel: string };
 	/** A video clip (fal, else Higgsfield), downloaded to `file`. */
@@ -414,8 +421,12 @@ export function buildRuntime(
 						throw error;
 				}
 			}
+			// fal takes one prompt: the sections are written into it.
+			const plan = options.sections?.length
+				? ` Structure: ${options.sections.map((s) => `${s.name} (${Math.round(s.durationMs / 1000)} s): ${s.styles.join(", ")}`).join("; ")}.`
+				: "";
 			return falAudio(keys.fal as string, FAL_MUSIC_MODEL, {
-				prompt,
+				prompt: `${prompt}${plan}`.slice(0, 2000),
 				music_length_ms: Math.round(Math.min(600000, Math.max(3000, options.lengthMs))),
 				...(options.instrumental ? { force_instrumental: true } : {}),
 			});
@@ -431,13 +442,44 @@ export function buildRuntime(
 		},
 		async clip(input, file, onProgress) {
 			need("video");
-			// A raw Higgsfield path goes to Higgsfield; everything else to fal when it is connected.
-			const higgsfield =
-				keys.higgsfield && (clips.engine === "higgsfield" || input.model?.startsWith("/"));
-			if (higgsfield)
-				return generateClip(keys.higgsfield as HiggsfieldKey, input, file, { onProgress });
+			// Where the model runs: a raw Higgsfield path or a model only Higgsfield has (Seedance)
+			// goes there; others to fal when it is connected, else Higgsfield.
+			const withImage = !!input.image;
+			let onFal = false;
+			try {
+				onFal =
+					!input.model?.startsWith("/") &&
+					resolveClipModel(input.model, withImage, { fal: true, higgsfield: false }).service ===
+						"fal";
+			} catch {}
+			const onHiggsfield = (() => {
+				try {
+					return (
+						resolveClipModel(input.model, withImage, { fal: false, higgsfield: true }).service ===
+						"higgsfield"
+					);
+				} catch {
+					return false;
+				}
+			})();
+			const higgsfield = () =>
+				generateClip(keys.higgsfield as HiggsfieldKey, input, file, { onProgress });
+			if (keys.higgsfield && onHiggsfield && (!onFal || !keys.fal || clips.engine === "higgsfield"))
+				return higgsfield();
+			if (!onFal) throw new Error(onHiggsfield ? `${CONNECT_HIGGSFIELD}.` : `${CONNECT_FAL}.`);
 			if (!keys.fal) throw new Error(`${CONNECT_FAL}.`);
-			return falClip(keys.fal, input, file, { onProgress });
+			try {
+				return await falClip(keys.fal, input, file, { onProgress });
+			} catch (error) {
+				// A fal key that stopped working (revoked, out of credit): Higgsfield has the same model.
+				if (
+					keys.higgsfield &&
+					onHiggsfield &&
+					/\b(401|402|403)\b|revoked|invalid api key|balance|credit/i.test((error as Error).message)
+				)
+					return higgsfield();
+				throw error;
+			}
 		},
 		async voices(search) {
 			if (keys.elevenlabs)
@@ -483,6 +525,8 @@ export function buildRuntime(
 		async image(prompt, options) {
 			need("image");
 			if (picture.engine === "fal") {
+				if (options.references?.length)
+					throw new Error(`Pictures from references need OpenAI: ${CONNECT_OPENAI}.`);
 				const [width, height] = options.size.split("x").map(Number);
 				return {
 					png: await falImage(keys.fal as string, FAL_IMAGE_MODEL, { prompt, width, height }),
@@ -497,6 +541,7 @@ export function buildRuntime(
 					model,
 					size: options.size,
 					quality: options.quality,
+					references: options.references,
 				}),
 				provider: "openai",
 				model,

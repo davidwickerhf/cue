@@ -230,6 +230,36 @@ export const keySchema = z.object({
 	similarity: z.number().min(0.01).max(0.6),
 	blend: z.number().min(0).max(0.5),
 });
+const point = z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]);
+export const cornersSchema = z.tuple([point, point, point, point]);
+export const pinSchema = z.object({
+	keys: z
+		.array(z.object({ atMs: z.number().min(0), corners: cornersSchema }))
+		.min(1)
+		.max(20000),
+});
+export const trackerSchema = z.object({
+	mode: z.enum(["screen", "surface", "object"]),
+	color: z
+		.string()
+		.regex(/^#[0-9a-fA-F]{6}$/)
+		.optional(),
+	anchors: z.array(z.object({ atMs: z.number().min(0), corners: cornersSchema })).max(200),
+	result: z
+		.array(
+			z.object({
+				atMs: z.number().min(0),
+				corners: cornersSchema,
+				confidence: z.number().min(0).max(1),
+			}),
+		)
+		.max(20000)
+		.optional(),
+	targets: z
+		.array(z.object({ clipId: z.string(), as: z.enum(["pin", "follow"]) }))
+		.max(50)
+		.optional(),
+});
 export const DEFAULT_KEY = { color: "#00ff00", similarity: 0.15, blend: 0.08 };
 export const effectsSchema = z.object({
 	blur: z.number().min(0).max(1),
@@ -439,6 +469,8 @@ const mediaClipSchema = z.object({
 	color: colorSchema.optional(),
 	mask: maskSchema.optional(),
 	key: keySchema.optional(),
+	pin: pinSchema.optional(),
+	tracker: trackerSchema.optional(),
 	effects: effectsSchema.optional(),
 	frame: frameSchema.optional(),
 	blend: z.enum(BLEND_MODES).optional(),

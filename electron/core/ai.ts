@@ -117,20 +117,47 @@ export async function generateImage(
 		model: string;
 		size: "1536x1024" | "1024x1536" | "1024x1024";
 		quality?: "low" | "medium" | "high" | "auto";
+		/** Pictures to build on (people, places, a style to keep): the image is made from them. */
+		references?: string[];
 	},
 ): Promise<Buffer> {
-	const res = await fetch(`${base(creds)}/images/generations`, {
-		method: "POST",
-		headers: { authorization: `Bearer ${creds.apiKey}`, "content-type": "application/json" },
-		body: JSON.stringify({
-			model: input.model,
-			prompt: input.prompt,
-			size: input.size,
-			n: 1,
-			...(input.quality ? { quality: input.quality } : {}),
-		}),
-		signal: AbortSignal.timeout(240000),
-	});
+	const res = input.references?.length
+		? await fetch(`${base(creds)}/images/edits`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${creds.apiKey}` },
+				body: await (async () => {
+					const form = new FormData();
+					form.append("model", input.model);
+					form.append("prompt", input.prompt);
+					form.append("size", input.size);
+					form.append("n", "1");
+					if (input.quality) form.append("quality", input.quality);
+					for (const file of input.references ?? []) {
+						const ext = path.extname(file).toLowerCase();
+						const type =
+							ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+						form.append(
+							"image[]",
+							new Blob([await fs.readFile(file)], { type }),
+							path.basename(file),
+						);
+					}
+					return form;
+				})(),
+				signal: AbortSignal.timeout(300000),
+			})
+		: await fetch(`${base(creds)}/images/generations`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${creds.apiKey}`, "content-type": "application/json" },
+				body: JSON.stringify({
+					model: input.model,
+					prompt: input.prompt,
+					size: input.size,
+					n: 1,
+					...(input.quality ? { quality: input.quality } : {}),
+				}),
+				signal: AbortSignal.timeout(240000),
+			});
 	if (!res.ok) throw await failure(res);
 	const body = (await res.json()) as { data: { b64_json?: string; url?: string }[] };
 	const item = body.data[0];

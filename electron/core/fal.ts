@@ -244,7 +244,8 @@ export async function falClip(
 	} = {},
 ): Promise<{ file: string; url: string; model: string; label: string; durationSec: number }> {
 	const model = resolveClipModel(input.model, !!input.image, { fal: true, higgsfield: false });
-	if (model.service !== "fal") throw new Error(`${model.label} runs on Higgsfield, not fal.`);
+	if (model.service !== "fal")
+		throw new Error(`${model.label} runs on Higgsfield: connect Higgsfield in Settings → AI.`);
 	const duration = snapDuration(input.durationSec, model.durations);
 	const progress = options.onProgress ?? (() => {});
 	progress(0.02);

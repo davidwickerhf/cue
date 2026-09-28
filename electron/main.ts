@@ -419,7 +419,17 @@ async function saveSecret<P extends SecretProvider>(
 	provider: P,
 	value: Secrets[P] | null,
 ): Promise<void> {
-	const next = serializeSecrets(withSecret(await readSecrets(), provider, value));
+	// A file that exists but can't be read (the keychain refused, e.g. after an update)
+	// is kept aside rather than overwritten, so saving one key never erases the others.
+	const current = await readSecrets();
+	if (!Object.keys(current).length && existsSync(secretsFile)) {
+		try {
+			safeStorage.decryptString(await fs.readFile(secretsFile));
+		} catch {
+			await fs.rename(secretsFile, `${secretsFile}.unreadable-${Date.now()}`).catch(() => {});
+		}
+	}
+	const next = serializeSecrets(withSecret(current, provider, value));
 	if (!next) {
 		await fs.rm(secretsFile, { force: true });
 		return;

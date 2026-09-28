@@ -7,6 +7,7 @@ import { toSrt, toVtt } from "./captions";
 import { denoiseChain } from "./denoise";
 import { ffmpeg, ffmpegWithProgress } from "./media";
 import { resolveInProject } from "./paths";
+import { pinExprs } from "./pin";
 import {
 	clipEnd,
 	deriveLines,
@@ -78,6 +79,12 @@ export interface ExportReport {
 const s = (msValue: number) => (msValue / 1000).toFixed(3);
 const fileName = (data: ProjectData, pattern: string) =>
 	pattern.replaceAll("{name}", data.name.replace(/[^\w.-]+/g, "-"));
+
+/** Which screen a key colour is: blue when blue leads green, else green. */
+function spillOf(color: string): "green" | "blue" {
+	const n = Number.parseInt(color.slice(1), 16);
+	return (n & 255) > ((n >> 8) & 255) ? "blue" : "green";
+}
 
 function assetOf(data: ProjectData, id: string): Asset {
 	const found = data.assets.find((a) => a.id === id);
@@ -737,8 +744,9 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 					`[tbC${label}][tbA${label}]blend=all_expr='A*(1-${enteredAt("T")})+B*${enteredAt("T")}':enable='lt(t,${s(tr.durationMs)})'`
 				: "");
 		// Chroma key removes the screen colour before anything is composited.
+		// Then the spill: edge pixels still tinted by the screen are pulled back to neutral.
 		const keyChain = clip.key
-			? `,format=yuva420p,chromakey=color=0x${clip.key.color.slice(1)}:similarity=${clip.key.similarity.toFixed(3)}:blend=${clip.key.blend.toFixed(3)}`
+			? `,format=yuva420p,chromakey=color=0x${clip.key.color.slice(1)}:similarity=${clip.key.similarity.toFixed(3)}:blend=${clip.key.blend.toFixed(3)},format=rgba,despill=type=${spillOf(clip.key.color)}:mix=0.5:expand=0`
 			: "";
 		const crop =
 			c.left || c.top || c.right || c.bottom
@@ -866,7 +874,16 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				`,scale=${cw}:${ch},format=rgba,split[fa${label}][fb${label}];[fb${label}]alphaextract[fx${label}];` +
 				`[fx${label}][fm${label}]blend=all_mode=multiply:shortest=1[fy${label}];[fa${label}][fy${label}]alphamerge`;
 		}
-		const finish = `${crop}${rounded}${size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`;
+		// A pinned clip is stretched onto its corners instead: scaled to the canvas inside a
+		// transparent border, then sent there frame by frame (see pinExprs).
+		const PIN_PAD = 4;
+		const pinned = clip.pin
+			? (() => {
+					const [x0, y0, x1, y1, x2, y2, x3, y3] = pinExprs(clip.pin, fps, W, H, PIN_PAD);
+					return `,scale=${W - 2 * PIN_PAD}:${H - 2 * PIN_PAD},format=rgba,pad=${W}:${H}:${PIN_PAD}:${PIN_PAD}:color=black@0,perspective=sense=destination:eval=frame:x0='${x0}':y0='${y0}':x1='${x1}':y1='${y1}':x2='${x2}':y2='${y2}':x3='${x3}':y3='${y3}'`;
+				})()
+			: "";
+		const finish = `${crop}${rounded}${pinned || size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`;
 		if (clip.mask) {
 			// The mask is drawn once at the picture's size and becomes its alpha, before cropping and scaling.
 			// With a chroma key too, the key's alpha and the mask are multiplied so both apply.
@@ -906,7 +923,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		const Sg = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale)}${zoomIn(local)}`;
 		const dx = `${(((c.left - c.right) / 2) * sw * fitBase).toFixed(3)}*(${Sg})`;
 		const dy = `${(((c.top - c.bottom) / 2) * sh * fitBase).toFixed(3)}*(${Sg})`;
-		if (clip.frame?.shadow) {
+		if (clip.frame?.shadow && !clip.pin) {
 			// The shadow sits under the picture where it rests (its keyframes aren't followed).
 			const box = {
 				x: W * t.x + ((c.left - c.right) / 2) * sw * fitBase * t.scale,
@@ -939,7 +956,9 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			current = `sdo${label}`;
 		}
 		// Wiggle is in pixels of a 1080-line frame.
-		const position = `x='${W}*(${X})+${dx}+(${wig.x})*${(H / 1080).toFixed(5)}-w/2':y='${H}*(${Y})+${dy}+(${wig.y})*${(H / 1080).toFixed(5)}-h/2'`;
+		const position = clip.pin
+			? "x=0:y=0"
+			: `x='${W}*(${X})+${dx}+(${wig.x})*${(H / 1080).toFixed(5)}-w/2':y='${H}*(${Y})+${dy}+(${wig.y})*${(H / 1080).toFixed(5)}-h/2'`;
 		if (clip.blend && clip.blend !== "normal") {
 			// Blend modes: the picture is laid on a canvas of the mode's neutral colour (which
 			// leaves what is below unchanged), then that whole frame is blended with the edit.

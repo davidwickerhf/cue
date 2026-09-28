@@ -10,6 +10,7 @@ import {
 	ChartLine,
 	Check,
 	Copy,
+	Crosshair,
 	Cursor,
 	DotsSixVertical,
 	Eye,
@@ -25,6 +26,7 @@ import {
 	Microphone,
 	Pause,
 	Plus,
+	PushPin,
 	Robot,
 	Scissors,
 	SpeakerHigh,
@@ -65,7 +67,7 @@ import { recorder } from "../../lib/recorder";
 import { SOURCE_MIME } from "../../lib/source";
 import { app, createStore, editor, useApp, useProject } from "../../lib/state";
 import { cn, formatTime, nameFieldKeys } from "../../lib/utils";
-import { clampLayout, layout } from "../../lib/workspace";
+import { clampLayout, layout, revealSection } from "../../lib/workspace";
 import { ASSET_MIME } from "../panels/MediaPanel";
 import { STATUS_STYLE } from "../panels/ScriptPanel";
 import { IconButton, Segmented } from "../ui/controls";
@@ -2211,6 +2213,14 @@ function ClipView({
 				),
 			]
 		: [];
+	// Motion tracking: the clip it follows, and the clips following it.
+	const links = media ? trackLinks(project, media) : null;
+	const partnerIds = links
+		? [...(links.source ? [links.source.id] : []), ...links.targets.map((t) => t.clip.id)]
+		: [];
+	const partnerSelected = useApp((s) =>
+		partnerIds.length ? (s.selectedClipIds ?? []).some((id) => partnerIds.includes(id)) : false,
+	);
 	const cursor =
 		tool === "blade"
 			? "cursor-crosshair"
@@ -2262,11 +2272,13 @@ function ClipView({
 				CLIP_TONE[tone],
 				selected
 					? "outline outline-2 -outline-offset-1 outline-white/90"
-					: review === "added"
-						? "outline outline-2 -outline-offset-1 outline-emerald-400"
-						: review === "changed"
-							? "outline outline-2 -outline-offset-1 outline-amber-400"
-							: "outline outline-1 -outline-offset-1 outline-black/25",
+					: partnerSelected
+						? "outline-dashed outline-2 -outline-offset-1 outline-sky-300"
+						: review === "added"
+							? "outline outline-2 -outline-offset-1 outline-emerald-400"
+							: review === "changed"
+								? "outline outline-2 -outline-offset-1 outline-amber-400"
+								: "outline outline-1 -outline-offset-1 outline-black/25",
 				dragging && "z-10 opacity-85 shadow-lg shadow-black/40",
 				clip.disabled && "opacity-35 grayscale",
 				cursor,
@@ -2367,6 +2379,34 @@ function ClipView({
 					title={`Zoom ${z.scale.toFixed(1)}×`}
 				/>
 			))}
+			{media?.tracker?.result?.length ? (
+				<div
+					className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px]"
+					style={{ background: confidenceGradient(media, width) }}
+					title="Motion track: cyan sure, amber unsure, red lost"
+				/>
+			) : null}
+			{media?.pin &&
+				(media.pin.keys.length > 40 ? (
+					<div
+						className="pointer-events-none absolute bottom-0.5 h-1 rounded-full bg-sky-300/90"
+						style={{
+							left: media.pin.keys[0].atMs * pxPerMs,
+							width: Math.max(
+								3,
+								(media.pin.keys[media.pin.keys.length - 1].atMs - media.pin.keys[0].atMs) * pxPerMs,
+							),
+						}}
+					/>
+				) : (
+					media.pin.keys.map((k) => (
+						<span
+							key={k.atMs}
+							className="pointer-events-none absolute bottom-0.5 size-2 -translate-x-1/2 rotate-45 bg-sky-300"
+							style={{ left: k.atMs * pxPerMs }}
+						/>
+					))
+				))}
 			{keyframeTimes.map((t) => (
 				<span
 					key={t}
@@ -2404,6 +2444,17 @@ function ClipView({
 				{clip.type === "text" && <TextT weight="bold" className="size-3 shrink-0" />}
 				{clip.groupId && <LinkSimple weight="bold" className="size-3 shrink-0 opacity-80" />}
 				<span className="truncate">{label}</span>
+				{media?.key && (
+					<span
+						className="rounded bg-black/30 px-1 text-[10px]"
+						title={`Keyed out: ${media.key.color}`}
+					>
+						Keyed
+					</span>
+				)}
+				{media && links && (media.tracker || links.source) && (
+					<TrackChips clip={media} links={links} />
+				)}
 				{media && media.speed !== 1 && (
 					<span className="rounded bg-black/30 px-1 text-[10px]">{+media.speed.toFixed(2)}×</span>
 				)}
@@ -2733,4 +2784,101 @@ function ClipMenu({
 			)}
 		</div>
 	);
+}
+
+/** A clip's motion-tracking links: the clip whose track it follows, and those following its track. */
+function trackLinks(project: ProjectSnapshot, clip: MediaClip) {
+	const clips = project.data.clips;
+	const targets = (clip.tracker?.targets ?? [])
+		.map((t) => ({ as: t.as, clip: clips.find((c) => c.id === t.clipId) }))
+		.filter((t): t is { as: "pin" | "follow"; clip: Clip } => !!t.clip);
+	const source = clips.find(
+		(c): c is MediaClip =>
+			c.type === "media" && !!c.tracker?.targets?.some((t) => t.clipId === clip.id),
+	);
+	const as = source?.tracker?.targets?.find((t) => t.clipId === clip.id)?.as;
+	const nameOf = (c: Clip) =>
+		c.type === "text"
+			? c.text
+			: (c.name ?? project.data.assets.find((a) => a.id === c.assetId)?.name ?? "a clip");
+	return { targets, source, as, nameOf };
+}
+
+/** Chips on a clip that tracks motion, or is pinned to / follows another clip's track; a click selects the other clip. */
+function TrackChips({ clip, links }: { clip: MediaClip; links: ReturnType<typeof trackLinks> }) {
+	const chip =
+		"pointer-events-auto flex items-center gap-0.5 rounded bg-sky-400/25 px-1 text-[10px] text-sky-100 hover:bg-sky-400/40";
+	const select = (ids: string[]) => window.cue?.selectClips(ids);
+	const result = clip.tracker?.result ?? [];
+	const mean = result.length ? result.reduce((s, r) => s + r.confidence, 0) / result.length : 0;
+	return (
+		<>
+			{clip.tracker && (
+				<button
+					type="button"
+					className={chip}
+					onPointerDown={(e) => e.stopPropagation()}
+					onClick={(e) => {
+						e.stopPropagation();
+						select([clip.id]);
+						revealSection("Motion tracking");
+					}}
+					title={`Motion track (${clip.tracker.mode}) · ${Math.round(mean * 100)}% sure${
+						links.targets.length
+							? ` · ${links.targets.map((t) => `${t.as === "pin" ? "pins" : "moves"} ${links.nameOf(t.clip)}`).join(", ")}`
+							: " · not applied to a clip yet"
+					}`}
+				>
+					<Crosshair weight="bold" className="size-2.5" />
+					Tracked{links.targets.length ? ` → ${links.targets.length}` : ""}
+				</button>
+			)}
+			{links.source && (
+				<button
+					type="button"
+					className={chip}
+					onPointerDown={(e) => e.stopPropagation()}
+					onClick={(e) => {
+						e.stopPropagation();
+						select([clip.id]);
+						revealSection(links.as === "pin" ? "Corner pin" : "Transform");
+					}}
+					title={`${links.as === "pin" ? "Pinned onto" : "Follows"} the motion track of ${links.nameOf(links.source)}`}
+				>
+					<PushPin weight="bold" className="size-2.5" />
+					{links.as === "pin" ? "Pinned" : "Following"}
+				</button>
+			)}
+			{!links.source && clip.pin && (
+				<span className={chip} title="Stretched onto four corners (Inspector → Corner pin)">
+					<PushPin weight="bold" className="size-2.5" />
+					Pinned
+				</span>
+			)}
+		</>
+	);
+}
+
+/** The track's confidence along the clip as a CSS gradient: cyan sure, amber unsure, red lost. */
+function confidenceGradient(clip: MediaClip, width: number): string {
+	const result = clip.tracker?.result ?? [];
+	const bins = Math.max(8, Math.min(120, Math.round(width / 4)));
+	const low = new Array<number>(bins).fill(Number.POSITIVE_INFINITY);
+	for (const r of result) {
+		const local = (r.atMs - clip.inMs) / clip.speed;
+		if (local < 0 || local > clip.durationMs) continue;
+		const b = Math.min(bins - 1, Math.floor((local / clip.durationMs) * bins));
+		low[b] = Math.min(low[b], r.confidence);
+	}
+	const stops = low.map((c, i) => {
+		const color = !Number.isFinite(c)
+			? "transparent"
+			: c >= 0.6
+				? "#38bdf8"
+				: c >= 0.3
+					? "#fbbf24"
+					: "#f87171";
+		return `${color} ${(i / bins) * 100}% ${((i + 1) / bins) * 100}%`;
+	});
+	return `linear-gradient(to right, ${stops.join(", ")})`;
 }

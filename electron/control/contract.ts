@@ -4,6 +4,7 @@ import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
 	BLEND_MODES,
+	cornersSchema,
 	curveSchema,
 	exportSchema,
 	KEYFRAME_PROPS,
@@ -1244,12 +1245,13 @@ export const contract = {
 	},
 	generate_image: {
 		description:
-			"Generate a still image (title card, B-roll, background) with OpenAI, or GPT Image 2 through fal when only fal is connected. With trackId it is placed at startMs for 5 s. model: gpt-image-2.5-flare (fast, the default) or gpt-image-2.5-sunburst (slower, more natural skin, fabric and light: use it for people and photographic stills, and as start pictures for video clips). quality: high for anything that must look real.",
+			'Generate a still image (title card, B-roll, background) with OpenAI, or GPT Image 2 through fal when only fal is connected. With trackId it is placed at startMs for 5 s. model: gpt-image-2.5-flare (fast, the default) or gpt-image-2.5-sunburst (slower, more natural skin, fabric and light: use it for people and photographic stills, and as start pictures for video clips). quality: high for anything that must look real. referenceAssetIds (up to 8 project pictures, OpenAI) makes the image from those: the same person, place, product or style in a new shot ("the man from the first picture, now opening the blinds of the same room in the morning"); say in the prompt what to keep from each. Use it to keep characters and places consistent across a project\'s stills.',
 		input: {
 			prompt: z.string().min(3),
 			orientation: z.enum(["landscape", "portrait", "square"]).default("landscape"),
 			model: z.string().max(80).optional(),
 			quality: z.enum(["low", "medium", "high", "auto"]).optional(),
+			referenceAssetIds: z.array(z.string()).min(1).max(8).optional(),
 			trackId: z.string().optional(),
 			startMs: z.number().min(0).default(0),
 		},
@@ -1356,6 +1358,71 @@ export const contract = {
 			volume: z.number().min(0).max(2).default(0.8),
 		},
 	},
+	track_motion: {
+		description:
+			"Motion tracking, like After Effects' tracker: follow something in a clip's picture over time, then pin another clip onto it (corner pin: a screen recording onto a laptop or phone screen, a poster onto a wall) or make a clip follow it (text or a graphic riding along with a moving object). mode screen: a green or blue screen, found by its colour every frame (no corners needed; color defaults to the clip's key colour or #00ff00); the whole screen must stay in frame, so for one that leaves the frame use mode surface with its corners. mode surface: anything flat, given its four corners at one moment (atMs, timeline ms; corners as [x, y] canvas shares: top-left, top-right, bottom-right, bottom-left); perspective is followed. mode object: anything that moves, given a box (or corners) around it; position, size and rotation are followed. It tracks both ways from each anchor and every call adds the corners you give as another anchor (set replace: true to start over), so a track that slips is fixed by giving the right corners at the frame where it went wrong and tracking again. apply {clipId, as: pin|follow} pins or moves that clip with the result (follow keeps the clip where it is at the first anchor and moves it from there; followScale and followRotation add size and turning). For a screen replacement: the recording on the track below the plate, the plate keyed (update_clip key) and the recording pinned (as: pin), so hands in front of the screen stay in front. Returns how sure the tracker was (weak: stretches below 0.6, timeline ms) and a review image with the tracked corners drawn on frames (cyan sure, amber unsure, red lost): look at it, and correct weak stretches with an anchor there. Takes a few seconds per second of footage.",
+		input: {
+			clipId: z.string().describe("The clip whose picture is tracked."),
+			mode: z.enum(["screen", "surface", "object"]),
+			atMs: z
+				.number()
+				.min(0)
+				.optional()
+				.describe("Timeline ms of the corners or box (default: the clip's start)."),
+			corners: cornersSchema.optional(),
+			box: z
+				.object({
+					x: z.number(),
+					y: z.number(),
+					width: z.number().positive(),
+					height: z.number().positive(),
+				})
+				.optional()
+				.describe("Object mode: the box around it (left, top, width, height) in canvas shares."),
+			color: z
+				.string()
+				.regex(/^#[0-9a-fA-F]{6}$/)
+				.optional(),
+			replace: z.boolean().default(false).describe("Forget earlier anchors on this clip."),
+			fromMs: z.number().min(0).optional(),
+			toMs: z.number().min(0).optional(),
+			apply: z
+				.object({
+					clipId: z.string(),
+					as: z.enum(["pin", "follow"]),
+					followScale: z.boolean().default(false),
+					followRotation: z.boolean().default(false),
+				})
+				.optional(),
+			review: z
+				.number()
+				.int()
+				.min(0)
+				.max(40)
+				.default(12)
+				.describe("Frames in the review image (0: none)."),
+		},
+	},
+	apply_track: {
+		description:
+			"Use a clip's motion track (made with track_motion) again: pin another clip onto it (as: pin) or make it follow (as: follow), e.g. after moving or trimming either clip, or for a second graphic.",
+		input: {
+			fromClipId: z.string(),
+			toClipId: z.string(),
+			as: z.enum(["pin", "follow"]),
+			followScale: z.boolean().default(false),
+			followRotation: z.boolean().default(false),
+		},
+	},
+	review_track: {
+		description:
+			"The review image of a clip's motion track: frames with the tracked corners drawn (cyan sure, amber unsure, red lost), spread over the track or at chosen timeline times, plus the weak stretches. Read-only.",
+		input: {
+			clipId: z.string(),
+			count: z.number().int().min(2).max(40).default(12),
+			atMs: z.array(z.number().min(0)).min(1).max(40).optional(),
+		},
+	},
 	generate_clip: {
 		description:
 			"Generate a short video clip through fal (or Higgsfield when only that is connected; get_ai_status 'video'): from a prompt alone, or animating a start picture (imageAssetId of an image in the project, imagePath of a PNG/JPEG/WebP file, or frameAtMs for the edit's frame at that time). Describe the shot like a director: subject, action, camera move, light and style. model: kling-2.5-turbo-pro (default; text or picture), kling-2.5-turbo-standard (picture only, cheaper), hailuo-2.3 or seedance-2.0 (Higgsfield only; the most lifelike motion and people, 1080p, up to 15 s), or a raw fal model id such as fal-ai/kling-video/v2.5-turbo/pro/image-to-video (a path starting with / goes to Higgsfield). durationSec snaps to what the model makes (5 or 10 for Kling, 6 or 10 for Hailuo, 5, 10 or 15 for Seedance). Takes one to a few minutes (reply {status: 'running'}: use wait_for). The MP4 is saved in the project's generated folder and added to the media, marked AI with its prompt; with atMs it is placed there (on trackId or the first video track). Clips have no sound.",
@@ -1386,10 +1453,22 @@ export const contract = {
 	},
 	generate_music: {
 		description:
-			"Make an original, royalty-free music bed to measure (no credit needed), in one of two ways. With mood, Cue composes it on this computer: calm (soft piano arpeggios over a pad: explainers, tutorials, study or assignment videos), lofi (jazzy chords, soft beat, vinyl), ambient (slow open chords), tension (dark minor pulse), uplifting (bright arpeggios, light beat) or documentary (dark drone); optional key (C, D, E, F, G, A, B and sharps) and bpm. With prompt, ElevenLabs composes real-sounding music from a description (directly or through fal; get_ai_status 'sound'): genre, mood, instruments, tempo and how it develops, e.g. 'warm acoustic guitar and soft piano, gentle and hopeful, 90 bpm, builds slightly at the end'; instrumental true keeps vocals out (use it under a voice); 3 s to 10 min. It is durationMs long (lengthMs is the same; default: to the end of the timeline), laid on the music track from startMs (atMs is the same) with fades, ducked under the voice, unless place is false.",
+			"Make an original, royalty-free music bed to measure (no credit needed), in one of two ways. With mood, Cue composes it on this computer: calm (soft piano arpeggios over a pad: explainers, tutorials, study or assignment videos), lofi (jazzy chords, soft beat, vinyl), ambient (slow open chords), tension (dark minor pulse), uplifting (bright arpeggios, light beat) or documentary (dark drone); optional key (C, D, E, F, G, A, B and sharps) and bpm. With prompt, ElevenLabs composes real-sounding music from a description (directly or through fal; get_ai_status 'sound'): genre, mood, instruments, tempo and how it develops, e.g. 'warm acoustic guitar and soft piano, gentle and hopeful, 90 bpm, builds slightly at the end'; instrumental true keeps vocals out (use it under a voice); 3 s to 10 min. sections (with prompt, ElevenLabs) composes it part by part to the edit's structure: [{name, durationMs, styles, avoid}] in order, e.g. an intro of 8 s, a build of 12 s, a drop where the video turns; the prompt is then the style of the whole piece and durationMs is the sections' total. It is durationMs long (lengthMs is the same; default: to the end of the timeline), laid on the music track from startMs (atMs is the same) with fades, ducked under the voice, unless place is false.",
 		input: {
 			mood: z.enum(["calm", "lofi", "ambient", "tension", "uplifting", "documentary"]).optional(),
 			prompt: z.string().min(3).max(2000).optional(),
+			sections: z
+				.array(
+					z.object({
+						name: z.string().min(1).max(60),
+						durationMs: z.number().min(3000).max(120000),
+						styles: z.array(z.string().min(1).max(200)).min(1).max(12),
+						avoid: z.array(z.string().min(1).max(200)).max(12).optional(),
+					}),
+				)
+				.min(1)
+				.max(30)
+				.optional(),
 			instrumental: z.boolean().optional(),
 			durationMs: z.number().min(2000).max(3600000).optional(),
 			lengthMs: z.number().min(2000).max(3600000).optional(),

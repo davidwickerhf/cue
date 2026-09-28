@@ -57,6 +57,8 @@ Plan an edit as a list of techniques tied to moments ("0:12 J-cut into the demo;
 - **Split screen / comparison.** Two clips side by side (transform x 0.25 and 0.75, scale 0.5, crop to fit), before/after, or the viewer's split for A/B.
 - **Picture-in-picture.** A face cam in a corner: scale 0.25–0.3, frame {radius, shadow}, 5% margin.
 - **Device frames.** Footage inside a phone, laptop, TV or polaroid template; fit with the template's regions; push the pair in together.
+- **Screen replacement.** A recording on a phone, laptop or TV in a shot (shot or generated with a green screen): the recording on the track below the plate, the plate keyed (update_clip key), then track_motion {clipId: plate, mode: screen, apply: {clipId: recording, as: pin}}. Hands and reflections in front stay in front. A screen showing something else (no green): mode surface with its four corners. Look at the review image; where the corners slip, give the right corners at that frame and track again.
+- **Tracked graphics.** A label, arrow or title that rides along with something moving (a car, a product, a person): track_motion mode object with a box around it, apply as follow (followScale for things that come closer). A sign or wall that should carry text or a picture in perspective: mode surface, apply as pin.
 - **Collage / cut-outs.** cut_out subjects with a paper edge and shadow, on paper textures from the library, turned -3…3°, stepFps 12 for a handmade feel.
 - **Masks and reveals.** update_clip mask (rectangle or ellipse, feather) to reveal a region, vignette a subject, or wipe one picture into another.
 - **Text behind subject.** Title on a track between the background and a cut_out of the subject, so the subject overlaps the text.

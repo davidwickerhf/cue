@@ -175,20 +175,51 @@ export async function elevenSound(
 }
 
 /** A piece of music from a description (MP3), lengthMs long (3 s to 10 min). */
+/** A part of a composed piece: its name, length and how it should sound. */
+export interface MusicSection {
+	name: string;
+	durationMs: number;
+	styles: string[];
+	avoid?: string[];
+}
+
 export async function elevenMusic(
 	key: string,
-	input: { prompt: string; lengthMs: number; instrumental?: boolean },
+	input: {
+		prompt: string;
+		lengthMs: number;
+		instrumental?: boolean;
+		/** Composed section by section: the prompt is the whole piece's style, each section its own. */
+		sections?: MusicSection[];
+	},
 ): Promise<Buffer> {
 	return audio(
 		await fetch(`${ELEVENLABS_BASE}/v1/music`, {
 			method: "POST",
 			headers: headers(key),
-			body: JSON.stringify({
-				prompt: input.prompt,
-				music_length_ms: Math.round(Math.min(600000, Math.max(3000, input.lengthMs))),
-				model_id: ELEVEN_MUSIC_MODEL,
-				...(input.instrumental ? { force_instrumental: true } : {}),
-			}),
+			body: JSON.stringify(
+				input.sections?.length
+					? {
+							composition_plan: {
+								positive_global_styles: [input.prompt],
+								negative_global_styles: input.instrumental ? ["vocals", "singing"] : [],
+								sections: input.sections.map((s) => ({
+									section_name: s.name,
+									positive_local_styles: s.styles,
+									negative_local_styles: s.avoid ?? [],
+									duration_ms: Math.round(Math.min(120000, Math.max(3000, s.durationMs))),
+									lines: [],
+								})),
+							},
+							model_id: ELEVEN_MUSIC_MODEL,
+						}
+					: {
+							prompt: input.prompt,
+							music_length_ms: Math.round(Math.min(600000, Math.max(3000, input.lengthMs))),
+							model_id: ELEVEN_MUSIC_MODEL,
+							...(input.instrumental ? { force_instrumental: true } : {}),
+						},
+			),
 			// A long piece takes minutes to compose.
 			signal: AbortSignal.timeout(600000),
 		}),

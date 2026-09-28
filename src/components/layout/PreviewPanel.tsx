@@ -12,6 +12,7 @@ import { cn, formatSeconds } from "../../lib/utils";
 import { fittedRatio, MAX_ZOOM, MIN_ZOOM, viewerZoom, zoomViewer } from "../../lib/viewer";
 import { compareView, layout } from "../../lib/workspace";
 import { ClipStrip } from "./ClipStrip";
+import { CornerOverlay, trackDraft } from "./CornerOverlay";
 import {
 	MonitorHeader,
 	SourceMonitor,
@@ -183,6 +184,7 @@ export function PreviewPanel() {
 							{/* Guides and handles, left out of render_frame captures. */}
 							<div data-viewer-overlays className="contents">
 								{project && <SelectionOverlay project={project} width={stageW} height={stageH} />}
+								{project && <CornerOverlay project={project} width={stageW} height={stageH} />}
 								{safeAreas && <SafeAreas />}
 								{compare && project && <SplitDivider />}
 							</div>
@@ -440,7 +442,10 @@ function SelectionOverlay({
 		!!clip.keyframes &&
 		(["x", "y", "scale"] as const).some((p) => clip.keyframes?.[p]?.length);
 	const frame = playback.clock.use((s) => (animated ? Math.round(s.currentMs / 33) : 0));
+	const drafting = trackDraft.use((s) => !!clip && s.clipId === clip.id && !!s.corners);
 	if (!clip || !visible) return null;
+	// A pinned clip, or one whose tracker corners are being set, is handled by its corners.
+	if (drafting || (clip.type === "media" && clip.pin)) return null;
 	const track = project.data.tracks.find((t) => t.id === clip.trackId);
 	if (!track || track.kind === "audio" || track.locked) return null;
 	const local = animated ? frame * 33 - clip.startMs : playback.currentMs - clip.startMs;

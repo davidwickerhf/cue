@@ -72,7 +72,7 @@ import {
 } from "./motionTemplates";
 import { activeSequence, allSequences, applyOp, type InternalOp, type Op } from "./ops";
 import { type PackageReport, packageProject } from "./packager";
-import { relativeToProject, resolveInProject } from "./paths";
+import { relativeToProject, resolveInProject, stamp } from "./paths";
 import {
 	DEFAULT_TEXT_STYLE,
 	deriveLines,
@@ -3712,6 +3712,8 @@ export class ProjectStore extends EventEmitter {
 			place?: { trackId: string; startMs: number };
 			model?: string;
 			quality?: "low" | "medium" | "high" | "auto";
+			/** Project pictures to build on. */
+			references?: string[];
 		} = {},
 	): Promise<Asset> {
 		const size = ({ landscape: "1536x1024", portrait: "1024x1536", square: "1024x1024" } as const)[
@@ -3721,11 +3723,16 @@ export class ProjectStore extends EventEmitter {
 			model: options.model ?? this.current.ai.imageModel,
 			size,
 			quality: options.quality,
+			references: options.references?.map((id) => {
+				const a = this.current.assets.find((x) => x.id === id);
+				if (!a || a.kind !== "image") throw new Error(`${id} is not a picture in the project.`);
+				return this.assetPath(a.id);
+			}),
 		});
 		const png = made.png;
 		const folder = path.join(this.projectDir, "generated");
 		await fs.mkdir(folder, { recursive: true });
-		const file = path.join(folder, `${slug(prompt).slice(0, 40)}-${Date.now().toString(36)}.png`);
+		const file = path.join(folder, `${slug(prompt).slice(0, 40)}-${stamp()}.png`);
 		await fs.writeFile(file, png);
 		const [w, h] = size.split("x").map(Number);
 		const asset: Asset = {

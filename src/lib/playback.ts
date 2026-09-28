@@ -6,6 +6,7 @@ import {
 	FLAT_EQ,
 } from "../../electron/core/audio";
 import { motionFrameAt, motionKey } from "../../electron/core/motion";
+import { cornersAt, cssMatrix } from "../../electron/core/pin";
 import {
 	BLUR_FROM,
 	entered,
@@ -888,7 +889,17 @@ class PlaybackEngine {
 		// Wiggle is in pixels of a 1080-line frame.
 		const wx = (wig.x * H) / 1080;
 		const wy = (wig.y * H) / 1080;
-		frame.transform = `translate3d(${x * W - w / 2 + wx}px, ${y * H - h / 2 + wy}px, 0)${rotation ? ` rotate(${rotation}deg)` : ""}`;
+		if (clip.pin) {
+			// Corner pin: the picture is stretched onto its four corners at this moment.
+			const quad = cornersAt(clip.pin, local).map(
+				([cx, cy]) => [cx * W, cy * H] as [number, number],
+			);
+			frame.transformOrigin = "0 0";
+			frame.transform = cssMatrix(w, h, quad);
+		} else {
+			if (frame.transformOrigin) frame.transformOrigin = "";
+			frame.transform = `translate3d(${x * W - w / 2 + wx}px, ${y * H - h / 2 + wy}px, 0)${rotation ? ` rotate(${rotation}deg)` : ""}`;
+		}
 		frame.opacity = String(Math.max(0, Math.min(1, opacity)));
 		// A wipe uncovers the picture from one side, on top of any crop.
 		const left = Math.max(c.left, tr?.kind === "wipe-left" ? 1 - p : 0);

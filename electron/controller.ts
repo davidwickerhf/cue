@@ -9,6 +9,7 @@ import { AGENT_GUIDE } from "./control/guide";
 import { MOTION_GUIDE } from "./control/motionGuide";
 import { PLAYBOOKS, playbook } from "./control/playbooks";
 import { ACTIVITY_SUGGESTIONS, detectActivity } from "./core/activity";
+import { valueAt } from "./core/anim";
 import {
 	findLibraryAsset,
 	LIBRARY_ASSETS,
@@ -48,7 +49,8 @@ import {
 import { downloadMusic, generateMusic, type MusicTrack, searchMusic } from "./core/music";
 import { reviewEdit } from "./core/notes";
 import { activeSequence, allSequences } from "./core/ops";
-import { resolveInProject } from "./core/paths";
+import { resolveInProject, stamp } from "./core/paths";
+import { simplifyPin } from "./core/pin";
 import { clipEnd, DEFAULT_TEXT_STYLE, type LineInput, speechOf } from "./core/project";
 import {
 	BUILT_IN_RECIPES,
@@ -67,17 +69,29 @@ import { downloadSfx, generateSfx, searchSfx } from "./core/sfx";
 import { parseSrt } from "./core/srt";
 import type { ProjectStore } from "./core/store";
 import { TITLE_TEMPLATES } from "./core/titles";
+import {
+	drawReview,
+	localMsOf,
+	placement,
+	runTracking,
+	simplifyKeys,
+	sourceMsOf,
+	trackedAt,
+} from "./core/tracking";
 import type {
 	Actor,
 	AgentStatus,
 	AppState,
 	Asset,
+	Corners,
 	EditorCommand,
 	JobStatus,
 	LineView,
+	MediaClip,
 	ProjectSummary,
 	RecentProject,
 	RecorderStatus,
+	Tracker,
 } from "./core/types";
 import { durationBucket, usage } from "./core/usage";
 
@@ -97,7 +111,7 @@ const foundMedia = new Map<string, FoundMedia>();
 
 /** Calls that only read, so they never wait for a transaction. */
 const READ_ONLY =
-	/^(get_|list_|render_frame$|view_attachment$|inspect_edit$|contact_sheet$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
+	/^(get_|list_|render_frame$|view_attachment$|inspect_edit$|contact_sheet$|review_track$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
 
 /** File types each kind of output may have, for paths chosen by an agent. */
 const OUTPUT_TYPES: Record<string, string[]> = {
@@ -654,7 +668,7 @@ export class Controller extends EventEmitter {
 					: Array.from({ length: count }, (_, i) =>
 							Math.round(startMs + ((i + 0.5) / count) * (endMs - startMs)),
 						);
-				const dir = path.join(this.store.cacheDir(), "sheet", Date.now().toString(36));
+				const dir = path.join(this.store.cacheDir(), "sheet", stamp());
 				await fs.mkdir(dir, { recursive: true });
 				for (const [i, t] of times.entries())
 					await fs.copyFile(
@@ -686,6 +700,31 @@ export class Controller extends EventEmitter {
 						clock: `${Math.floor(t / 60000)}:${((t % 60000) / 1000).toFixed(1).padStart(4, "0")}`,
 					})),
 				};
+			}
+			case "track_motion":
+				return this.trackMotion(parseInput("track_motion", params), actor);
+			case "apply_track": {
+				const input = parseInput("apply_track", params);
+				const { clip } = this.trackable(input.fromClipId);
+				const target = this.trackTarget(clip, input.toClipId, input.as, {
+					scale: input.followScale,
+					rotation: input.followRotation,
+				});
+				const targets = (clip.tracker?.targets ?? []).filter((t) => t.clipId !== input.toClipId);
+				targets.push({ clipId: input.toClipId, as: input.as });
+				return this.store.apply(
+					{
+						type: "applyTrack",
+						clipId: clip.id,
+						tracker: { ...(clip.tracker as Tracker), targets },
+						target,
+					},
+					actor,
+				);
+			}
+			case "review_track": {
+				const input = parseInput("review_track", params);
+				return this.trackReport(this.trackable(input.clipId).clip, input.count, input.atMs);
 			}
 			case "get_activity":
 				return this.store.getActivity().slice(0, parseInput("get_activity", params).limit);
@@ -1825,10 +1864,8 @@ export class Controller extends EventEmitter {
 				return { deleted: id };
 			}
 			case "generate_image": {
-				const { prompt, orientation, trackId, startMs, model, quality } = parseInput(
-					"generate_image",
-					params,
-				);
+				const { prompt, orientation, trackId, startMs, model, quality, referenceAssetIds } =
+					parseInput("generate_image", params);
 				const creds = await this.requireCredentials();
 				const asset = await this.job("Generating image", () =>
 					this.store.generateImage(prompt, creds, actor, {
@@ -1836,6 +1873,7 @@ export class Controller extends EventEmitter {
 						place: trackId ? { trackId, startMs } : undefined,
 						model,
 						quality,
+						references: referenceAssetIds,
 					}),
 				);
 				return this.describeAsset(asset);
@@ -1964,18 +2002,16 @@ export class Controller extends EventEmitter {
 				const input = parseInput("generate_music", params);
 				const startMs = input.atMs ?? input.startMs;
 				const end = this.store.timelineEndMs();
-				const durationMs = input.durationMs ?? input.lengthMs ?? Math.max(10000, end - startMs);
+				const planned = input.sections?.reduce((sum, s) => sum + s.durationMs, 0);
+				const durationMs =
+					planned ?? input.durationMs ?? input.lengthMs ?? Math.max(10000, end - startMs);
 				if (input.prompt) return this.composeMusic(input.prompt, startMs, durationMs, input, actor);
 				if (!input.mood)
 					throw new Error(
 						"Give a mood (Cue composes it) or a prompt (ElevenLabs composes it from the description).",
 					);
 				const mood = input.mood;
-				const file = path.join(
-					this.store.projectDir,
-					"generated",
-					`music-${mood}-${Date.now().toString(36)}.m4a`,
-				);
+				const file = path.join(this.store.projectDir, "generated", `music-${mood}-${stamp()}.m4a`);
 				const made = await this.job(`Composing ${mood} music`, () =>
 					generateMusic({ mood, durationMs, key: input.key, bpm: input.bpm }, file),
 				);
@@ -2402,6 +2438,253 @@ export class Controller extends EventEmitter {
 		}
 	}
 
+	/** A video or picture clip with its asset, for tracking. */
+	private trackable(id: string) {
+		const clip = this.store.current.clips.find((c) => c.id === id);
+		if (!clip) throw new Error(`No clip ${id}.`);
+		if (clip.type !== "media")
+			throw new Error("Only video and picture clips can be tracked or pinned.");
+		const asset = this.store.current.assets.find((a) => a.id === clip.assetId);
+		if (!asset || (asset.kind !== "video" && asset.kind !== "image"))
+			throw new Error("Only video and picture clips can be tracked or pinned.");
+		return { clip, asset, file: this.store.assetPath(asset.id) };
+	}
+
+	private async trackMotion(input: MethodInput<"track_motion">, actor: Actor) {
+		const { clip, asset, file } = this.trackable(input.clipId);
+		if (asset.kind !== "video") throw new Error("Tracking needs a video clip.");
+		const { canvas } = this.store.current;
+		const picture = { width: asset.width, height: asset.height };
+		const end = clipEnd(clip);
+		const atMs = Math.min(end - 1, Math.max(clip.startMs, input.atMs ?? clip.startMs));
+		const local = atMs - clip.startMs;
+		const place = placement(clip, picture, canvas, local);
+		// What was given, in shares of the clip's picture (the tracker's own coordinates).
+		let given: Corners | undefined = input.corners
+			? (input.corners.map((p) => place.toPicture(p)) as Corners)
+			: undefined;
+		if (!given && input.box) {
+			const { x, y, width: w, height: h } = input.box;
+			given = [
+				[x, y],
+				[x + w, y],
+				[x + w, y + h],
+				[x, y + h],
+			].map((p) => place.toPicture(p as [number, number])) as Corners;
+		}
+		const previous = !input.replace && clip.tracker?.mode === input.mode ? clip.tracker : undefined;
+		const sourceAt = sourceMsOf(clip, local);
+		const step = 1000 / canvas.fps;
+		const anchors = [
+			...(previous?.anchors ?? []).filter((a) => Math.abs(a.atMs - sourceAt) > step / 2),
+			...(given ? [{ atMs: Math.round(sourceAt), corners: given }] : []),
+		].sort((a, b) => a.atMs - b.atMs);
+		if (input.mode !== "screen" && !anchors.length)
+			throw new Error(
+				input.mode === "surface"
+					? "Give the surface's four corners (corners, canvas shares) at a moment (atMs)."
+					: "Give a box (or corners) around the object at a moment (atMs).",
+			);
+		const color = input.color ?? previous?.color ?? clip.key?.color ?? "#00ff00";
+		const from = Math.max(clip.startMs, input.fromMs ?? clip.startMs) - clip.startMs;
+		const to = Math.min(end, input.toMs ?? end) - clip.startMs;
+		const fromMs = Math.max(0, sourceMsOf(clip, from));
+		const toMs = Math.min(asset.durationMs || Number.POSITIVE_INFINITY, sourceMsOf(clip, to));
+		const result = await this.job("Tracking motion", (progress) =>
+			runTracking({
+				file,
+				width: asset.width,
+				height: asset.height,
+				fps: canvas.fps,
+				fromMs,
+				toMs,
+				mode: input.mode,
+				color,
+				anchors: anchors.filter((a) => a.atMs >= fromMs - step && a.atMs <= toMs + step),
+				onProgress: progress,
+			}),
+		);
+		// Keep what was tracked outside this range from an earlier run.
+		const merged = [
+			...(previous?.result ?? []).filter(
+				(r) => r.atMs < fromMs - step / 2 || r.atMs > toMs + step / 2,
+			),
+			...result,
+		].sort((a, b) => a.atMs - b.atMs);
+		const targets = [...(previous?.targets ?? [])].filter((t) => t.clipId !== input.apply?.clipId);
+		if (input.apply) targets.push({ clipId: input.apply.clipId, as: input.apply.as });
+		const tracker: Tracker = {
+			mode: input.mode,
+			...(input.mode === "screen" ? { color } : {}),
+			anchors,
+			result: merged,
+			...(targets.length ? { targets } : {}),
+		};
+		const target = input.apply
+			? this.trackTarget({ ...clip, tracker }, input.apply.clipId, input.apply.as, {
+					scale: input.apply.followScale,
+					rotation: input.apply.followRotation,
+				})
+			: undefined;
+		const applied = this.store.apply(
+			{ type: "applyTrack", clipId: clip.id, tracker, target },
+			actor,
+		);
+		return {
+			...applied,
+			...(await this.trackReport({ ...clip, tracker }, input.review)),
+		};
+	}
+
+	/** The pin or keyframes that make a clip follow another clip's track, over the time both are on. */
+	private trackTarget(
+		source: MediaClip,
+		targetId: string,
+		as: "pin" | "follow",
+		follow: { scale: boolean; rotation: boolean },
+	) {
+		const tracker = source.tracker;
+		if (!tracker?.result?.length)
+			throw new Error("That clip has no motion track yet: use track_motion first.");
+		if (targetId === source.id) throw new Error("Pin or move another clip, not the tracked one.");
+		const { clip: target, asset } = this.trackable(targetId);
+		const sourceAsset = this.trackable(source.id).asset;
+		const { canvas } = this.store.current;
+		const from = Math.max(source.startMs, target.startMs);
+		const to = Math.min(clipEnd(source), clipEnd(target));
+		if (to <= from)
+			throw new Error(
+				"The two clips aren't on at the same time: overlap them on the timeline first.",
+			);
+		const step = 1000 / canvas.fps;
+		const picture = { width: sourceAsset.width, height: sourceAsset.height };
+		const at = (t: number) => {
+			const local = t - source.startMs;
+			const place = placement(source, picture, canvas, local);
+			const { corners } = trackedAt(
+				tracker.result as NonNullable<Tracker["result"]>,
+				sourceMsOf(source, local),
+			);
+			return corners.map((p) => place.toCanvas(p)) as Corners;
+		};
+		const times: number[] = [];
+		for (let t = from; t < to; t += step) times.push(t);
+		times.push(to - 1);
+		if (as === "pin") {
+			const keys = times.map((t) => ({
+				atMs: Math.max(0, Math.round(t - target.startMs)),
+				corners: at(t),
+			}));
+			return { clipId: target.id, pin: { keys: simplifyPin(keys, 0.0001) } };
+		}
+		// Follow: the clip stays where it is at the first anchor (or the start) and moves with the track from there.
+		const firstAnchor = tracker.anchors[0]
+			? source.startMs + localMsOf(source, tracker.anchors[0].atMs)
+			: from;
+		const refT = Math.min(to - 1, Math.max(from, firstAnchor));
+		const pose = (c: Corners) => {
+			const px = c.map(([x, y]) => [x * canvas.width, y * canvas.height]);
+			const cx = px.reduce((s, p) => s + p[0], 0) / 4;
+			const cy = px.reduce((s, p) => s + p[1], 0) / 4;
+			const size =
+				Math.hypot(px[1][0] - px[0][0], px[1][1] - px[0][1]) +
+				Math.hypot(px[2][0] - px[1][0], px[2][1] - px[1][1]);
+			const angle = (Math.atan2(px[1][1] - px[0][1], px[1][0] - px[0][0]) * 180) / Math.PI;
+			return { cx, cy, size, angle };
+		};
+		const ref = pose(at(refT));
+		const tl = target.transform;
+		const refLocal = refT - target.startMs;
+		const base = {
+			x: valueAt(target.keyframes?.x, refLocal, tl.x),
+			y: valueAt(target.keyframes?.y, refLocal, tl.y),
+			scale: valueAt(target.keyframes?.scale, refLocal, tl.scale),
+			rotation: valueAt(target.keyframes?.rotation, refLocal, tl.rotation ?? 0),
+		};
+		const lists: Record<
+			"x" | "y" | "scale" | "rotation",
+			{ atMs: number; value: number; ease: "linear" }[]
+		> = {
+			x: [],
+			y: [],
+			scale: [],
+			rotation: [],
+		};
+		for (const t of times) {
+			const p = pose(at(t));
+			const atMs = Math.max(0, Math.round(t - target.startMs));
+			lists.x.push({ atMs, value: base.x + (p.cx - ref.cx) / canvas.width, ease: "linear" });
+			lists.y.push({ atMs, value: base.y + (p.cy - ref.cy) / canvas.height, ease: "linear" });
+			if (follow.scale)
+				lists.scale.push({
+					atMs,
+					value: base.scale * (p.size / Math.max(1e-6, ref.size)),
+					ease: "linear",
+				});
+			if (follow.rotation) {
+				let d = p.angle - ref.angle;
+				while (d > 180) d -= 360;
+				while (d < -180) d += 360;
+				lists.rotation.push({ atMs, value: base.rotation + d, ease: "linear" });
+			}
+		}
+		void asset;
+		const keyframes: Partial<
+			Record<"x" | "y" | "scale" | "rotation", { atMs: number; value: number; ease: "linear" }[]>
+		> = {
+			x: simplifyKeys(lists.x, 0.0002),
+			y: simplifyKeys(lists.y, 0.0002),
+		};
+		if (follow.scale) keyframes.scale = simplifyKeys(lists.scale, 0.001);
+		if (follow.rotation) keyframes.rotation = simplifyKeys(lists.rotation, 0.05);
+		return { clipId: target.id, pin: null, keyframes };
+	}
+
+	/** Weak stretches (timeline ms) and a review image of a clip's track. */
+	private async trackReport(clip: MediaClip, count: number, atMs?: number[]) {
+		const result = clip.tracker?.result;
+		if (!result?.length)
+			throw new Error("That clip has no motion track yet: use track_motion first.");
+		const { asset, file } = this.trackable(clip.id);
+		const toTimeline = (sourceMs: number) => Math.round(clip.startMs + localMsOf(clip, sourceMs));
+		const weak: { fromMs: number; toMs: number; lowest: number }[] = [];
+		for (const r of result) {
+			if (r.confidence >= 0.6) continue;
+			const t = toTimeline(r.atMs);
+			const last = weak[weak.length - 1];
+			if (last && t - last.toMs <= 2 * (1000 / this.store.current.canvas.fps) + 1) {
+				last.toMs = t;
+				last.lowest = Math.min(last.lowest, r.confidence);
+			} else weak.push({ fromMs: t, toMs: t, lowest: r.confidence });
+		}
+		const mean = result.reduce((s, r) => s + r.confidence, 0) / result.length;
+		const summary = {
+			frames: result.length,
+			meanConfidence: Math.round(mean * 100) / 100,
+			weak: weak.slice(0, 20),
+			anchors: (clip.tracker?.anchors ?? []).map((a) => toTimeline(a.atMs)),
+		};
+		if (!count && !atMs?.length) return summary;
+		const first = result[0].atMs;
+		const last = result[result.length - 1].atMs;
+		const sourceTimes = atMs?.length
+			? atMs.map((t) => sourceMsOf(clip, Math.max(0, t - clip.startMs)))
+			: Array.from({ length: count }, (_, i) => first + ((i + 0.5) / count) * (last - first));
+		const dir = path.join(this.store.cacheDir(), "track", stamp());
+		await fs.mkdir(dir, { recursive: true });
+		const png = path.join(dir, "review.png");
+		const columns = Math.min(6, sourceTimes.length);
+		await drawReview(
+			file,
+			{ width: asset.width, height: asset.height },
+			result,
+			sourceTimes,
+			png,
+			columns,
+		);
+		return { ...summary, png, times: sourceTimes.map(toTimeline) };
+	}
+
 	/** The runtime, once the optional provider behind a capability is connected (else says where to connect it). */
 	private async connected(capability: "sound" | "video"): Promise<AiRuntime> {
 		const runtime = await this.hooks.runtime();
@@ -2422,7 +2705,7 @@ export class Controller extends EventEmitter {
 	): Promise<string> {
 		const dir = path.join(this.store.projectDir, folder);
 		await fs.mkdir(dir, { recursive: true });
-		const base = path.join(dir, `${slugName(name) || "sound"}-${Date.now().toString(36)}`);
+		const base = path.join(dir, `${slugName(name) || "sound"}-${stamp()}`);
 		if (ext === "mp3") {
 			await fs.writeFile(`${base}.mp3`, audio);
 			return `${base}.mp3`;
@@ -2451,7 +2734,11 @@ export class Controller extends EventEmitter {
 		const runtime = await this.connected("sound");
 		const file = await this.job("Composing music", async () =>
 			this.saveGeneratedAudio(
-				await runtime.music(prompt, { lengthMs: durationMs, instrumental: input.instrumental }),
+				await runtime.music(prompt, {
+					lengthMs: durationMs,
+					instrumental: input.instrumental,
+					sections: input.sections,
+				}),
 				"generated",
 				`music-${prompt.slice(0, 30)}`,
 				"mp3",
@@ -2506,7 +2793,7 @@ export class Controller extends EventEmitter {
 		if (image) {
 			const { width, height } = this.store.current.canvas;
 			const [w, h] = width >= height ? [1280, 720] : [720, 1280];
-			const fitted = path.join(this.store.cacheDir(), `clip-start-${Date.now().toString(36)}.jpg`);
+			const fitted = path.join(this.store.cacheDir(), `clip-start-${stamp()}.jpg`);
 			await fs.mkdir(path.dirname(fitted), { recursive: true });
 			await ffmpeg([
 				"-y",
@@ -2525,7 +2812,7 @@ export class Controller extends EventEmitter {
 		const file = path.join(
 			this.store.projectDir,
 			"generated",
-			`clip-${slugName(input.prompt).slice(0, 40) || "video"}-${Date.now().toString(36)}.mp4`,
+			`clip-${slugName(input.prompt).slice(0, 40) || "video"}-${stamp()}.mp4`,
 		);
 		const made = await this.job("Generating a video clip", (progress) =>
 			runtime.clip(
