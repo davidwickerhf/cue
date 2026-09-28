@@ -160,6 +160,17 @@ export const contract = {
 			sampleCount: z.number().int().min(1).max(6).default(4),
 		},
 	},
+	contact_sheet: {
+		description:
+			"See many moments of the edit at once, without exporting: viewer frames tiled into one image (returned as an image), with each tile's time in reading order. Spread count frames over fromMs–toMs (default: the whole edit), or pass atMs for exact moments. Use it to check pacing, framing and graphics across a whole section in one look; render_frame for one frame at full size.",
+		input: {
+			fromMs: z.number().min(0).optional(),
+			toMs: z.number().min(0).optional(),
+			count: z.number().int().min(2).max(60).default(24),
+			atMs: z.array(z.number().min(0)).min(1).max(60).optional(),
+			columns: z.number().int().min(2).max(10).default(6),
+		},
+	},
 	get_activity: {
 		description: "Recent edits with who made them (user or agent).",
 		input: { limit: z.number().int().min(1).max(200).default(30) },

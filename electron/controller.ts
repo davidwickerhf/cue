@@ -97,7 +97,7 @@ const foundMedia = new Map<string, FoundMedia>();
 
 /** Calls that only read, so they never wait for a transaction. */
 const READ_ONLY =
-	/^(get_|list_|render_frame$|view_attachment$|inspect_edit$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
+	/^(get_|list_|render_frame$|view_attachment$|inspect_edit$|contact_sheet$|search_|find_moments$|review_edit$|focus_window$|pause$|seek$|play$)/;
 
 /** File types each kind of output may have, for paths chosen by an agent. */
 const OUTPUT_TYPES: Record<string, string[]> = {
@@ -638,6 +638,53 @@ export class Controller extends EventEmitter {
 					range: { fromMs: startMs, toMs: endMs },
 					frames,
 					notes: reviewEdit(this.store.current, { offline: this.store.offline() }),
+				};
+			}
+			case "contact_sheet": {
+				const { fromMs, toMs, count, atMs, columns } = parseInput("contact_sheet", params);
+				const durationMs = this.store.current.clips.reduce(
+					(end, clip) => Math.max(end, clipEnd(clip)),
+					0,
+				);
+				if (durationMs === 0) throw new Error("The timeline is empty.");
+				const startMs = fromMs ?? 0;
+				const endMs = Math.min(toMs ?? durationMs, durationMs);
+				const times = atMs?.length
+					? atMs.map((t) => Math.min(Math.round(t), durationMs - 1))
+					: Array.from({ length: count }, (_, i) =>
+							Math.round(startMs + ((i + 0.5) / count) * (endMs - startMs)),
+						);
+				const dir = path.join(this.store.cacheDir(), "sheet", Date.now().toString(36));
+				await fs.mkdir(dir, { recursive: true });
+				for (const [i, t] of times.entries())
+					await fs.copyFile(
+						await this.hooks.captureFrame(t),
+						path.join(dir, `${String(i + 1).padStart(3, "0")}.png`),
+					);
+				const cols = Math.min(columns, times.length);
+				const rows = Math.ceil(times.length / cols);
+				const png = path.join(dir, "sheet.png");
+				// Tiles 480 px wide (16:9 frames), a hairline apart.
+				await ffmpeg([
+					"-y",
+					"-framerate",
+					"1",
+					"-i",
+					path.join(dir, "%03d.png"),
+					"-vf",
+					`scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2,tile=${cols}x${rows}:padding=4:color=0x0f0f11`,
+					"-frames:v",
+					"1",
+					png,
+				]);
+				return {
+					png,
+					columns: cols,
+					rows,
+					times: times.map((t) => ({
+						atMs: t,
+						clock: `${Math.floor(t / 60000)}:${((t % 60000) / 1000).toFixed(1).padStart(4, "0")}`,
+					})),
 				};
 			}
 			case "get_activity":
