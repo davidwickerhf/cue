@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.15",
+		date: "2026-09-28",
+		summary: "Music works on a free ElevenLabs plan when fal is connected.",
+		changes: [
+			"ElevenLabs only offers music on paid plans; with fal connected, Cue now composes through fal instead of stopping with an error.",
+			"The Sound effect tool's Generate button is full width, like Music and Video clip.",
+		],
+	},
+	{
 		version: "0.2.14",
 		date: "2026-09-28",
 		summary: "Higgsfield connects like the other services.",
