@@ -558,6 +558,50 @@ describe("compositing", () => {
 		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(1);
 	}, 90000);
 
+	it("never flashes black before the end of a clip that starts between two frames", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-cut-grid-"));
+		const files = ["red", "blue", "green"].map((c) => path.join(dir, `${c}.mp4`));
+		for (const file of files)
+			await ffmpeg([
+				"-f",
+				"lavfi",
+				"-i",
+				`color=c=${path.basename(file, ".mp4")}:s=320x180:r=30:d=3`,
+				"-pix_fmt",
+				"yuv420p",
+				file,
+			]);
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: path.join(dir, "grid"), name: "grid" });
+		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180, fps: 24 } }, "user");
+		const [a, b, c] = await store.importMedia(files, "user");
+		// The blue clip starts at 1040 ms, between frames 24 and 25 at 24 fps, and ends on frame 48.
+		store.apply(
+			{
+				type: "addClips",
+				clips: [
+					{ type: "media", trackId: "V1", assetId: a.id, startMs: 0, durationMs: 1040 },
+					{ type: "media", trackId: "V1", assetId: b.id, startMs: 1040, durationMs: 960 },
+					{ type: "media", trackId: "V1", assetId: c.id, startMs: 2000, durationMs: 1000 },
+				],
+			},
+			"user",
+		);
+		store.apply(
+			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
+			"user",
+		);
+		const out = (await store.export("video", "grid.mp4", "user")).outputs[0];
+		for (let f = 22; f <= 50; f++) {
+			const [r, g, bl] = await pixel(out, (f + 0.5) / 24, 160, 90, 320);
+			expect(r + g + bl, `frame ${f}`).toBeGreaterThan(100);
+		}
+	}, 90000);
+
 	it("exports wipes, slides, zoom, blur, paper, signal and ink transitions", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-transitions-"));
 		const red = path.join(dir, "red.mp4");

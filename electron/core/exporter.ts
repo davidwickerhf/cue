@@ -628,9 +628,13 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		return `${index}:v`;
 	};
 
+	// Clips start and end on whole frames. A clip that starts between two frames has its own
+	// frames between the output's too, so its last one can come before the output frame just
+	// before its end, and that frame goes black.
+	const onFrame = (ms: number) => (Math.round((ms * fps) / 1000) * 1000) / fps;
 	for (const clip of layers) {
-		const start = s(clip.startMs);
-		const end = s(clipEnd(clip));
+		const start = s(onFrame(clip.startMs));
+		const end = s(onFrame(clipEnd(clip)));
 		const label = `v${n}`;
 		if (clip.type === "text") {
 			const render = rendered[clip.id];
