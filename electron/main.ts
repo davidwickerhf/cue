@@ -444,7 +444,7 @@ const SERVICE_NAMES: Record<Service, string> = {
 
 /** A cheap authenticated call for each service; it throws with the service's message when a key fails. */
 function checkKey(service: Service, key: string | HiggsfieldKey): Promise<void> {
-	if (service === "higgsfield") return testHiggsfield(key as HiggsfieldKey);
+	if (service === "higgsfield") return testHiggsfield(asHiggsfield(key));
 	const text = key as string;
 	return service === "fal"
 		? testFal(text)
@@ -466,6 +466,13 @@ async function testConnection(service: Service): Promise<{ ok: boolean; message:
 	}
 }
 
+/** Higgsfield's id and secret travel through the connect flow as id:secret. */
+function asHiggsfield(key: string | HiggsfieldKey): HiggsfieldKey {
+	if (typeof key !== "string") return key;
+	const at = key.indexOf(":");
+	return { id: key.slice(0, at), secret: key.slice(at + 1) };
+}
+
 /** A key typed or pasted by hand: checked first, then stored. */
 async function connectWithKey(
 	service: Service,
@@ -473,9 +480,9 @@ async function connectWithKey(
 ): Promise<{ ok: boolean; message: string }> {
 	let key: string | HiggsfieldKey;
 	let shapeHint: string | undefined;
-	if (service === "higgsfield") {
-		if (typeof value !== "object" || !value.id?.trim() || !value.secret?.trim())
-			return { ok: false, message: "Enter the key id and the secret." };
+	if (service === "higgsfield" && typeof value === "object") {
+		if (!value.id?.trim() || !value.secret?.trim())
+			return { ok: false, message: "Enter the key ID and the secret." };
 		key = { id: value.id.trim(), secret: value.secret.trim() };
 	} else {
 		if (typeof value !== "string" || !value.trim())
@@ -497,7 +504,7 @@ async function connectWithKey(
 				`${SERVICE_NAMES[service]} refused it: ${redactKeys((error as Error).message)}`,
 		};
 	}
-	await saveSecret(service, key as never);
+	await saveSecret(service, (service === "higgsfield" ? asHiggsfield(key) : key) as never);
 	await controller.refreshAi();
 	return { ok: true, message: `${SERVICE_NAMES[service]} connected.` };
 }
@@ -529,6 +536,7 @@ function startConnect(service: ConnectService) {
 				state: "pending",
 				message: `${SERVICE_NAMES[service]} refused that key: ${message}`,
 			}),
+		onProgress: (message) => setConnectState({ service, state: "pending", message }),
 	});
 	connectWatch = watch;
 	setConnectState({ service, state: "pending" });
@@ -536,7 +544,10 @@ function startConnect(service: ConnectService) {
 		if (connectWatch === watch) connectWatch = null;
 		if (outcome.state === "connected") {
 			try {
-				await saveSecret(service, outcome.key);
+				await saveSecret(
+					service,
+					(service === "higgsfield" ? asHiggsfield(outcome.key) : outcome.key) as never,
+				);
 				await controller.refreshAi();
 			} catch (error) {
 				return setConnectState({ service, state: "cancelled", message: (error as Error).message });

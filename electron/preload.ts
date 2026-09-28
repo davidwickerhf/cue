@@ -222,7 +222,7 @@ const api = {
 	testConnection: (service: "openai" | "fal" | "elevenlabs" | "higgsfield") =>
 		ipcRenderer.invoke("cue:testConnection", service) as Promise<{ ok: boolean; message: string }>,
 	/** Opens the service's key page and picks up a new key copied from it. */
-	connectStart: (service: "fal" | "openai" | "elevenlabs") =>
+	connectStart: (service: "fal" | "openai" | "elevenlabs" | "higgsfield") =>
 		ipcRenderer.invoke("cue:connectStart", service) as Promise<void>,
 	connectCancel: () => ipcRenderer.invoke("cue:connectCancel") as Promise<void>,
 	connectState: () => ipcRenderer.invoke("cue:connectState") as Promise<ConnectStatus>,

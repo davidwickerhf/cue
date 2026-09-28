@@ -406,3 +406,52 @@ describe("keys pasted by hand", () => {
 		expect(findKey("elevenlabs", "sk_abc").key).toBeNull();
 	});
 });
+
+describe("Higgsfield keys", () => {
+	it("takes the key ID and secret from how they're pasted", async () => {
+		const { findKey, higgsfieldPair } = await import("../electron/core/connect");
+		const id = "hf_key_1234abcd";
+		const secret = "s3cretValue_5678efgh";
+		expect(higgsfieldPair(`${id}:${secret}`)).toBe(`${id}:${secret}`);
+		expect(higgsfieldPair(`${id}\n${secret}`)).toBe(`${id}:${secret}`);
+		expect(higgsfieldPair(`Key ID: ${id}\nSecret: ${secret}`)).toBe(`${id}:${secret}`);
+		expect(higgsfieldPair(`API key secret: "${secret}"  API key ID: ${id}`)).toBe(
+			`${id}:${secret}`,
+		);
+		expect(findKey("higgsfield", id).key).toBeNull();
+	});
+
+	it("collects the two values copied one after the other, in either order", async () => {
+		const { watchClipboard } = await import("../electron/core/connect");
+		const id = "hf_key_1234abcd";
+		const secret = "s3cretValue_5678efgh";
+		let clip = "something from before";
+		let tick: () => void = () => {};
+		const progress: string[] = [];
+		const watch = watchClipboard({
+			service: "higgsfield",
+			read: () => clip,
+			// Only id:secret in that order works.
+			validate: async (key) => {
+				if (key !== `${id}:${secret}`) throw new Error("401 Invalid credentials");
+			},
+			onProgress: (m) => progress.push(m),
+			setInterval: (fn) => {
+				tick = fn;
+				return 1;
+			},
+			clearInterval: () => {},
+		});
+		const step = async () => {
+			tick();
+			await new Promise((r) => setTimeout(r, 0));
+		};
+		await step();
+		clip = secret; // the secret first
+		await step();
+		expect(progress).toHaveLength(1);
+		clip = id;
+		await step();
+		await expect(watch.result).resolves.toEqual({ state: "connected", key: `${id}:${secret}` });
+	});
+});

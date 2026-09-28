@@ -10,7 +10,6 @@ import {
 	Robot,
 	SlidersHorizontal,
 	Sparkle,
-	Warning,
 	X,
 } from "@phosphor-icons/react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
@@ -350,22 +349,6 @@ function Updates({ settings, save }: { settings: Settings; save: (p: Partial<Set
 	);
 }
 
-function StatusPill({ ready, text }: { ready: boolean; text: string }) {
-	return (
-		<span
-			className={cn("flex items-center gap-1 text-[11px]", ready ? "text-success" : "text-warning")}
-		>
-			{ready ? (
-				<CheckCircle weight="fill" className="size-3.5" />
-			) : (
-				<Warning weight="fill" className="size-3.5" />
-			)}
-			{/* Here, "Settings → AI" is this page: the connections are just above. */}
-			{text.replace(/ in Settings → AI\.?$/, " above")}
-		</span>
-	);
-}
-
 /** Which provider a task will use, or why none can. */
 function AiSection({
 	settings,
@@ -654,9 +637,6 @@ function AiSection({
 							)}
 						</Row>
 					</Group>
-					<Group title="More services">
-						<HiggsfieldRow />
-					</Group>
 					<p className="flex items-center gap-1.5 text-[11px] text-muted">
 						<Cpu className="size-3.5" /> Cue looks for whisper.cpp, Ollama, LM Studio and system
 						voices when you open this page.
@@ -707,7 +687,7 @@ type Service = "fal" | "openai" | "elevenlabs" | "higgsfield";
 type ConnectStatus = Awaited<ReturnType<typeof window.cue.connectState>>;
 
 const SERVICES: {
-	id: Exclude<Service, "higgsfield">;
+	id: Service;
 	name: string;
 	blurb: string;
 	recommended?: boolean;
@@ -723,6 +703,11 @@ const SERVICES: {
 		id: "elevenlabs",
 		name: "ElevenLabs",
 		blurb: "Your own and cloned voices, and music, directly.",
+	},
+	{
+		id: "higgsfield",
+		name: "Higgsfield",
+		blurb: "Video clips with your Higgsfield account (fal covers the same models).",
 	},
 ];
 
@@ -754,13 +739,7 @@ async function test(service: Service) {
 }
 
 /** A key pasted by hand: the main process checks it with the service before storing it. */
-function PasteKey({
-	service,
-	onDone,
-}: {
-	service: Exclude<Service, "higgsfield">;
-	onDone: () => void;
-}) {
+function PasteKey({ service, onDone }: { service: Service; onDone: () => void }) {
 	const [value, setValue] = useState("");
 	const [busy, setBusy] = useState(false);
 	return (
@@ -768,7 +747,7 @@ function PasteKey({
 			<input
 				type="password"
 				value={value}
-				placeholder="Paste key"
+				placeholder={service === "higgsfield" ? "Key ID and secret" : "Paste key"}
 				aria-label={`${service} API key`}
 				onChange={(e) => setValue(e.target.value)}
 				onKeyDown={(e) => e.stopPropagation()}
@@ -902,103 +881,15 @@ function ServiceRow({
 							? flow.message
 							: timedOut
 								? "No key turned up. Try Connect again, or paste it here."
-								: "Create a key on the page that opened and copy it, or paste it here."}
+								: service.id === "higgsfield"
+									? "Create an API key in the console that opened, then copy the key ID and the secret (either order), or paste both here."
+									: "Create a key on the page that opened and copy it, or paste it here."}
 					</p>
 					<div className="flex shrink-0 items-center gap-2">
 						<PasteKey service={service.id} onDone={() => setPasting(false)} />
 					</div>
 				</div>
 			)}
-		</div>
-	);
-}
-
-/** Higgsfield (video; fal covers the same models): a key id and secret typed by hand. */
-function HiggsfieldRow() {
-	const connection = useConnection("higgsfield");
-	const [id, setId] = useState("");
-	const [secret, setSecret] = useState("");
-	const [busy, setBusy] = useState(false);
-	return (
-		<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
-			<div className="min-w-0">
-				<p className="text-[13px]">Higgsfield</p>
-				<p className="text-[11px] text-muted">
-					Kling and Hailuo video with a Higgsfield key (id and secret).{" "}
-					<a
-						href="https://cloud.higgsfield.ai/api-keys"
-						target="_blank"
-						rel="noreferrer"
-						className="text-accent hover:underline"
-					>
-						Get a key
-					</a>
-				</p>
-			</div>
-			<div className="flex shrink-0 items-center gap-2">
-				{connection?.connected ? (
-					<>
-						<StatusPill ready text="Connected" />
-						<Button
-							size="sm"
-							variant="secondary"
-							className="h-7 text-[12px]"
-							onPress={() => void test("higgsfield")}
-						>
-							Test
-						</Button>
-						<Button
-							size="sm"
-							variant="ghost"
-							className="h-7 text-[12px] text-danger"
-							onPress={() =>
-								void window.cue.disconnect("higgsfield").then(() => notify("Key removed"))
-							}
-						>
-							Remove
-						</Button>
-					</>
-				) : (
-					<>
-						<input
-							type="password"
-							value={id}
-							placeholder="Key id"
-							aria-label="Higgsfield key id"
-							onChange={(e) => setId(e.target.value)}
-							onKeyDown={(e) => e.stopPropagation()}
-							className={cn(keyField, "w-28")}
-						/>
-						<input
-							type="password"
-							value={secret}
-							placeholder="Key secret"
-							aria-label="Higgsfield key secret"
-							onChange={(e) => setSecret(e.target.value)}
-							onKeyDown={(e) => e.stopPropagation()}
-							className={cn(keyField, "w-36")}
-						/>
-						<Button
-							size="sm"
-							className="h-7 text-[12px]"
-							isDisabled={busy || !id.trim() || secret.trim().length < 8}
-							onPress={async () => {
-								setBusy(true);
-								const result = await window.cue
-									.connectWithKey("higgsfield", { id, secret })
-									.finally(() => setBusy(false));
-								notify(result.message, result.ok ? "success" : "danger");
-								if (result.ok) {
-									setId("");
-									setSecret("");
-								}
-							}}
-						>
-							{busy ? <Spinner size="sm" /> : "Connect"}
-						</Button>
-					</>
-				)}
-			</div>
 		</div>
 	);
 }

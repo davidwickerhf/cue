@@ -5,13 +5,14 @@
  * stored. Anything else copied is ignored; keys are never logged or shown.
  */
 
-export type ConnectService = "fal" | "openai" | "elevenlabs";
+export type ConnectService = "fal" | "openai" | "elevenlabs" | "higgsfield";
 
 /** Where each service hands out API keys. */
 export const KEY_PAGES: Record<ConnectService, string> = {
 	fal: "https://fal.ai/dashboard/keys",
 	openai: "https://platform.openai.com/api-keys",
 	elevenlabs: "https://elevenlabs.io/app/developers/api-keys",
+	higgsfield: "https://console.higgsfield.ai",
 };
 
 /**
@@ -23,7 +24,31 @@ export const KEY_FORMATS: Record<ConnectService, RegExp> = {
 	fal: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[A-Za-z0-9_-]{16,128}$/i,
 	openai: /^sk-(?!admin-)(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,300}$/,
 	elevenlabs: /^sk_[A-Za-z0-9]{48}$/,
+	// A key id and its secret, held together as id:secret (the console shows them apart).
+	higgsfield: /^[A-Za-z0-9_.-]{8,128}:[A-Za-z0-9_.-]{8,256}$/,
 };
+
+/** One value copied on its own: a Higgsfield key id or secret. */
+const TOKEN = /^[A-Za-z0-9_.-]{8,256}$/;
+
+/**
+ * A Higgsfield key id and secret in pasted text, as id:secret: "id:secret", the two
+ * on separate lines or with a space, or with their labels ("Key ID: …", "Secret: …").
+ */
+export function higgsfieldPair(text: string): string | null {
+	const clean = text.replace(INVISIBLE, "").trim();
+	const labelled = (label: RegExp) =>
+		new RegExp(`(?:${label.source})\\s*[:=]?\\s*["'\u201C]?([A-Za-z0-9_.-]{8,256})`, "i").exec(
+			clean,
+		)?.[1];
+	const id = labelled(/key[\s_-]*id|api[\s_-]*key(?![\s_-]*secret)/);
+	const secret = labelled(/(?:api[\s_-]*)?(?:key[\s_-]*)?secret/);
+	if (id && secret && id !== secret) return `${id}:${secret}`;
+	const parts = clean.split(/[\s:]+/).filter(Boolean);
+	return parts.length === 2 && parts.every((p) => TOKEN.test(p)) && parts[0] !== parts[1]
+		? `${parts[0]}:${parts[1]}`
+		: null;
+}
 
 /** The key in copied text, if the text is exactly one key of the service's format. */
 export function matchKey(service: ConnectService, text: string): string | null {
@@ -44,6 +69,10 @@ export function findKey(
 	text: string,
 ): { key: string } | { key: null; reason: string } {
 	const clean = text.replace(INVISIBLE, "").trim();
+	if (service === "higgsfield") {
+		const pair = higgsfieldPair(clean);
+		return pair ? { key: pair } : { key: null, reason: HINTS.higgsfield(clean) };
+	}
 	const exact = matchKey(service, clean);
 	if (exact) return { key: exact };
 	const inner = new RegExp(
@@ -67,6 +96,8 @@ const HINTS: Record<ConnectService, (text: string) => string> = {
 		`That isn't an ElevenLabs key: they start with sk_ and have 51 characters (letters and digits), and this has ${t.length}${t.startsWith("sk_") ? "" : " and doesn't start with sk_"}. Copy it again from ElevenLabs → Developers → API keys (it's shown in full only when created).`,
 	openai: (t) =>
 		`That isn't an OpenAI API key: they start with sk- (sk-proj-… for project keys)${t.startsWith("sk-") ? ", and this one has characters a key can't have" : ""}.`,
+	higgsfield: () =>
+		"Paste both parts of the Higgsfield key: the key ID and the secret (as id:secret, or one per line). Both are in the Higgsfield console under API keys.",
 	fal: () =>
 		"That isn't a fal key: it's two parts joined by a colon, an id like 1a2b3c4d-… and the secret. Copy the whole key from fal's dashboard.",
 };
@@ -112,6 +143,8 @@ export function watchClipboard(options: {
 	read: () => string | Promise<string>;
 	validate: (key: string) => Promise<void>;
 	onRejected?: (message: string) => void;
+	/** Progress worth showing (Higgsfield: the first of the two values was picked up). */
+	onProgress?: (message: string) => void;
 	intervalMs?: number;
 	timeoutMs?: number;
 	setInterval?: (fn: () => void, ms: number) => unknown;
@@ -138,6 +171,7 @@ export function watchClipboard(options: {
 	});
 	let checking = false;
 	let done = false;
+	let held: string | null = null;
 	let finish: (outcome: ConnectOutcome) => void = () => {};
 	const result = new Promise<ConnectOutcome>((resolve) => {
 		finish = (outcome) => {
@@ -158,20 +192,44 @@ export function watchClipboard(options: {
 			return;
 		}
 		last = text;
-		const key = matchKey(options.service, text);
-		if (!key) {
+		let candidates: string[] = [];
+		const key =
+			options.service === "higgsfield" ? higgsfieldPair(text) : matchKey(options.service, text);
+		if (key) candidates = [key];
+		else if (options.service === "higgsfield") {
+			// The console shows the id and the secret apart: the first copy is held, the second completes it.
+			const token = text.replace(INVISIBLE, "").trim();
+			if (!TOKEN.test(token)) {
+				checking = false;
+				return;
+			}
+			if (held === null || held === token) {
+				held = token;
+				options.onProgress?.(
+					"Got the first part. Now copy the other one (the key ID or the secret).",
+				);
+				checking = false;
+				return;
+			}
+			candidates = [`${held}:${token}`, `${token}:${held}`];
+			held = token;
+		} else {
 			checking = false;
 			return;
 		}
-		await options
-			.validate(key)
-			.then(
-				() => finish({ state: "connected", key }),
-				(error: Error) => options.onRejected?.(redactKeys(error.message.split(key).join("…"))),
-			)
-			.finally(() => {
+		let failure = "";
+		for (const candidate of candidates) {
+			try {
+				await options.validate(candidate);
 				checking = false;
-			});
+				return finish({ state: "connected", key: candidate });
+			} catch (error) {
+				failure = (error as Error).message;
+				for (const part of candidate.split(":")) failure = failure.split(part).join("…");
+			}
+		}
+		options.onRejected?.(redactKeys(failure));
+		checking = false;
 	};
 	const handle = set(() => void tick(), every);
 	return { result, cancel: () => finish({ state: "cancelled" }) };
