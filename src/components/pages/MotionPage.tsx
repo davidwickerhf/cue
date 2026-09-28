@@ -1,14 +1,5 @@
 import { Button } from "@heroui/react";
-import {
-	ArrowDown,
-	ArrowUp,
-	Copy,
-	Pause,
-	Play,
-	Plus,
-	ShootingStar,
-	Trash,
-} from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, Copy, Plus, ShootingStar, Trash } from "@phosphor-icons/react";
 import {
 	type Dispatch,
 	type PointerEvent as ReactPointerEvent,
@@ -255,7 +246,6 @@ export function MotionPage() {
 							frame={frame}
 							setFrame={setFrame}
 							playing={playing}
-							setPlaying={setPlaying}
 						/>
 					) : (
 						<div className="flex flex-1 items-center justify-center text-[13px] text-muted">
@@ -480,7 +470,6 @@ function Stage({
 	frame,
 	setFrame,
 	playing,
-	setPlaying,
 }: {
 	asset: Asset;
 	url: string | undefined;
@@ -494,7 +483,6 @@ function Stage({
 	frame: number;
 	setFrame: Dispatch<SetStateAction<number>>;
 	playing: boolean;
-	setPlaying: Dispatch<SetStateAction<boolean>>;
 }) {
 	const info = asset.motion;
 	const inFrame = info?.inFrame ?? 0;
@@ -563,7 +551,6 @@ function Stage({
 		if (!r) return { x: 0, y: 0 };
 		return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
 	};
-	const seconds = (f: number) => ((f - inFrame) / fps).toFixed(2);
 
 	return (
 		<>
@@ -642,23 +629,8 @@ function Stage({
 				</div>
 			</div>
 			<div className="flex h-9 shrink-0 items-center gap-3 border-t border-separator bg-surface px-3">
-				<button
-					type="button"
-					aria-label={playing ? "Pause" : "Play"}
-					title={playing ? "Pause (Space)" : "Play (Space)"}
-					onClick={() => setPlaying(!playing)}
-					className="flex size-7 items-center justify-center rounded-md hover:bg-default"
-				>
-					{playing ? (
-						<Pause weight="fill" className="size-4" />
-					) : (
-						<Play weight="fill" className="size-4" />
-					)}
-				</button>
-				<span className="font-mono text-[11px] text-muted tabular">
-					{seconds(frame)} / {seconds(outFrame)} s
-				</span>
-				<span className="flex-1" />
+				{/* Play and time live on the timeline below; here, only what's behind the graphic. */}
+				<span className="text-[11px] text-muted">Background</span>
 				<Segmented
 					size="xs"
 					value={backdrop}
