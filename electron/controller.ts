@@ -677,7 +677,8 @@ export class Controller extends EventEmitter {
 					);
 				const cols = Math.min(columns, times.length);
 				const rows = Math.ceil(times.length / cols);
-				const png = path.join(dir, "sheet.png");
+				// JPEG: a sheet of many frames as PNG runs to several MB, too big to hand to an agent.
+				const jpg = path.join(dir, "sheet.jpg");
 				// Tiles 480 px wide (16:9 frames), a hairline apart.
 				await ffmpeg([
 					"-y",
@@ -689,10 +690,12 @@ export class Controller extends EventEmitter {
 					`scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2,tile=${cols}x${rows}:padding=4:color=0x0f0f11`,
 					"-frames:v",
 					"1",
-					png,
+					"-q:v",
+					"3",
+					jpg,
 				]);
 				return {
-					png,
+					jpg,
 					columns: cols,
 					rows,
 					times: times.map((t) => ({
@@ -2672,17 +2675,17 @@ export class Controller extends EventEmitter {
 			: Array.from({ length: count }, (_, i) => first + ((i + 0.5) / count) * (last - first));
 		const dir = path.join(this.store.cacheDir(), "track", stamp());
 		await fs.mkdir(dir, { recursive: true });
-		const png = path.join(dir, "review.png");
+		const jpg = path.join(dir, "review.jpg");
 		const columns = Math.min(6, sourceTimes.length);
 		await drawReview(
 			file,
 			{ width: asset.width, height: asset.height },
 			result,
 			sourceTimes,
-			png,
+			jpg,
 			columns,
 		);
-		return { ...summary, png, times: sourceTimes.map(toTimeline) };
+		return { ...summary, jpg, times: sourceTimes.map(toTimeline) };
 	}
 
 	/** The runtime, once the optional provider behind a capability is connected (else says where to connect it). */

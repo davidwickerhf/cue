@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { ffmpegPath } from "../electron/core/media";
 import {
 	cornersAt,
 	mapSquare,
@@ -9,7 +10,6 @@ import {
 	splitPin,
 	squareToQuad,
 } from "../electron/core/pin";
-import { ffmpegPath } from "../electron/core/media";
 import { DEFAULT_TRANSFORM } from "../electron/core/project";
 import type { CornerPin, Corners, MediaClip } from "../electron/core/types";
 

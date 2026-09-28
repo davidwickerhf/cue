@@ -335,6 +335,8 @@ export async function drawReview(
 			`tile=${columns}x${rows}:padding=4:color=0x0f0f11`,
 			"-frames:v",
 			"1",
+			"-q:v",
+			"3",
 			out,
 		]);
 		child.on("error", reject);
