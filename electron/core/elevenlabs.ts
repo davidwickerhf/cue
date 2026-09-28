@@ -200,15 +200,16 @@ export async function elevenMusic(
 			body: JSON.stringify(
 				input.sections?.length
 					? {
+							// music_v2 and later take the plan as chunks, each with the whole piece's style too.
 							composition_plan: {
-								positive_global_styles: [input.prompt],
-								negative_global_styles: input.instrumental ? ["vocals", "singing"] : [],
-								sections: input.sections.map((s) => ({
-									section_name: s.name,
-									positive_local_styles: s.styles,
-									negative_local_styles: s.avoid ?? [],
+								chunks: input.sections.map((s) => ({
+									text: input.instrumental ? "(instrumental)" : s.name,
 									duration_ms: Math.round(Math.min(120000, Math.max(3000, s.durationMs))),
-									lines: [],
+									positive_styles: [input.prompt, ...s.styles],
+									negative_styles: [
+										...(s.avoid ?? []),
+										...(input.instrumental ? ["vocals", "singing"] : []),
+									],
 								})),
 							},
 							model_id: ELEVEN_MUSIC_MODEL,
