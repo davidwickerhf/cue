@@ -62,6 +62,17 @@ export const CLIP_MODELS: ClipModel[] = [
 		durations: [6, 10],
 		extra: { prompt_optimizer: true },
 	},
+	{
+		id: "seedance-2.0",
+		label: "Seedance 2.0",
+		higgsfield: {
+			imageToVideo: "/bytedance/seedance-2.0/image-to-video",
+			textToVideo: "/bytedance/seedance-2.0/text-to-video",
+		},
+		durations: [5, 10, 15],
+		// Silent like the others (the edit gets its own sound), in full HD.
+		extra: { resolution: "1080p", generate_audio: false },
+	},
 ];
 export const DEFAULT_CLIP_MODEL = CLIP_MODELS[0].id;
 

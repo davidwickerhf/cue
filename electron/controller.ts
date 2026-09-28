@@ -1825,12 +1825,17 @@ export class Controller extends EventEmitter {
 				return { deleted: id };
 			}
 			case "generate_image": {
-				const { prompt, orientation, trackId, startMs } = parseInput("generate_image", params);
+				const { prompt, orientation, trackId, startMs, model, quality } = parseInput(
+					"generate_image",
+					params,
+				);
 				const creds = await this.requireCredentials();
 				const asset = await this.job("Generating image", () =>
 					this.store.generateImage(prompt, creds, actor, {
 						orientation,
 						place: trackId ? { trackId, startMs } : undefined,
+						model,
+						quality,
 					}),
 				);
 				return this.describeAsset(asset);

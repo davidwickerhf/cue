@@ -112,12 +112,23 @@ export async function transcribe(
 /** A generated still image as PNG bytes. */
 export async function generateImage(
 	creds: AiCredentials,
-	input: { prompt: string; model: string; size: "1536x1024" | "1024x1536" | "1024x1024" },
+	input: {
+		prompt: string;
+		model: string;
+		size: "1536x1024" | "1024x1536" | "1024x1024";
+		quality?: "low" | "medium" | "high" | "auto";
+	},
 ): Promise<Buffer> {
 	const res = await fetch(`${base(creds)}/images/generations`, {
 		method: "POST",
 		headers: { authorization: `Bearer ${creds.apiKey}`, "content-type": "application/json" },
-		body: JSON.stringify({ model: input.model, prompt: input.prompt, size: input.size, n: 1 }),
+		body: JSON.stringify({
+			model: input.model,
+			prompt: input.prompt,
+			size: input.size,
+			n: 1,
+			...(input.quality ? { quality: input.quality } : {}),
+		}),
 		signal: AbortSignal.timeout(240000),
 	});
 	if (!res.ok) throw await failure(res);

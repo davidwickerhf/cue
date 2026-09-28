@@ -1244,10 +1244,12 @@ export const contract = {
 	},
 	generate_image: {
 		description:
-			"Generate a still image (title card, B-roll, background) with OpenAI, or GPT Image 2 through fal when only fal is connected. With trackId it is placed at startMs for 5 s.",
+			"Generate a still image (title card, B-roll, background) with OpenAI, or GPT Image 2 through fal when only fal is connected. With trackId it is placed at startMs for 5 s. model: gpt-image-2.5-flare (fast, the default) or gpt-image-2.5-sunburst (slower, more natural skin, fabric and light: use it for people and photographic stills, and as start pictures for video clips). quality: high for anything that must look real.",
 		input: {
 			prompt: z.string().min(3),
 			orientation: z.enum(["landscape", "portrait", "square"]).default("landscape"),
+			model: z.string().max(80).optional(),
+			quality: z.enum(["low", "medium", "high", "auto"]).optional(),
 			trackId: z.string().optional(),
 			startMs: z.number().min(0).default(0),
 		},
@@ -1356,7 +1358,7 @@ export const contract = {
 	},
 	generate_clip: {
 		description:
-			"Generate a short video clip through fal (or Higgsfield when only that is connected; get_ai_status 'video'): from a prompt alone, or animating a start picture (imageAssetId of an image in the project, imagePath of a PNG/JPEG/WebP file, or frameAtMs for the edit's frame at that time). Describe the shot like a director: subject, action, camera move, light and style. model: kling-2.5-turbo-pro (default; text or picture), kling-2.5-turbo-standard (picture only, cheaper) or hailuo-2.3, or a raw fal model id such as fal-ai/kling-video/v2.5-turbo/pro/image-to-video (a path starting with / goes to Higgsfield). durationSec snaps to what the model makes (5 or 10 for Kling, 6 or 10 for Hailuo). Takes one to a few minutes (reply {status: 'running'}: use wait_for). The MP4 is saved in the project's generated folder and added to the media, marked AI with its prompt; with atMs it is placed there (on trackId or the first video track). Clips have no sound.",
+			"Generate a short video clip through fal (or Higgsfield when only that is connected; get_ai_status 'video'): from a prompt alone, or animating a start picture (imageAssetId of an image in the project, imagePath of a PNG/JPEG/WebP file, or frameAtMs for the edit's frame at that time). Describe the shot like a director: subject, action, camera move, light and style. model: kling-2.5-turbo-pro (default; text or picture), kling-2.5-turbo-standard (picture only, cheaper), hailuo-2.3 or seedance-2.0 (Higgsfield only; the most lifelike motion and people, 1080p, up to 15 s), or a raw fal model id such as fal-ai/kling-video/v2.5-turbo/pro/image-to-video (a path starting with / goes to Higgsfield). durationSec snaps to what the model makes (5 or 10 for Kling, 6 or 10 for Hailuo, 5, 10 or 15 for Seedance). Takes one to a few minutes (reply {status: 'running'}: use wait_for). The MP4 is saved in the project's generated folder and added to the media, marked AI with its prompt; with atMs it is placed there (on trackId or the first video track). Clips have no sound.",
 		input: {
 			prompt: z.string().min(3).max(2500),
 			imageAssetId: z.string().optional(),

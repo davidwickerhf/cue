@@ -148,7 +148,11 @@ export interface AiRuntime {
 	): Promise<{ text: string; segments: TranscriptSegment[] }>;
 	image(
 		prompt: string,
-		options: { size: "1536x1024" | "1024x1536" | "1024x1024"; model?: string },
+		options: {
+			size: "1536x1024" | "1024x1536" | "1024x1024";
+			model?: string;
+			quality?: "low" | "medium" | "high" | "auto";
+		},
 	): Promise<{ png: Buffer; provider: string; model: string }>;
 	chat(system: string, prompt: string): Promise<string>;
 	/** A sound effect from a description (ElevenLabs direct or via fal, MP3 bytes). */
@@ -403,7 +407,10 @@ export function buildRuntime(
 					return await elevenMusic(keys.elevenlabs as string, { prompt, ...options });
 				} catch (error) {
 					// Music needs a paid ElevenLabs plan; fal's copy of the same model works on any fal key.
-					if (!keys.fal || !/\b402\b|paid plan|not available for free/i.test((error as Error).message))
+					if (
+						!keys.fal ||
+						!/\b402\b|paid plan|not available for free/i.test((error as Error).message)
+					)
 						throw error;
 				}
 			}
@@ -485,7 +492,12 @@ export function buildRuntime(
 			}
 			const model = options.model ?? "gpt-image-2.5-flare";
 			return {
-				png: await generateImage(creds as AiCredentials, { prompt, model, size: options.size }),
+				png: await generateImage(creds as AiCredentials, {
+					prompt,
+					model,
+					size: options.size,
+					quality: options.quality,
+				}),
 				provider: "openai",
 				model,
 			};

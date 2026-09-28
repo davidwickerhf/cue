@@ -3710,12 +3710,18 @@ export class ProjectStore extends EventEmitter {
 		options: {
 			orientation?: "landscape" | "portrait" | "square";
 			place?: { trackId: string; startMs: number };
+			model?: string;
+			quality?: "low" | "medium" | "high" | "auto";
 		} = {},
 	): Promise<Asset> {
 		const size = ({ landscape: "1536x1024", portrait: "1024x1536", square: "1024x1024" } as const)[
 			options.orientation ?? "landscape"
 		];
-		const made = await runtime.image(prompt, { model: this.current.ai.imageModel, size });
+		const made = await runtime.image(prompt, {
+			model: options.model ?? this.current.ai.imageModel,
+			size,
+			quality: options.quality,
+		});
 		const png = made.png;
 		const folder = path.join(this.projectDir, "generated");
 		await fs.mkdir(folder, { recursive: true });
