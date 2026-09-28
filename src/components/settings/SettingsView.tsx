@@ -1,9 +1,10 @@
-import { Button, Spinner } from "@heroui/react";
+import { Button, Dropdown, Spinner } from "@heroui/react";
 import {
 	ArrowClockwise,
 	CaretRight,
 	CheckCircle,
 	Cpu,
+	DotsThree,
 	Info,
 	Keyboard,
 	Robot,
@@ -337,20 +338,6 @@ function StatusPill({ ready, text }: { ready: boolean; text: string }) {
 }
 
 /** Which provider a task will use, or why none can. */
-function RouteStatus({
-	status,
-}: {
-	status?: { ready: boolean; provider: string; problem?: string };
-}) {
-	if (!status) return null;
-	return (
-		<StatusPill
-			ready={status.ready}
-			text={status.ready ? status.provider : (status.problem ?? "")}
-		/>
-	);
-}
-
 function AiSection({
 	settings,
 	save,
@@ -376,265 +363,314 @@ function AiSection({
 	const set = (patch: Partial<Settings["ai"]>) => save({ ai: { ...ai, ...patch } });
 	const st = (c: string) => status.find((s) => s.capability === c);
 	const local = inv?.inventory;
+	const [advanced, setAdvanced] = useState(false);
 
 	return (
 		<>
 			<Connections />
 
 			<Group
-				title="Providers"
-				description={`Which service does each task: the cloud (from your connections) or models on ${thisComputer}. Auto picks from what's connected.`}
+				title="What Cue can do"
+				description="Worked out from what's connected. Nothing is used until you or an agent generate."
 			>
-				<Row label="Voices" hint="Generated takes for script lines">
-					<RouteStatus status={st("tts")} />
-					<Segmented
-						size="xs"
-						value={ai.tts}
-						onChange={(tts) => set({ tts })}
-						options={[
-							{ value: "auto", label: "Auto" },
-							{ value: "openai", label: "OpenAI" },
-							{ value: "elevenlabs", label: "ElevenLabs" },
-							// The system voices are macOS's; elsewhere only a saved choice shows.
-							...(isMac || ai.tts === "macos"
-								? [{ value: "macos" as const, label: "On this Mac" }]
-								: []),
-						]}
-					/>
-				</Row>
-				<Row label="Transcription" hint="Captions, transcripts, script from footage">
-					<StatusPill
-						ready={!!st("transcription")?.ready}
-						text={st("transcription")?.ready ? "Ready" : (st("transcription")?.problem ?? "")}
-					/>
-					<Segmented
-						size="xs"
-						value={ai.transcription}
-						onChange={(transcription) => set({ transcription })}
-						options={[
-							{ value: "openai", label: "OpenAI" },
-							{ value: "whisper", label: "whisper.cpp" },
-						]}
-					/>
-				</Row>
-				<Row label="Text" hint="Rewriting lines to fit, suggestions">
-					<StatusPill
-						ready={!!st("text")?.ready}
-						text={st("text")?.ready ? (st("text")?.model ?? "Ready") : (st("text")?.problem ?? "")}
-					/>
-					<Segmented
-						size="xs"
-						value={ai.text}
-						onChange={(text) => set({ text, textModel: undefined })}
-						options={[
-							{ value: "openai", label: "OpenAI" },
-							{ value: "ollama", label: "Ollama" },
-							{ value: "lmstudio", label: "LM Studio" },
-							{ value: "none", label: "Off" },
-						]}
-					/>
-				</Row>
-				<Row label="Images" hint="Title cards and stills">
-					<RouteStatus status={st("image")} />
-					<Segmented
-						size="xs"
-						value={ai.image}
-						onChange={(image) => set({ image })}
-						options={[
-							{ value: "auto", label: "Auto" },
-							{ value: "openai", label: "OpenAI" },
-							{ value: "fal", label: "fal" },
-							{ value: "none", label: "Off" },
-						]}
-					/>
-				</Row>
-				<Row label="Sound effects and music" hint="ElevenLabs: your key if connected, else via fal">
-					<RouteStatus status={st("sound")} />
-				</Row>
-				<Row label="Video clips" hint="Kling and Hailuo: via fal, or Higgsfield">
-					<RouteStatus status={st("video")} />
-				</Row>
+				{CAPABILITIES.map((c) => (
+					<Row key={c.id} label={c.label} hint={c.hint}>
+						<Capability status={st(c.id)} />
+					</Row>
+				))}
 			</Group>
 
-			<Group
-				title={isMac ? "On this Mac" : "On this computer"}
-				description="Found automatically. Nothing leaves your computer when these are used."
+			<button
+				type="button"
+				onClick={() => setAdvanced((v) => !v)}
+				className="mb-3 flex items-center gap-1 text-[12px] text-muted hover:text-foreground"
 			>
-				<Row label="Scan again">
-					<Button
-						size="sm"
-						variant="ghost"
-						className="h-7 gap-1.5 text-[12px]"
-						onPress={() => void refresh(true)}
+				<CaretRight className={cn("size-3 transition-transform", advanced && "rotate-90")} />
+				Advanced: choose the service for each task, models on {thisComputer}, more services
+			</button>
+			{advanced && (
+				<>
+					<Group
+						title="Service for each task"
+						description="Auto uses what's connected: your own key for a service first, then fal."
 					>
-						<ArrowClockwise className="size-3.5" /> Refresh
-					</Button>
-				</Row>
-				{isMac && (
-					<Row
-						label="macOS voices"
-						hint={
-							local
-								? `${local.macVoices.length} installed. Add more in System Settings → Accessibility → Spoken Content.`
-								: "…"
-						}
+						<Row label="Voices" hint="Generated takes for script lines">
+							<Segmented
+								size="xs"
+								value={ai.tts}
+								onChange={(tts) => set({ tts })}
+								options={[
+									{ value: "auto", label: "Auto" },
+									{ value: "openai", label: "OpenAI" },
+									{ value: "elevenlabs", label: "ElevenLabs" },
+									// The system voices are macOS's; elsewhere only a saved choice shows.
+									...(isMac || ai.tts === "macos"
+										? [{ value: "macos" as const, label: "On this Mac" }]
+										: []),
+								]}
+							/>
+						</Row>
+						<Row label="Transcription" hint="Captions, transcripts, script from footage">
+							<Segmented
+								size="xs"
+								value={ai.transcription}
+								onChange={(transcription) => set({ transcription })}
+								options={[
+									{ value: "openai", label: "OpenAI" },
+									{ value: "whisper", label: "whisper.cpp" },
+								]}
+							/>
+						</Row>
+						<Row label="Writing" hint="Rewriting lines to fit, suggestions">
+							<Segmented
+								size="xs"
+								value={ai.text}
+								onChange={(text) => set({ text, textModel: undefined })}
+								options={[
+									{ value: "openai", label: "OpenAI" },
+									{ value: "ollama", label: "Ollama" },
+									{ value: "lmstudio", label: "LM Studio" },
+									{ value: "none", label: "Off" },
+								]}
+							/>
+						</Row>
+						<Row label="Images" hint="Title cards and stills">
+							<Segmented
+								size="xs"
+								value={ai.image}
+								onChange={(image) => set({ image })}
+								options={[
+									{ value: "auto", label: "Auto" },
+									{ value: "openai", label: "OpenAI" },
+									{ value: "fal", label: "fal" },
+									{ value: "none", label: "Off" },
+								]}
+							/>
+						</Row>
+					</Group>
+
+					<Group
+						title={isMac ? "On this Mac" : "On this computer"}
+						description="Found automatically. Nothing leaves your computer when these are used."
 					>
-						<select
-							value={ai.macVoice}
-							onChange={(e) => set({ macVoice: e.target.value })}
-							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
-						>
-							{(local?.macVoices ?? [])
-								.filter((v) => v.locale.startsWith("en"))
-								.concat((local?.macVoices ?? []).filter((v) => !v.locale.startsWith("en")))
-								.map((v) => (
-									<option key={v.name} value={v.name}>
-										{v.name} · {v.locale}
-									</option>
-								))}
-						</select>
-						<Button
-							size="sm"
-							variant="secondary"
-							className="h-7 text-[12px]"
-							onPress={() => void window.cue.previewVoice(ai.macVoice)}
-						>
-							Listen
-						</Button>
-					</Row>
-				)}
-				<Row
-					label="whisper.cpp"
-					hint={
-						local?.whisper.binary
-							? `${local.whisper.binary.includes("Recordly") ? "Using Recordly's copy" : local.whisper.binary}`
-							: isMac
-								? "Not found. Install with: brew install whisper-cpp"
-								: "Not found. Build or install whisper.cpp and put whisper-cli on your PATH"
-					}
-				>
-					{local?.whisper.models.length ? (
-						<select
-							value={ai.whisperModel ?? local.whisper.models[0].path}
-							onChange={(e) => set({ whisperModel: e.target.value })}
-							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
-						>
-							{local.whisper.models.map((m) => (
-								<option key={m.path} value={m.path}>
-									{m.name} · {m.sizeMb} MB
-								</option>
-							))}
-						</select>
-					) : (
-						<span className="text-[11px] text-muted">No model yet</span>
-					)}
-				</Row>
-				{local?.whisper.binary &&
-					Object.entries(inv?.downloads ?? {})
-						.filter(([name]) => !local.whisper.models.some((m) => m.name === name))
-						.map(([name, spec]) => (
-							<Row
-								key={name}
-								label={`Download ${name.replace("ggml-", "").replace(".bin", "")}`}
-								hint={`${spec.sizeMb} MB${name.includes(".en") ? " · English only, fastest" : name.includes("turbo") ? " · most accurate" : " · multilingual"}`}
+						<Row label="Scan again">
+							<Button
+								size="sm"
+								variant="ghost"
+								className="h-7 gap-1.5 text-[12px]"
+								onPress={() => void refresh(true)}
 							>
-								{busy === name ? (
-									<span className="flex items-center gap-2 text-[11px] text-muted">
-										<Spinner size="sm" /> {Math.round((progress[name] ?? 0) * 100)}%
-									</span>
-								) : (
-									<Button
-										size="sm"
-										variant="secondary"
-										className="h-7 text-[12px]"
-										onPress={async () => {
-											setBusy(name);
-											try {
-												await window.cue.downloadWhisper(name);
-												notify("Model ready. Transcription now runs on this Mac.", "success");
-											} catch (error) {
-												notify((error as Error).message, "danger");
-											} finally {
-												setBusy(null);
-												void refresh(true);
-											}
-										}}
-									>
-										Download
-									</Button>
-								)}
+								<ArrowClockwise className="size-3.5" /> Refresh
+							</Button>
+						</Row>
+						{isMac && (
+							<Row
+								label="macOS voices"
+								hint={
+									local
+										? `${local.macVoices.length} installed. Add more in System Settings → Accessibility → Spoken Content.`
+										: "…"
+								}
+							>
+								<select
+									value={ai.macVoice}
+									onChange={(e) => set({ macVoice: e.target.value })}
+									className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+								>
+									{(local?.macVoices ?? [])
+										.filter((v) => v.locale.startsWith("en"))
+										.concat((local?.macVoices ?? []).filter((v) => !v.locale.startsWith("en")))
+										.map((v) => (
+											<option key={v.name} value={v.name}>
+												{v.name} · {v.locale}
+											</option>
+										))}
+								</select>
+								<Button
+									size="sm"
+									variant="secondary"
+									className="h-7 text-[12px]"
+									onPress={() => void window.cue.previewVoice(ai.macVoice)}
+								>
+									Listen
+								</Button>
 							</Row>
-						))}
-				<Row
-					label="Ollama"
-					hint={
-						!local
-							? "…"
-							: !local.ollama.installed
-								? "Not installed (ollama.com)"
-								: local.ollama.running
-									? `${local.ollama.models.length} model(s)`
-									: "Installed, not running"
-					}
-				>
-					{local?.ollama.running ? (
-						<select
-							value={ai.text === "ollama" ? (ai.textModel ?? local.ollama.models[0] ?? "") : ""}
-							onChange={(e) => set({ text: "ollama", textModel: e.target.value })}
-							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+						)}
+						<Row
+							label="whisper.cpp"
+							hint={
+								local?.whisper.binary
+									? `${local.whisper.binary.includes("Recordly") ? "Using Recordly's copy" : local.whisper.binary}`
+									: isMac
+										? "Not found. Install with: brew install whisper-cpp"
+										: "Not found. Build or install whisper.cpp and put whisper-cli on your PATH"
+							}
 						>
-							{ai.text !== "ollama" && <option value="">Use a model…</option>}
-							{local.ollama.models.map((m) => (
-								<option key={m} value={m}>
-									{m}
-								</option>
-							))}
-						</select>
-					) : local?.ollama.installed ? (
-						<Button
-							size="sm"
-							variant="secondary"
-							className="h-7 text-[12px]"
-							onPress={async () => {
-								setBusy("ollama");
-								await window.cue.startOllama().catch((e: Error) => notify(e.message, "danger"));
-								setBusy(null);
-								void refresh(true);
-							}}
+							{local?.whisper.models.length ? (
+								<select
+									value={ai.whisperModel ?? local.whisper.models[0].path}
+									onChange={(e) => set({ whisperModel: e.target.value })}
+									className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+								>
+									{local.whisper.models.map((m) => (
+										<option key={m.path} value={m.path}>
+											{m.name} · {m.sizeMb} MB
+										</option>
+									))}
+								</select>
+							) : (
+								<span className="text-[11px] text-muted">No model yet</span>
+							)}
+						</Row>
+						{local?.whisper.binary &&
+							Object.entries(inv?.downloads ?? {})
+								.filter(([name]) => !local.whisper.models.some((m) => m.name === name))
+								.map(([name, spec]) => (
+									<Row
+										key={name}
+										label={`Download ${name.replace("ggml-", "").replace(".bin", "")}`}
+										hint={`${spec.sizeMb} MB${name.includes(".en") ? " · English only, fastest" : name.includes("turbo") ? " · most accurate" : " · multilingual"}`}
+									>
+										{busy === name ? (
+											<span className="flex items-center gap-2 text-[11px] text-muted">
+												<Spinner size="sm" /> {Math.round((progress[name] ?? 0) * 100)}%
+											</span>
+										) : (
+											<Button
+												size="sm"
+												variant="secondary"
+												className="h-7 text-[12px]"
+												onPress={async () => {
+													setBusy(name);
+													try {
+														await window.cue.downloadWhisper(name);
+														notify("Model ready. Transcription now runs on this Mac.", "success");
+													} catch (error) {
+														notify((error as Error).message, "danger");
+													} finally {
+														setBusy(null);
+														void refresh(true);
+													}
+												}}
+											>
+												Download
+											</Button>
+										)}
+									</Row>
+								))}
+						<Row
+							label="Ollama"
+							hint={
+								!local
+									? "…"
+									: !local.ollama.installed
+										? "Not installed (ollama.com)"
+										: local.ollama.running
+											? `${local.ollama.models.length} model(s)`
+											: "Installed, not running"
+							}
 						>
-							{busy === "ollama" ? <Spinner size="sm" /> : "Start"}
-						</Button>
-					) : null}
-				</Row>
-				<Row
-					label="LM Studio"
-					hint={
-						local?.lmStudio.running
-							? `${local.lmStudio.models.length} model(s) served`
-							: "Start its local server to use it"
-					}
-				>
-					{local?.lmStudio.running && (
-						<select
-							value={ai.text === "lmstudio" ? (ai.textModel ?? local.lmStudio.models[0] ?? "") : ""}
-							onChange={(e) => set({ text: "lmstudio", textModel: e.target.value })}
-							className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+							{local?.ollama.running ? (
+								<select
+									value={ai.text === "ollama" ? (ai.textModel ?? local.ollama.models[0] ?? "") : ""}
+									onChange={(e) => set({ text: "ollama", textModel: e.target.value })}
+									className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+								>
+									{ai.text !== "ollama" && <option value="">Use a model…</option>}
+									{local.ollama.models.map((m) => (
+										<option key={m} value={m}>
+											{m}
+										</option>
+									))}
+								</select>
+							) : local?.ollama.installed ? (
+								<Button
+									size="sm"
+									variant="secondary"
+									className="h-7 text-[12px]"
+									onPress={async () => {
+										setBusy("ollama");
+										await window.cue.startOllama().catch((e: Error) => notify(e.message, "danger"));
+										setBusy(null);
+										void refresh(true);
+									}}
+								>
+									{busy === "ollama" ? <Spinner size="sm" /> : "Start"}
+								</Button>
+							) : null}
+						</Row>
+						<Row
+							label="LM Studio"
+							hint={
+								local?.lmStudio.running
+									? `${local.lmStudio.models.length} model(s) served`
+									: "Start its local server to use it"
+							}
 						>
-							{ai.text !== "lmstudio" && <option value="">Use a model…</option>}
-							{local.lmStudio.models.map((m) => (
-								<option key={m} value={m}>
-									{m}
-								</option>
-							))}
-						</select>
-					)}
-				</Row>
-			</Group>
-			<p className="flex items-center gap-1.5 text-[11px] text-muted">
-				<Cpu className="size-3.5" /> Cue looks for whisper.cpp, Ollama, LM Studio and system voices
-				when you open this page.
-			</p>
+							{local?.lmStudio.running && (
+								<select
+									value={
+										ai.text === "lmstudio" ? (ai.textModel ?? local.lmStudio.models[0] ?? "") : ""
+									}
+									onChange={(e) => set({ text: "lmstudio", textModel: e.target.value })}
+									className="h-7 max-w-56 rounded-md border border-border bg-field px-2 text-[12px] outline-none"
+								>
+									{ai.text !== "lmstudio" && <option value="">Use a model…</option>}
+									{local.lmStudio.models.map((m) => (
+										<option key={m} value={m}>
+											{m}
+										</option>
+									))}
+								</select>
+							)}
+						</Row>
+					</Group>
+					<Group title="More services">
+						<HiggsfieldRow />
+					</Group>
+					<p className="flex items-center gap-1.5 text-[11px] text-muted">
+						<Cpu className="size-3.5" /> Cue looks for whisper.cpp, Ollama, LM Studio and system
+						voices when you open this page.
+					</p>
+				</>
+			)}
 		</>
+	);
+}
+
+const CAPABILITIES = [
+	{ id: "tts", label: "Voices", hint: "Voiceover takes from the script" },
+	{
+		id: "transcription",
+		label: "Transcription",
+		hint: "Captions, transcripts, script from footage",
+	},
+	{ id: "text", label: "Writing", hint: "Rewriting lines to fit, suggestions" },
+	{ id: "image", label: "Images", hint: "Title cards and stills" },
+	{ id: "sound", label: "Sound effects and music", hint: "Made to fit the moment" },
+	{ id: "video", label: "Video clips", hint: "From a prompt or a still" },
+] as const;
+
+/** A task's state in plain words: the service doing it, or what it needs. */
+function Capability({
+	status,
+}: {
+	status?: { ready: boolean; provider: string; model?: string; problem?: string };
+}) {
+	if (!status) return null;
+	if (status.ready)
+		return (
+			<span className="flex items-center gap-1.5 text-[12px]">
+				<CheckCircle weight="fill" className="size-3.5 text-success" />
+				{status.provider}
+				{status.model && <span className="text-muted">· {status.model}</span>}
+			</span>
+		);
+	const needs = /^Connect (.+?) in Settings/.exec(status.problem ?? "")?.[1];
+	return (
+		<span className="text-[12px] text-muted">
+			{needs ? `Needs ${needs}` : (status.problem ?? "Not set up")}
+		</span>
 	);
 }
 
@@ -761,84 +797,87 @@ function ServiceRow({
 				<div className="flex shrink-0 items-center gap-2">
 					{connection?.connected ? (
 						<>
-							<StatusPill
-								ready
-								text={connection.source === "environment" ? "From your environment" : "Connected"}
-							/>
-							<Button
-								size="sm"
-								variant="secondary"
-								className="h-7 text-[12px]"
-								isDisabled={testing}
-								onPress={async () => {
-									setTesting(true);
-									await test(service.id).finally(() => setTesting(false));
-								}}
-							>
-								{testing ? <Spinner size="sm" /> : "Test"}
-							</Button>
-							{connection.source !== "environment" && (
+							<span className="flex items-center gap-1.5 text-[12px] text-muted">
+								<CheckCircle weight="fill" className="size-3.5 text-success" />
+								{connection.source === "environment" ? "From your environment" : "Connected"}
+							</span>
+							<Dropdown>
 								<Button
+									isIconOnly
 									size="sm"
 									variant="ghost"
-									className="h-7 text-[12px] text-danger"
-									onPress={() =>
-										void window.cue.disconnect(service.id).then(() => notify("Key removed"))
-									}
+									aria-label={`${service.name} options`}
+									className="size-7 min-w-7"
 								>
-									Remove
+									{testing ? <Spinner size="sm" /> : <DotsThree weight="bold" className="size-4" />}
 								</Button>
-							)}
+								<Dropdown.Popover placement="bottom end">
+									<Dropdown.Menu
+										aria-label={`${service.name} options`}
+										onAction={async (key) => {
+											if (key === "test") {
+												setTesting(true);
+												await test(service.id).finally(() => setTesting(false));
+											}
+											if (key === "replace") void window.cue.connectStart(service.id);
+											if (key === "remove")
+												void window.cue.disconnect(service.id).then(() => notify("Key removed"));
+										}}
+									>
+										<Dropdown.Item id="test" textValue="Test">
+											Test the key
+										</Dropdown.Item>
+										{connection.source !== "environment" ? (
+											<Dropdown.Item id="replace" textValue="Replace">
+												Use another key…
+											</Dropdown.Item>
+										) : null}
+										{connection.source !== "environment" ? (
+											<Dropdown.Item id="remove" textValue="Remove" className="text-danger">
+												Remove
+											</Dropdown.Item>
+										) : null}
+									</Dropdown.Menu>
+								</Dropdown.Popover>
+							</Dropdown>
 						</>
 					) : pending ? (
-						<>
-							<span className="flex items-center gap-1.5 text-[11px] text-muted">
-								<Spinner size="sm" /> Copy your new key — Cue will pick it up
-							</span>
-							<Button
-								size="sm"
-								variant="ghost"
-								className="h-7 text-[12px]"
-								onPress={() => void window.cue.connectCancel()}
-							>
-								Cancel
-							</Button>
-						</>
+						<Button
+							size="sm"
+							variant="ghost"
+							className="h-7 text-[12px]"
+							onPress={() => void window.cue.connectCancel()}
+						>
+							Cancel
+						</Button>
 					) : (
-						<>
-							{!pasting && (
-								<button
-									type="button"
-									className="text-[11px] text-muted hover:text-foreground"
-									onClick={() => setPasting(true)}
-								>
-									Paste key
-								</button>
-							)}
-							<Button
-								size="sm"
-								className="h-7 text-[12px]"
-								onPress={() => void window.cue.connectStart(service.id)}
-							>
-								Connect
-							</Button>
-						</>
+						<Button
+							size="sm"
+							variant={service.recommended ? "primary" : "secondary"}
+							className="h-7 text-[12px]"
+							onPress={() => {
+								setPasting(false);
+								void window.cue.connectStart(service.id);
+							}}
+						>
+							Connect
+						</Button>
 					)}
 				</div>
 			</div>
-			{!connection?.connected &&
-				(pending || timedOut || flow.message) &&
-				flow.service === service.id && (
-					<p className="text-[11px] text-muted">
-						{flow.message ??
-							(timedOut
-								? "No key turned up. Try Connect again, or paste the key."
-								: "Create a key on the page that opened and copy it. Anything else you copy is ignored.")}
+			{!connection?.connected && (pending || timedOut || pasting) && (
+				<div className="flex items-center justify-between gap-3 rounded-md bg-default/40 px-3 py-2">
+					<p className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted">
+						{pending && <Spinner size="sm" />}
+						{flow.service === service.id && flow.message
+							? flow.message
+							: timedOut
+								? "No key turned up. Try Connect again, or paste it here."
+								: "Create a key on the page that opened and copy it, or paste it here."}
 					</p>
-				)}
-			{!connection?.connected && (pasting || pending) && (
-				<div className="flex items-center justify-end gap-2">
-					<PasteKey service={service.id} onDone={() => setPasting(false)} />
+					<div className="flex shrink-0 items-center gap-2">
+						<PasteKey service={service.id} onDone={() => setPasting(false)} />
+					</div>
 				</div>
 			)}
 		</div>
@@ -935,38 +974,18 @@ function HiggsfieldRow() {
 	);
 }
 
-/** Settings → AI → Connections: the services Cue can use, each with the user's own key. */
+/** Settings → AI → Services: the services Cue can use, each with the user's own key. */
 function Connections() {
 	const flow = useConnectFlow();
-	const [more, setMore] = useState(false);
 	return (
-		<section className="mb-7">
-			<h3 className="text-[13px] font-semibold">Connections</h3>
-			<p className="mt-0.5 text-[12px] text-muted">
-				Connect opens the service's key page; create a key and copy it, and Cue picks it up. Keys
-				are checked, stored encrypted with your{" "}
-				{isMac ? "macOS keychain" : "system's credential store"} and never shown again. Cue only
-				calls a service when you or an agent generate with it.
-			</p>
-			<div className="mt-3 divide-y divide-separator rounded-lg border border-border bg-background/30">
-				{SERVICES.map((s) => (
-					<ServiceRow key={s.id} service={s} flow={flow} />
-				))}
-			</div>
-			<button
-				type="button"
-				onClick={() => setMore((m) => !m)}
-				className="mt-2 flex items-center gap-1 text-[12px] text-muted hover:text-foreground"
-			>
-				<CaretRight className={cn("size-3 transition-transform", more && "rotate-90")} /> More
-				connections
-			</button>
-			{more && (
-				<div className="mt-2 rounded-lg border border-border bg-background/30">
-					<HiggsfieldRow />
-				</div>
-			)}
-		</section>
+		<Group
+			title="Services"
+			description={`Connect once: Cue opens the service's key page and picks the key up when you copy it. Keys are stored encrypted with your ${isMac ? "macOS keychain" : "system's credential store"}.`}
+		>
+			{SERVICES.map((s) => (
+				<ServiceRow key={s.id} service={s} flow={flow} />
+			))}
+		</Group>
 	);
 }
 
