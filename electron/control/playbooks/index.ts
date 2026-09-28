@@ -1,4 +1,5 @@
 import { AGENT_WORKFLOW } from "./agentWorkflow";
+import { AI_GENERATION } from "./aiGeneration";
 import { EDITING_CRAFT } from "./editingCraft";
 import { EXAMPLE_OK } from "./exampleOk";
 import { EXAMPLE_RED_CARS } from "./exampleRedCars";
@@ -33,6 +34,7 @@ export const PLAYBOOKS: Playbook[] = [
 	AGENT_WORKFLOW,
 	FIRST_PASS,
 	FINDING_ASSETS,
+	AI_GENERATION,
 	MATCH_REFERENCE,
 	TECHNIQUES,
 	EDITING_CRAFT,

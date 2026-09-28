@@ -2789,7 +2789,7 @@ export class Controller extends EventEmitter {
 
 	private describeState() {
 		const snapshot = this.store.snapshot();
-		if (!snapshot) return { project: null, recent: this.recent };
+		if (!snapshot) return { project: null, recent: this.recent, ai: this.canMake() };
 		const { data } = snapshot;
 		return {
 			project: {
@@ -2847,6 +2847,32 @@ export class Controller extends EventEmitter {
 			},
 			recorder: this.recorder,
 			aiConfigured: this.aiConfigured,
+			ai: this.canMake(),
+		};
+	}
+
+	/**
+	 * What can be generated right now, in a line each: the provider that will do it,
+	 * or the service to connect. The start of every job sees it in get_state.
+	 */
+	private canMake() {
+		const label: Record<string, string> = {
+			tts: "voice",
+			transcription: "transcription",
+			text: "writing",
+			image: "images",
+			sound: "soundAndMusic",
+			video: "videoClips",
+		};
+		const canMake: Record<string, string> = {};
+		for (const s of this.aiStatus)
+			canMake[label[s.capability] ?? s.capability] = s.ready
+				? `yes (${s.provider}${s.model ? ` · ${s.model}` : ""})`
+				: `no: ${s.problem ?? "not set up"}`;
+		return {
+			canMake,
+			guide:
+				"Before generating voice, sound, music or clips, read get_playbook 'ai-generation' (when to generate, prompts, honesty, credits).",
 		};
 	}
 
