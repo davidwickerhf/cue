@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.22",
+		date: "2026-09-28",
+		summary: "Pin titles and graphics onto moving surfaces.",
+		changes: [
+			"Motion graphics (titles, words, callouts) can now be pinned onto a motion track or follow one, so type sits on a wall or rides along with something moving.",
+		],
+	},
+	{
 		version: "0.2.21",
 		date: "2026-09-28",
 		summary: "Clearer failures, lighter contact sheets.",
