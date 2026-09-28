@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.20",
+		date: "2026-09-28",
+		summary: "Music composed to an edit's structure works again.",
+		changes: [
+			"generate_music with sections now uses ElevenLabs' current composition format, so a piece can be made part by part (intro, build, drop) to the edit's timing.",
+		],
+	},
+	{
 		version: "0.2.19",
 		date: "2026-09-28",
 		summary: "Motion tracking and corner pin.",
