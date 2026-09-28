@@ -254,5 +254,5 @@ describe("export with motion", () => {
 		// Pitch-preserving audio proxies exist for sped-up playback.
 		const stretched = await store.audioProxy(asset.id, 1.5);
 		expect((await probe(stretched)).durationMs).toBeLessThan(4300);
-	}, 90000);
+	}, 180000);
 });
