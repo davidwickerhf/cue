@@ -9,6 +9,16 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.8",
+		date: "2026-09-28",
+		summary: "A problem drawing one panel no longer blanks the whole window.",
+		changes: [
+			"If part of the window hits a problem, only that page or panel says so, with 'Try again' (or 'Reload the window'); the project is never affected.",
+			"Motion graphics that use a font this version doesn't have are drawn in Sans instead of crashing (selecting DM Sans text in 0.2.5 blanked the window).",
+			"The Motion page lists the UI font (DM Sans), and a graphic opens at its own time instead of where the previous one was.",
+		],
+	},
+	{
 		version: "0.2.7",
 		date: "2026-09-28",
 		summary: "Show the agent what you mean: screenshots, pinned clips, a history of conversations, and messages while it works.",
