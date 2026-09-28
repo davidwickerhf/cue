@@ -2449,6 +2449,27 @@ export class Controller extends EventEmitter {
 		} else if (input.frameAtMs !== undefined) {
 			image = await this.hooks.captureFrame(input.frameAtMs);
 		}
+		// Video models take common frame shapes only: the start picture becomes a 1280×720 frame
+		// (filled, centred) in the canvas's orientation, whatever size it came in.
+		if (image) {
+			const { width, height } = this.store.current.canvas;
+			const [w, h] = width >= height ? [1280, 720] : [720, 1280];
+			const fitted = path.join(this.store.cacheDir(), `clip-start-${Date.now().toString(36)}.jpg`);
+			await fs.mkdir(path.dirname(fitted), { recursive: true });
+			await ffmpeg([
+				"-y",
+				"-i",
+				image,
+				"-vf",
+				`scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`,
+				"-frames:v",
+				"1",
+				"-q:v",
+				"2",
+				fitted,
+			]);
+			image = fitted;
+		}
 		const file = path.join(
 			this.store.projectDir,
 			"generated",
