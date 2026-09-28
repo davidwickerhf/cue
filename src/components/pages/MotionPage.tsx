@@ -10,12 +10,22 @@ import {
 	Trash,
 } from "@phosphor-icons/react";
 import {
+	type Dispatch,
 	type PointerEvent as ReactPointerEvent,
+	type SetStateAction,
 	useEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
+import {
+	animatedProps,
+	type KeyProp,
+	keyableProps,
+	poseAt,
+	setKey,
+	valueAt,
+} from "../../../electron/core/motionKeys";
 import {
 	type Box,
 	layerAt,
@@ -44,23 +54,10 @@ import {
 	TextInput,
 	Toggle,
 } from "../ui/controls";
+import { AnimationFields, KeyStrip, type PickedKey } from "./MotionKeys";
 
 type Json = Record<string, unknown>;
 
-const PRESETS = [
-	"none",
-	"fade",
-	"rise",
-	"fall",
-	"slideLeft",
-	"slideRight",
-	"grow",
-	"pop",
-	"draw",
-	"type",
-	"blur",
-	"spin",
-];
 const FONTS = [
 	{ value: "sans", label: "Sans" },
 	{ value: "ui", label: "UI" },
@@ -73,8 +70,9 @@ const FONTS = [
  * The Motion page: one motion graphic at a time, like an After Effects
  * composition. Its layers on the left, a large preview with its own transport
  * in the middle (click a layer to pick it, drag it to move it), and the chosen
- * layer's properties (or a template's fields) on the right. Every change is one
- * undoable update of the graphic, and clips using it update everywhere.
+ * layer's properties (or a template's fields) on the right, its keys on a strip
+ * under the preview. Every change is one undoable update of the graphic, and
+ * clips using it update everywhere.
  */
 export function MotionPage() {
 	const project = useProject();
@@ -85,8 +83,21 @@ export function MotionPage() {
 	);
 	const asset = graphics.find((a) => a.id === wanted) ?? graphics[0];
 	const [selected, setSelected] = useState<number[] | null>(null);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: a new graphic starts with nothing picked
-	useEffect(() => setSelected(null), [asset?.id]);
+	const [picked, setPicked] = useState<PickedKey>(null);
+	// The preview's time, in the graphic's frames: shared by the preview, the key strip and the inspector.
+	const info = asset?.motion;
+	const inFrame = info?.inFrame ?? 0;
+	const outFrame = info?.outFrame ?? 60;
+	const fps = info?.fps ?? 30;
+	const [frame, setFrame] = useState(inFrame + (outFrame - inFrame) * 0.6);
+	// A new graphic starts with nothing picked, at its own moment (not past its end).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the graphic changes
+	useEffect(() => {
+		setSelected(null);
+		setFrame(inFrame + (outFrame - inFrame) * 0.6);
+	}, [asset?.id]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a key belongs to the layer it was picked on
+	useEffect(() => setPicked(null), [selected?.join(".")]);
 	if (!project) return null;
 
 	const canvas = project.data.canvas;
@@ -110,6 +121,9 @@ export function MotionPage() {
 		await run("update_motion_graphic", { assetId: asset.id, spec: next });
 	};
 	const layer = spec && selected ? layerAt(spec, selected) : undefined;
+	const applyToLayer = (patch: Json) =>
+		spec && selected ? save(updateLayer(spec, selected, patch)) : Promise.resolve();
+	const atMs = (frame / fps) * 1000;
 
 	return (
 		<div className="flex min-h-0 flex-1">
@@ -190,16 +204,34 @@ export function MotionPage() {
 
 			<main className="flex min-w-0 flex-1 flex-col bg-background">
 				{asset ? (
-					<Stage
-						asset={asset}
-						url={project.assetUrls[asset.id]}
-						spec={spec}
-						selected={selected}
-						onSelect={setSelected}
-						onMove={(path, dx, dy) => {
-							if (spec) void save(moveLayer(spec, path, dx, dy));
-						}}
-					/>
+					<>
+						<Stage
+							asset={asset}
+							url={project.assetUrls[asset.id]}
+							spec={spec}
+							selected={selected}
+							onSelect={setSelected}
+							onMove={(path, dx, dy) => {
+								if (spec) void save(moveLayer(spec, path, dx, dy));
+							}}
+							frame={frame}
+							setFrame={setFrame}
+						/>
+						{spec && layer && (
+							<KeyStrip
+								spec={spec}
+								layer={layer}
+								fps={fps}
+								inFrame={inFrame}
+								outFrame={outFrame}
+								frame={frame}
+								onSeek={setFrame}
+								picked={picked}
+								onPick={setPicked}
+								apply={applyToLayer}
+							/>
+						)}
+					</>
 				) : (
 					<div className="flex flex-1 items-center justify-center text-[13px] text-muted">
 						Pick or make a motion graphic to design it here.
@@ -265,6 +297,10 @@ export function MotionPage() {
 								layer={layer}
 								save={save}
 								onPath={setSelected}
+								atMs={atMs}
+								onSeekMs={(ms) => setFrame((ms / 1000) * fps)}
+								picked={picked}
+								onPick={setPicked}
 							/>
 						)}
 						{!spec && (
@@ -295,6 +331,8 @@ function Stage({
 	selected,
 	onSelect,
 	onMove,
+	frame,
+	setFrame,
 }: {
 	asset: Asset;
 	url: string | undefined;
@@ -302,6 +340,8 @@ function Stage({
 	selected: number[] | null;
 	onSelect: (path: number[] | null) => void;
 	onMove: (path: number[], dx: number, dy: number) => void;
+	frame: number;
+	setFrame: Dispatch<SetStateAction<number>>;
 }) {
 	const info = asset.motion;
 	const inFrame = info?.inFrame ?? 0;
@@ -309,14 +349,9 @@ function Stage({
 	const fps = info?.fps ?? 30;
 	const W = Number(spec?.width ?? 1920);
 	const H = Number(spec?.height ?? 1080);
-	const [frame, setFrame] = useState(inFrame + (outFrame - inFrame) * 0.6);
 	const [playing, setPlaying] = useState(false);
-	// Another graphic starts at its own moment, not where the last one was (past its end).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the graphic changes
-	useEffect(() => {
-		setFrame(inFrame + (outFrame - inFrame) * 0.6);
-		setPlaying(false);
-	}, [asset.id]);
+	useEffect(() => setPlaying(false), [asset.id]);
 	const [area, setArea] = useState({ w: 800, h: 450 });
 	const [drag, setDrag] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
 	const holder = useRef<HTMLDivElement>(null);
@@ -355,9 +390,13 @@ function Stage({
 		};
 		raf = requestAnimationFrame(tick);
 		return () => cancelAnimationFrame(raf);
-	}, [playing, fps, inFrame, outFrame]);
+	}, [playing, fps, inFrame, outFrame, setFrame]);
 
-	const box: Box | null = spec && selected ? layerBox(spec, layerAt(spec, selected) ?? {}) : null;
+	// The picked layer's box where its keys have it now.
+	const box: Box | null =
+		spec && selected
+			? layerBox(spec, poseAt(spec, layerAt(spec, selected) ?? {}, (frame / fps) * 1000))
+			: null;
 	const toComp = (e: { clientX: number; clientY: number }) => {
 		const r = canvas.current?.getBoundingClientRect();
 		if (!r) return { x: 0, y: 0 };
@@ -519,71 +558,44 @@ function LayerFields({
 	layer,
 	save,
 	onPath,
+	atMs,
+	onSeekMs,
+	picked,
+	onPick,
 }: {
 	spec: Json;
 	path: number[];
 	layer: Json;
 	save: (next: Json) => Promise<void>;
 	onPath: (path: number[] | null) => void;
+	atMs: number;
+	onSeekMs: (ms: number) => void;
+	picked: PickedKey;
+	onPick: (picked: PickedKey) => void;
 }) {
 	const type = String(layer.type);
-	const set = (patch: Json) => void save(updateLayer(spec, path, patch));
-	const num = (key: string, label: string, fallback: number, step = 1, digits = 0) => (
-		<Field label={label} inline>
-			<NumberInput
-				value={Number(layer[key] ?? fallback)}
-				step={step}
-				digits={digits}
-				onCommit={(v) => set({ [key]: v })}
-			/>
-		</Field>
-	);
-	const preset = (key: "enter" | "exit") => {
-		const p = (layer[key] ?? null) as {
-			preset?: string;
-			atMs?: number;
-			durationMs?: number;
-		} | null;
+	const apply = (patch: Json) => save(updateLayer(spec, path, patch));
+	const set = (patch: Json) => void apply(patch);
+	const animated = animatedProps(layer);
+	const num = (key: string, label: string, fallback: number, step = 1, digits = 0) => {
+		// An animated property shows its value at the playhead, and a change keys it there.
+		const keyed = animated.includes(key as KeyProp) && keyableProps(layer).includes(key as KeyProp);
 		return (
-			<Field label={key === "enter" ? "Comes in" : "Goes out"}>
-				<div className="flex items-center gap-1.5">
-					<select
-						value={p?.preset ?? "none"}
-						onChange={(e) =>
-							set({
-								[key]:
-									e.target.value === "none"
-										? undefined
-										: {
-												preset: e.target.value,
-												atMs:
-													p?.atMs ??
-													(key === "enter"
-														? 0
-														: Math.max(0, Number(spec.durationMs ?? 3000) - 400)),
-												...(p?.durationMs ? { durationMs: p.durationMs } : {}),
-											},
-							})
-						}
-						className="h-7 min-w-0 flex-1 rounded-md border border-border bg-field px-1.5 text-[12px]"
-					>
-						{PRESETS.map((name) => (
-							<option key={name} value={name}>
-								{name}
-							</option>
-						))}
-					</select>
-					{p?.preset && (
-						<>
-							<NumberInput
-								value={Number(p.atMs ?? 0)}
-								step={50}
-								suffix="ms"
-								onCommit={(v) => set({ [key]: { ...p, atMs: Math.max(0, Math.round(v)) } })}
-							/>
-						</>
-					)}
-				</div>
+			<Field label={keyed ? `${label} (animated)` : label} inline>
+				<NumberInput
+					value={
+						keyed
+							? Number(valueAt(spec, layer, key as KeyProp, atMs))
+							: Number(layer[key] ?? fallback)
+					}
+					step={step}
+					digits={digits}
+					onCommit={(v) => {
+						if (!keyed) return set({ [key]: v });
+						const r = setKey(layer, key as KeyProp, atMs, v);
+						void apply(r.patch).then(() => onPick({ prop: key as KeyProp, index: r.index }));
+					}}
+				/>
 			</Field>
 		);
 	};
@@ -716,12 +728,15 @@ function LayerFields({
 				{num("opacity", "Opacity", 1, 0.05, 2)}
 			</Section>
 			<Section title="Animation">
-				{preset("enter")}
-				{preset("exit")}
-				<p className="text-[11px] leading-relaxed text-muted">
-					Keyframes and effects beyond these are in the graphic's spec (get_motion_graphic); an
-					agent can write them.
-				</p>
+				<AnimationFields
+					spec={spec}
+					layer={layer}
+					atMs={atMs}
+					onSeekMs={onSeekMs}
+					picked={picked}
+					onPick={onPick}
+					apply={apply}
+				/>
 			</Section>
 		</>
 	);

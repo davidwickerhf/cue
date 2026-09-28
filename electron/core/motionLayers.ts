@@ -182,13 +182,36 @@ export function layerAtPoint(spec: Json, px: number, py: number): LayerRow | und
  * or everything in a group (and the point it turns around).
  */
 export function moveLayer(spec: Json, path: number[], dx: number, dy: number): Json {
+	// Keyed positions move along, so an animated layer's whole path shifts.
+	const shiftKeys = (layer: Json): Json => {
+		const keys = layer.keys as Record<string, [number, number, ...unknown[]][]> | undefined;
+		if (!keys?.x && !keys?.y) return {};
+		const by = (ks: [number, number, ...unknown[]][] | undefined, d: number) =>
+			ks?.map(([ms, v, ...ease]) => [ms, Math.round(Number(v) + d), ...ease]);
+		return {
+			keys: {
+				...keys,
+				...(keys.x ? { x: by(keys.x, dx) } : {}),
+				...(keys.y ? { y: by(keys.y, dy) } : {}),
+			},
+		};
+	};
 	const shift = (layer: Json): Json => {
 		if (layer.type === "group" && Array.isArray(layer.layers)) {
 			const pivot = layer.pivot as [number, number] | undefined;
+			// Its pivot is drawn at x, y: with the pivot moved, a set (or keyed) x, y moves too.
+			// Without a pivot, the children moving is the whole move.
 			return {
 				...layer,
 				layers: (layer.layers as Json[]).map(shift),
-				...(pivot ? { pivot: [pivot[0] + dx, pivot[1] + dy] } : {}),
+				...(pivot
+					? {
+							pivot: [pivot[0] + dx, pivot[1] + dy],
+							...(layer.x !== undefined ? { x: Math.round(Number(layer.x) + dx) } : {}),
+							...(layer.y !== undefined ? { y: Math.round(Number(layer.y) + dy) } : {}),
+							...shiftKeys(layer),
+						}
+					: {}),
 			};
 		}
 		if (Array.isArray(layer.points))
@@ -205,6 +228,7 @@ export function moveLayer(spec: Json, path: number[], dx: number, dy: number): J
 			...layer,
 			x: Math.round(Number(layer.x ?? W / 2) + dx),
 			y: Math.round(Number(layer.y ?? H / 2) + dy),
+			...shiftKeys(layer),
 		};
 	};
 	const layer = layerAt(spec, path);

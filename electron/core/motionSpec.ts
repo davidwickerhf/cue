@@ -546,7 +546,8 @@ interface Rest {
 	opacity: number;
 }
 
-const PRESET_MS: Record<(typeof MOTION_PRESETS)[number], number> = {
+/** How long each preset takes when it gives no duration. */
+export const PRESET_MS: Record<(typeof MOTION_PRESETS)[number], number> = {
 	fade: 400,
 	rise: 700,
 	fall: 700,
