@@ -9,6 +9,7 @@ import {
 	splitPin,
 	squareToQuad,
 } from "../electron/core/pin";
+import { ffmpegPath } from "../electron/core/media";
 import { DEFAULT_TRANSFORM } from "../electron/core/project";
 import type { CornerPin, Corners, MediaClip } from "../electron/core/types";
 
@@ -97,7 +98,7 @@ describe("corner pin", () => {
 		const [x0, y0, x1, y1, x2, y2, x3, y3] = pinExprs({ keys }, 30, W, H, pad);
 		const graph = `color=white:s=${W - 2 * pad}x${H - 2 * pad}:r=30:d=10,format=rgba,pad=${W}:${H}:${pad}:${pad}:color=black@0,perspective=sense=destination:eval=frame:x0='${x0}':y0='${y0}':x1='${x1}':y1='${y1}':x2='${x2}':y2='${y2}':x3='${x3}':y3='${y3}',select='eq(n\\,299)'`;
 		const out = execFileSync(
-			"ffmpeg",
+			ffmpegPath(),
 			[
 				"-v",
 				"error",
