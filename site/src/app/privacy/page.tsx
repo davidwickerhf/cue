@@ -27,7 +27,7 @@ const code = "rounded bg-white/10 px-1.5 font-mono text-[13px]";
 const APP_EVENTS: { name: string; what: string }[] = [
   { name: "app_opened", what: "Cue's version, the operating system (macOS, Windows or Linux), the processor type (arm64 or x64) and the interface language (for example “en”). Once per launch." },
   { name: "project_created", what: "That a project was created. Nothing about it." },
-  { name: "export_finished", what: "The kind of export (video, audio, GIF, captions, …), roughly how long the exported part is (for example “2-10 min”), and whether it succeeded." },
+  { name: "export_finished", what: "The kind of export (video, audio, GIF, captions, …), roughly how long the exported part is (for example “2-10 min”), how many seconds the export took and how that compares with the video’s length, and whether it succeeded." },
   { name: "agent_chat_turn", what: "Which agent answered in Cue's agent panel (Claude Code, Codex or Gemini CLI)." },
   { name: "mcp_request_batch", what: "Which of Cue's MCP tools agents called and how many times, added up and sent at most every few minutes." },
   { name: "generation_used", what: "What was generated (voice, sound, music, clip, image or transcription) and by which service (for example OpenAI, ElevenLabs, fal, or Cue itself)." },

@@ -145,11 +145,19 @@ describe("the property allowlist", () => {
 			allowedProperties("export_finished", {
 				kind: "video",
 				durationBucket: "2-10m",
+				renderSeconds: 42,
+				speed: 7.1,
 				success: true,
 				out: "/Users/someone/Movies/Secret project.mp4",
 				projectName: "Secret project",
 			}),
-		).toEqual({ kind: "video", durationBucket: "2-10m", success: true });
+		).toEqual({
+			kind: "video",
+			durationBucket: "2-10m",
+			renderSeconds: 42,
+			speed: 7.1,
+			success: true,
+		});
 		expect(allowedProperties("project_created", { name: "Secret", path: "/x" })).toEqual({});
 		expect(
 			allowedProperties("agent_chat_turn", { harness: "claude", prompt: "cut the boring bits" }),
@@ -197,12 +205,16 @@ describe("the property allowlist", () => {
 		usage.track("export_finished", {
 			kind: "gif",
 			durationBucket: "under-30s",
+			renderSeconds: 3,
+			speed: 4.2,
 			success: false,
 			...({ file: "/Users/me/secret.gif" } as object),
 		});
 		expect(fake.captures[0].properties).toEqual({
 			kind: "gif",
 			durationBucket: "under-30s",
+			renderSeconds: 3,
+			speed: 4.2,
 			success: false,
 			$process_person_profile: false,
 		});

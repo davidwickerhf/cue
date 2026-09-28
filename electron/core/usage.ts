@@ -73,6 +73,10 @@ export const USAGE_EVENTS = {
 		kind: contract.export.input.kind,
 		/** How long the exported part of the timeline is. */
 		durationBucket: z.enum(DURATION_BUCKETS),
+		/** How long the export took, in whole seconds. */
+		renderSeconds: z.number().int().min(0).max(86400),
+		/** Seconds of video made per second of rendering (above 1: faster than real time). */
+		speed: z.number().min(0).max(1000),
 		success: z.boolean(),
 	}),
 	/** A message sent to an agent in Cue's agent panel. */

@@ -2164,12 +2164,17 @@ export class Controller extends EventEmitter {
 						kind === "stems",
 					);
 				const lengthMs = range ? range.endMs - range.startMs : this.store.timelineEndMs();
-				const finished = (success: boolean) =>
+				const startedAt = Date.now();
+				const finished = (success: boolean) => {
+					const renderMs = Math.max(1, Date.now() - startedAt);
 					usage.track("export_finished", {
 						kind,
 						durationBucket: durationBucket(Math.max(0, lengthMs)),
+						renderSeconds: Math.min(86400, Math.round(renderMs / 1000)),
+						speed: Math.min(1000, Math.round((Math.max(0, lengthMs) / renderMs) * 10) / 10),
 						success,
 					});
+				};
 				try {
 					const report = await this.job(`Exporting ${kind}`, (progress) =>
 						this.store.export(kind, out, actor, this.hooks.renderText, range, progress),
