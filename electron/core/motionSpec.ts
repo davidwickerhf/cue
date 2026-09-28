@@ -408,10 +408,12 @@ export const MOTION_FONTS: {
 
 function fontFor(family: (typeof FONT_FAMILIES)[number], weight: number, italic = false) {
 	// Italic when the family has one (sans and serif do), otherwise upright.
-	const slanted = MOTION_FONTS.filter((f) => f.family === family && !!f.italic === italic);
+	// A family this build doesn't bundle (a graphic from a newer Cue) is drawn in sans, not an error.
+	const known = MOTION_FONTS.some((f) => f.family === family) ? family : "sans";
+	const slanted = MOTION_FONTS.filter((f) => f.family === known && !!f.italic === italic);
 	const options = slanted.length
 		? slanted
-		: MOTION_FONTS.filter((f) => f.family === family && !f.italic);
+		: MOTION_FONTS.filter((f) => f.family === known && !f.italic);
 	return options.reduce((best, f) =>
 		Math.abs(f.weight - weight) < Math.abs(best.weight - weight) ? f : best,
 	);
@@ -447,7 +449,7 @@ export function textWidth(
 			for (const ch of line) {
 				const at = METRIC_CHARS.indexOf(ch);
 				const w = at >= 0 ? (metrics?.widths[at] ?? -1) : -1;
-				em += w >= 0 ? w / 1000 : AVERAGE_WIDTH[font];
+				em += w >= 0 ? w / 1000 : (AVERAGE_WIDTH[font] ?? AVERAGE_WIDTH.sans);
 			}
 			return em * size + [...line].length * tracking;
 		}),

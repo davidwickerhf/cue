@@ -10,6 +10,7 @@ import { PageBar } from "../pages/PageBar";
 import { CaptureBar, RecordDialog } from "../RecordDialog";
 import { OfflineBanner, RelinkDialog } from "../RelinkMedia";
 import { Timeline } from "../timeline/Timeline";
+import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { VoiceoverDialog } from "../VoiceoverDialog";
 import { Dock } from "./Dock";
 import { EditorHeader } from "./EditorHeader";
@@ -36,17 +37,35 @@ export function EditorShell() {
 		<div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
 			<EditorHeader />
 			<OfflineBanner />
-			{page === "motion" && <MotionPage />}
-			{page === "deliver" && <ExportDialog inline />}
+			{page === "motion" && (
+				<ErrorBoundary name="Motion page">
+					<MotionPage />
+				</ErrorBoundary>
+			)}
+			{page === "deliver" && (
+				<ErrorBoundary name="Deliver page">
+					<ExportDialog inline />
+				</ErrorBoundary>
+			)}
 			<div className={viewer ? "contents" : "hidden"}>
 				<div className="flex min-h-0 flex-1">
-					<EditorSidebar />
+					<ErrorBoundary name="sidebar">
+						<EditorSidebar />
+					</ErrorBoundary>
 					{sidebarOpen && <Splitter edge="sidebarWidth" />}
-					<PreviewPanel />
+					<ErrorBoundary name="viewer">
+						<PreviewPanel />
+					</ErrorBoundary>
 					{dock !== "none" && <Splitter edge="dockWidth" invert />}
-					<Dock />
+					<ErrorBoundary name="panel">
+						<Dock />
+					</ErrorBoundary>
 					{inspectorOpen && <Splitter edge="inspectorWidth" invert />}
-					{inspectorOpen && <Inspector />}
+					{inspectorOpen && (
+						<ErrorBoundary name="inspector">
+							<Inspector />
+						</ErrorBoundary>
+					)}
 				</div>
 				{timelineOpen && (
 					<hr
@@ -89,7 +108,9 @@ export function EditorShell() {
 						style={{ height: `min(${timelineHeight}px, max(120px, calc(100dvh - 260px)))` }}
 						className="shrink-0"
 					>
-						<Timeline />
+						<ErrorBoundary name="timeline">
+							<Timeline />
+						</ErrorBoundary>
 					</div>
 				)}
 			</div>

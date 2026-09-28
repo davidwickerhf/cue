@@ -61,7 +61,13 @@ const PRESETS = [
 	"blur",
 	"spin",
 ];
-const FONTS = ["sans", "serif", "display", "mono"] as const;
+const FONTS = [
+	{ value: "sans", label: "Sans" },
+	{ value: "ui", label: "UI" },
+	{ value: "serif", label: "Serif" },
+	{ value: "display", label: "Display" },
+	{ value: "mono", label: "Mono" },
+] as const;
 
 /**
  * The Motion page: one motion graphic at a time, like an After Effects
@@ -305,6 +311,12 @@ function Stage({
 	const H = Number(spec?.height ?? 1080);
 	const [frame, setFrame] = useState(inFrame + (outFrame - inFrame) * 0.6);
 	const [playing, setPlaying] = useState(false);
+	// Another graphic starts at its own moment, not where the last one was (past its end).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the graphic changes
+	useEffect(() => {
+		setFrame(inFrame + (outFrame - inFrame) * 0.6);
+		setPlaying(false);
+	}, [asset.id]);
 	const [area, setArea] = useState({ w: 800, h: 450 });
 	const [drag, setDrag] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
 	const holder = useRef<HTMLDivElement>(null);
@@ -646,7 +658,7 @@ function LayerFields({
 							<Segmented
 								size="xs"
 								value={String(layer.font ?? "sans")}
-								options={FONTS.map((f) => ({ value: f, label: f[0].toUpperCase() + f.slice(1) }))}
+								options={FONTS.map((f) => ({ value: f.value, label: f.label }))}
 								onChange={(v) => set({ font: v })}
 							/>
 						</Field>
