@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.14",
+		date: "2026-09-28",
+		summary: "Higgsfield connects like the other services.",
+		changes: [
+			"Higgsfield is in Settings → AI → Services with a Connect button: the Higgsfield console opens, and Cue picks up the key ID and the secret as you copy them, in either order.",
+			"Or paste both at once: id:secret, one per line, or straight from the console with their labels.",
+		],
+	},
+	{
 		version: "0.2.13",
 		date: "2026-09-28",
 		summary: "Shared usage includes how long exports take.",
