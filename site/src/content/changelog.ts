@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.11",
+		date: "2026-09-28",
+		summary: "Pasting an API key just works.",
+		changes: [
+			"A pasted key is taken out of whatever came with it (invisible characters from a web page, a label, quotes), so ElevenLabs, OpenAI and fal keys connect first time.",
+			"When what was pasted isn't a key, Cue says what a key looks like and what it got, instead of the service's 'Invalid API key'.",
+		],
+	},
+	{
 		version: "0.2.10",
 		date: "2026-09-28",
 		summary: "Agents know what they can generate with your connected services, and when not to.",
