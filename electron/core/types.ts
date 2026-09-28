@@ -545,6 +545,10 @@ export interface AiSettings {
 	voiceInstructions: string;
 	transcriptionModel: string;
 	imageModel: string;
+	/** ElevenLabs voice id, its name (for showing) and speech model, used when ElevenLabs speaks. */
+	elevenVoice: string;
+	elevenVoiceName?: string;
+	elevenModel: string;
 }
 
 /** A timeline that is not open right now (the open one lives in ProjectData.tracks/clips/markers). */
@@ -680,7 +684,7 @@ export interface AppState {
 		configured: boolean;
 		provider: "openai" | null;
 		status: {
-			capability: "tts" | "transcription" | "text" | "image";
+			capability: "tts" | "transcription" | "text" | "image" | "sound" | "video";
 			provider: string;
 			ready: boolean;
 			problem?: string;

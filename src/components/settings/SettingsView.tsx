@@ -381,6 +381,7 @@ function AiSection({
 						onChange={(tts) => set({ tts })}
 						options={[
 							{ value: "openai", label: "OpenAI" },
+							{ value: "elevenlabs", label: "ElevenLabs" },
 							// The system voices are macOS's; elsewhere only a saved choice shows.
 							...(isMac || ai.tts === "macos"
 								? [{ value: "macos" as const, label: "On this Mac" }]
@@ -473,6 +474,8 @@ function AiSection({
 					</Row>
 				)}
 			</Group>
+
+			<Connections />
 
 			<Group
 				title={isMac ? "On this Mac" : "On this computer"}
@@ -653,6 +656,161 @@ function AiSection({
 				when you open this page.
 			</p>
 		</>
+	);
+}
+
+const keyField =
+	"h-7 w-48 rounded-md border border-border bg-field px-2 text-[12px] outline-none focus:border-accent";
+
+/** Stores a key, then checks it with the provider and says how that went. */
+async function connect(
+	provider: "elevenlabs" | "higgsfield",
+	value: string | { id: string; secret: string } | null,
+) {
+	try {
+		await window.cue.setConnection(provider, value);
+		if (!value) return notify("Key removed");
+		const result = await window.cue.testConnection(provider);
+		notify(result.message, result.ok ? "success" : "danger");
+	} catch (error) {
+		notify((error as Error).message, "danger");
+	}
+}
+
+/** Settings → AI → Connections: optional providers, each with the user's own key. */
+function Connections() {
+	const status = useApp((s) => s.ai.status) ?? [];
+	const eleven = !!status.find((s) => s.capability === "sound")?.ready;
+	const higgs = !!status.find((s) => s.capability === "video")?.ready;
+	const [elevenKey, setElevenKey] = useState("");
+	const [higgsId, setHiggsId] = useState("");
+	const [higgsSecret, setHiggsSecret] = useState("");
+	const [testing, setTesting] = useState<string | null>(null);
+	const test = async (provider: "elevenlabs" | "higgsfield") => {
+		setTesting(provider);
+		const result = await window.cue.testConnection(provider).finally(() => setTesting(null));
+		notify(result.message, result.ok ? "success" : "danger");
+	};
+	const link = (href: string, label: string) => (
+		<a href={href} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+			{label}
+		</a>
+	);
+	const connected = (provider: "elevenlabs" | "higgsfield") => (
+		<>
+			<StatusPill ready text="Connected" />
+			<Button
+				size="sm"
+				variant="secondary"
+				className="h-7 text-[12px]"
+				isDisabled={testing === provider}
+				onPress={() => void test(provider)}
+			>
+				{testing === provider ? <Spinner size="sm" /> : "Test"}
+			</Button>
+			<Button
+				size="sm"
+				variant="ghost"
+				className="h-7 text-[12px] text-danger"
+				onPress={() => void connect(provider, null)}
+			>
+				Remove
+			</Button>
+		</>
+	);
+	return (
+		<Group
+			title="Connections"
+			description="Optional services you pay for with your own key. Cue only calls them when you or an agent generate with them. Keys are stored encrypted and never shown again."
+		>
+			<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
+				<div className="min-w-0">
+					<p className="text-[13px]">ElevenLabs</p>
+					<p className="text-[11px] text-muted">
+						Voices, sound effects and music.{" "}
+						{link("https://elevenlabs.io/app/settings/api-keys", "Get a key")}
+					</p>
+				</div>
+				<div className="flex shrink-0 items-center gap-2">
+					{eleven ? (
+						connected("elevenlabs")
+					) : (
+						<>
+							<input
+								type="password"
+								value={elevenKey}
+								placeholder="API key"
+								aria-label="ElevenLabs API key"
+								onChange={(e) => setElevenKey(e.target.value)}
+								onKeyDown={(e) => e.stopPropagation()}
+								className={keyField}
+							/>
+							<Button
+								size="sm"
+								className="h-7 text-[12px]"
+								isDisabled={elevenKey.trim().length < 16}
+								onPress={() =>
+									void connect("elevenlabs", elevenKey.trim()).then(() => setElevenKey(""))
+								}
+							>
+								Connect
+							</Button>
+						</>
+					)}
+				</div>
+			</div>
+			<div className="flex min-h-12 items-center justify-between gap-6 px-4 py-2.5">
+				<div className="min-w-0">
+					<p className="text-[13px]">Higgsfield</p>
+					<p className="text-[11px] text-muted">
+						Video clips from a prompt or a still. The key comes in two parts, an id and a secret.{" "}
+						{link("https://cloud.higgsfield.ai/api-keys", "Get a key")}
+					</p>
+				</div>
+				<div className="flex shrink-0 items-center gap-2">
+					{higgs ? (
+						connected("higgsfield")
+					) : (
+						<>
+							<input
+								type="password"
+								value={higgsId}
+								placeholder="Key id"
+								aria-label="Higgsfield key id"
+								onChange={(e) => setHiggsId(e.target.value)}
+								onKeyDown={(e) => e.stopPropagation()}
+								className={cn(keyField, "w-32")}
+							/>
+							<input
+								type="password"
+								value={higgsSecret}
+								placeholder="Key secret"
+								aria-label="Higgsfield key secret"
+								onChange={(e) => setHiggsSecret(e.target.value)}
+								onKeyDown={(e) => e.stopPropagation()}
+								className={cn(keyField, "w-40")}
+							/>
+							<Button
+								size="sm"
+								className="h-7 text-[12px]"
+								isDisabled={!higgsId.trim() || higgsSecret.trim().length < 8}
+								onPress={() =>
+									void connect("higgsfield", {
+										id: higgsId.trim(),
+										secret: higgsSecret.trim(),
+									}).then(() => {
+										setHiggsId("");
+										setHiggsSecret("");
+									})
+								}
+							>
+								Connect
+							</Button>
+						</>
+					)}
+				</div>
+			</div>
+		</Group>
 	);
 }
 

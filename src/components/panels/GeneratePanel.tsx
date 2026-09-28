@@ -1,4 +1,4 @@
-import { Button } from "@heroui/react";
+import { Button, Spinner } from "@heroui/react";
 import {
 	ArrowLeft,
 	CaretRight,
@@ -8,18 +8,25 @@ import {
 	Image as ImageIcon,
 	ListNumbers,
 	MagnifyingGlass,
+	MusicNote,
 	MusicNotes,
+	Pause,
+	Play,
 	Scroll,
 	Sparkle,
 	UserSound,
+	VideoCamera,
+	Waveform,
 } from "@phosphor-icons/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { CLIP_MODELS, DEFAULT_CLIP_MODEL } from "../../../electron/core/clipModels";
+import { ELEVEN_MODELS } from "../../../electron/core/elevenlabs";
 import type { ProjectSnapshot } from "../../../electron/core/types";
 import { notify, run } from "../../lib/api";
 import { playback } from "../../lib/playback";
 import { appSettings, createStore, openSettings, useApp, useProject } from "../../lib/state";
 import { cn } from "../../lib/utils";
-import { Field, Section, Segmented, TextInput } from "../ui/controls";
+import { Field, Section, Segmented, TextInput, Toggle } from "../ui/controls";
 import { BeatTools, BrollTools, ChapterTools, ReframeTools, ShotSearch } from "./AiTools";
 
 const VOICES = [
@@ -45,11 +52,14 @@ const TTS_MODELS = [
 	{ id: "tts-1", label: "tts-1 (fast)" },
 ];
 
-type Capability = "tts" | "transcription" | "text" | "image";
+type Capability = "tts" | "transcription" | "text" | "image" | "sound" | "video";
 type ToolId =
 	| "voice"
 	| "captions"
 	| "image"
+	| "sound"
+	| "score"
+	| "clip"
 	| "script"
 	| "shots"
 	| "broll"
@@ -66,6 +76,8 @@ interface Tool {
 	icon: ReactNode;
 	/** The model it needs (shown as "Set up" when it isn't ready). */
 	needs?: Capability;
+	/** The optional service behind it, which the user connects with their own key. */
+	service?: "ElevenLabs" | "Higgsfield";
 	/** Why it can't be used in this project yet, if it can't. */
 	unavailable?: (project: ProjectSnapshot) => string | null;
 }
@@ -96,6 +108,33 @@ const TOOLS: Tool[] = [
 		blurb: "A picture from a description, at the playhead.",
 		icon: <ImageIcon className={icon} />,
 		needs: "image",
+	},
+	{
+		id: "sound",
+		group: "Make",
+		label: "Sound effect",
+		blurb: "A realistic sound from a description, at the playhead.",
+		icon: <Waveform className={icon} />,
+		needs: "sound",
+		service: "ElevenLabs",
+	},
+	{
+		id: "score",
+		group: "Make",
+		label: "Music",
+		blurb: "A music bed from a description, on the music track.",
+		icon: <MusicNote className={icon} />,
+		needs: "sound",
+		service: "ElevenLabs",
+	},
+	{
+		id: "clip",
+		group: "Make",
+		label: "Video clip",
+		blurb: "A short shot from a prompt or a still, at the playhead.",
+		icon: <VideoCamera className={icon} />,
+		needs: "video",
+		service: "Higgsfield",
 	},
 	{
 		id: "script",
@@ -207,7 +246,11 @@ export function GeneratePanel() {
 								<span className="flex min-w-0 flex-1 flex-col">
 									<span className="text-[12px] font-medium">{t.label}</span>
 									<span className="truncate text-[11px] text-muted">
-										{setUp ? "Set up its model in Settings → AI." : (why ?? t.blurb)}
+										{setUp
+											? t.service
+												? `Connect ${t.service} in Settings → AI.`
+												: "Set up its model in Settings → AI."
+											: (why ?? t.blurb)}
 									</span>
 								</span>
 								<CaretRight className="size-3.5 shrink-0 text-muted opacity-0 group-hover:opacity-100" />
@@ -236,6 +279,12 @@ function ToolView({ id, project }: { id: ToolId; project: ProjectSnapshot }) {
 			return <CaptionsTool />;
 		case "image":
 			return <ImageTool project={project} />;
+		case "sound":
+			return <SoundTool />;
+		case "score":
+			return <MusicTool />;
+		case "clip":
+			return <ClipTool project={project} />;
 		case "script":
 			return <ScriptTool project={project} />;
 		case "shots":
@@ -264,11 +313,15 @@ function VoiceTool({ project }: { project: ProjectSnapshot }) {
 	const settings = appSettings.use((s) => s.settings);
 	const ai = project.data.ai;
 	const missing = project.lines.filter((l) => l.status === "empty").length;
-	const openaiVoice = settings?.ai.tts !== "macos";
+	const provider = settings?.ai.tts ?? "openai";
 	return (
 		<Section title="Voiceover">
-			{!tts?.ready && <Problem text={tts?.problem} />}
-			{openaiVoice ? (
+			{!tts?.ready && (
+				<Problem text={tts?.problem} action={provider === "elevenlabs" ? "Connect" : undefined} />
+			)}
+			{provider === "elevenlabs" ? (
+				<ElevenVoice project={project} ready={!!tts?.ready} />
+			) : provider === "openai" ? (
 				<>
 					<div className="grid grid-cols-2 gap-2">
 						<Field label="Voice">
@@ -445,7 +498,7 @@ function ScriptTool({ project }: { project: ProjectSnapshot }) {
 	);
 }
 
-function Problem({ text }: { text?: string }) {
+function Problem({ text, action = "Set up" }: { text?: string; action?: string }) {
 	return (
 		<p className="rounded-md bg-warning/10 px-2.5 py-2 text-[12px] text-warning">
 			{(text ?? "Not set up").replace(/\.?$/, ".")}{" "}
@@ -454,8 +507,404 @@ function Problem({ text }: { text?: string }) {
 				className="underline underline-offset-2"
 				onClick={() => openSettings("ai")}
 			>
-				Set up
+				{action}
 			</button>
 		</p>
+	);
+}
+
+const selectClass =
+	"h-8 rounded-lg border border-border bg-field px-2 text-[13px] outline-none focus:border-accent";
+
+/** The running job whose label matches, as a thin progress bar with its label. */
+function JobProgress({ match }: { match: RegExp }) {
+	const job = (useApp((s) => s.jobs) ?? []).find(
+		(j) => j.state === "running" && match.test(j.label),
+	);
+	if (!job) return null;
+	return (
+		<div className="flex flex-col gap-1">
+			<div className="h-1 overflow-hidden rounded-full bg-default">
+				<div
+					className={cn(
+						"h-full rounded-full bg-accent transition-[width] duration-500",
+						job.progress === null && "w-1/3 animate-pulse",
+					)}
+					style={job.progress !== null ? { width: `${Math.round(job.progress * 100)}%` } : {}}
+				/>
+			</div>
+			<p className="text-[11px] text-muted">{job.label}…</p>
+		</div>
+	);
+}
+
+type Voice = {
+	id: string;
+	name: string;
+	category?: string;
+	labels: Record<string, string>;
+	previewUrl?: string;
+	chosen?: boolean;
+};
+
+/** Voiceover with ElevenLabs: search the account's voices, hear a preview, pick one and a model. */
+function ElevenVoice({ project, ready }: { project: ProjectSnapshot; ready: boolean }) {
+	const ai = project.data.ai;
+	const [search, setSearch] = useState("");
+	const [voices, setVoices] = useState<Voice[] | null>(null);
+	const [loading, setLoading] = useState(false);
+	const [playing, setPlaying] = useState<string | null>(null);
+	const audio = useRef<HTMLAudioElement | null>(null);
+	useEffect(() => {
+		if (!ready) return;
+		let stale = false;
+		setLoading(true);
+		// Wait for typing to pause before asking ElevenLabs.
+		const timer = setTimeout(async () => {
+			const result = await run<{ voices: Voice[] }>("list_voices", {
+				search: search.trim() || undefined,
+			});
+			if (!stale) {
+				setVoices(result?.voices ?? []);
+				setLoading(false);
+			}
+		}, 300);
+		return () => {
+			stale = true;
+			clearTimeout(timer);
+		};
+	}, [search, ready]);
+	useEffect(() => () => audio.current?.pause(), []);
+	const preview = (v: Voice) => {
+		audio.current?.pause();
+		if (playing === v.id || !v.previewUrl) return setPlaying(null);
+		const a = new Audio(v.previewUrl);
+		a.onended = () => setPlaying(null);
+		audio.current = a;
+		setPlaying(v.id);
+		void a.play().catch(() => setPlaying(null));
+	};
+	return (
+		<>
+			<Field label="Model">
+				<select
+					value={ai.elevenModel}
+					onChange={(e) => void run("update_ai", { ai: { elevenModel: e.target.value } })}
+					className={selectClass}
+				>
+					{ELEVEN_MODELS.map((m) => (
+						<option key={m.id} value={m.id}>
+							{m.label}
+						</option>
+					))}
+					{!ELEVEN_MODELS.some((m) => m.id === ai.elevenModel) && (
+						<option value={ai.elevenModel}>{ai.elevenModel}</option>
+					)}
+				</select>
+			</Field>
+			<Field
+				label={`Voice: ${ai.elevenVoiceName ?? ai.elevenVoice}`}
+				hint="Steer the delivery with audio tags in the line itself, e.g. [whispers] or [excited] (v3)."
+			>
+				<input
+					type="search"
+					value={search}
+					placeholder="Search voices…"
+					onChange={(e) => setSearch(e.target.value)}
+					onKeyDown={(e) => e.stopPropagation()}
+					className={selectClass}
+					disabled={!ready}
+				/>
+				<div className="custom-scrollbar mt-1.5 flex max-h-56 flex-col overflow-y-auto rounded-lg border border-border">
+					{loading && !voices?.length ? (
+						<span className="flex items-center gap-2 px-2.5 py-2 text-[12px] text-muted">
+							<Spinner size="sm" /> Loading voices…
+						</span>
+					) : voices?.length ? (
+						voices.map((v) => (
+							<div
+								key={v.id}
+								className={cn(
+									"flex items-center gap-2 px-1.5 py-1",
+									v.id === ai.elevenVoice ? "bg-accent/15" : "hover:bg-default/60",
+								)}
+							>
+								<button
+									type="button"
+									aria-label={playing === v.id ? `Stop ${v.name}` : `Hear ${v.name}`}
+									disabled={!v.previewUrl}
+									onClick={() => preview(v)}
+									className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-default hover:text-foreground disabled:opacity-30"
+								>
+									{playing === v.id ? (
+										<Pause weight="fill" className="size-3.5" />
+									) : (
+										<Play weight="fill" className="size-3.5" />
+									)}
+								</button>
+								<button
+									type="button"
+									onClick={() =>
+										void run("update_ai", {
+											ai: { elevenVoice: v.id, elevenVoiceName: v.name.slice(0, 120) },
+										})
+									}
+									className="flex min-w-0 flex-1 flex-col text-left"
+								>
+									<span className="truncate text-[12px]">{v.name}</span>
+									<span className="truncate text-[11px] text-muted">
+										{[
+											v.labels.gender,
+											v.labels.age,
+											v.labels.accent,
+											v.labels.use_case ?? v.labels.use,
+										]
+											.filter(Boolean)
+											.join(" · ") || v.category}
+									</span>
+								</button>
+							</div>
+						))
+					) : (
+						<span className="px-2.5 py-2 text-[12px] text-muted">
+							{ready ? "No voices matched." : "Connect ElevenLabs to choose a voice."}
+						</span>
+					)}
+				</div>
+			</Field>
+		</>
+	);
+}
+
+const SOUND_LENGTHS = [
+	{ value: "auto", label: "Auto" },
+	{ value: "1", label: "1 s" },
+	{ value: "3", label: "3 s" },
+	{ value: "5", label: "5 s" },
+	{ value: "10", label: "10 s" },
+];
+
+/** A sound effect from a description (ElevenLabs), placed at the playhead on an SFX track. */
+function SoundTool() {
+	const sound = useCapability("sound");
+	const busy = useBusy();
+	const [prompt, setPrompt] = useState("");
+	const [length, setLength] = useState("auto");
+	const [variants, setVariants] = useState("1");
+	return (
+		<Section title="Sound effect">
+			{!sound?.ready && <Problem text={sound?.problem} action="Connect" />}
+			<TextInput
+				multiline
+				rows={3}
+				value={prompt}
+				onCommit={setPrompt}
+				placeholder="A heavy wooden door slams shut in a stone hallway, short echo…"
+			/>
+			<p className="text-[11px] leading-relaxed text-muted">
+				Describe it concretely: what makes the sound, the material, the space.
+			</p>
+			<Field label="Length">
+				<Segmented size="xs" value={length} onChange={setLength} options={SOUND_LENGTHS} />
+			</Field>
+			<div className="flex items-center justify-between gap-2">
+				<Segmented
+					size="xs"
+					value={variants}
+					onChange={setVariants}
+					options={["1", "2", "3", "4"].map((n) => ({
+						value: n,
+						label: n === "1" ? "1 take" : `${n} takes`,
+					}))}
+				/>
+				<Button
+					size="sm"
+					variant="primary"
+					className="gap-1.5"
+					isDisabled={busy || prompt.trim().length < 3 || !sound?.ready}
+					onPress={async () => {
+						const result = await run<{ sounds: unknown[] }>("generate_sound", {
+							prompt,
+							durationSeconds: length === "auto" ? undefined : Number(length),
+							variants: Number(variants),
+							atMs: Math.round(playback.currentMs),
+						});
+						if (result)
+							notify(
+								result.sounds.length > 1
+									? `Sound added at the playhead; ${result.sounds.length - 1} more take(s) in the media`
+									: "Sound added at the playhead",
+								"success",
+							);
+					}}
+				>
+					<Waveform className="size-4" /> Generate
+				</Button>
+			</div>
+			<JobProgress match={/^Generating (a sound|\d+ sounds)/} />
+		</Section>
+	);
+}
+
+const MUSIC_LENGTHS = [
+	{ value: "15000", label: "15 s" },
+	{ value: "30000", label: "30 s" },
+	{ value: "60000", label: "1 min" },
+	{ value: "end", label: "To the end" },
+];
+
+/** Music from a description (ElevenLabs), laid on the music track from the playhead. */
+function MusicTool() {
+	const sound = useCapability("sound");
+	const busy = useBusy();
+	const [prompt, setPrompt] = useState("");
+	const [length, setLength] = useState("30000");
+	const [instrumental, setInstrumental] = useState(true);
+	return (
+		<Section title="Music">
+			{!sound?.ready && <Problem text={sound?.problem} action="Connect" />}
+			<TextInput
+				multiline
+				rows={3}
+				value={prompt}
+				onCommit={setPrompt}
+				placeholder="Warm acoustic guitar and soft piano, hopeful, 90 bpm, builds gently at the end…"
+			/>
+			<p className="text-[11px] leading-relaxed text-muted">
+				Genre, mood, instruments, tempo and how it develops. It ducks under the voiceover.
+			</p>
+			<Field label="Length">
+				<Segmented size="xs" value={length} onChange={setLength} options={MUSIC_LENGTHS} />
+			</Field>
+			<Toggle label="Instrumental (no vocals)" checked={instrumental} onChange={setInstrumental} />
+			<Button
+				variant="primary"
+				className="w-full gap-2"
+				isDisabled={busy || prompt.trim().length < 3 || !sound?.ready}
+				onPress={async () => {
+					const result = await run("generate_music", {
+						prompt,
+						instrumental,
+						startMs: Math.round(playback.currentMs),
+						...(length === "end" ? {} : { durationMs: Number(length) }),
+					});
+					if (result) notify("Music added on the music track", "success");
+				}}
+			>
+				<MusicNote className="size-4" /> Compose
+			</Button>
+			<JobProgress match={/^Composing music/} />
+		</Section>
+	);
+}
+
+/** A video clip from a prompt and optionally a still (Higgsfield), placed at the playhead. */
+function ClipTool({ project }: { project: ProjectSnapshot }) {
+	const video = useCapability("video");
+	const busy = useBusy();
+	const images = project.data.assets.filter((a) => a.kind === "image");
+	const [prompt, setPrompt] = useState("");
+	const [start, setStart] = useState<"none" | "media" | "frame">("none");
+	const [imageId, setImageId] = useState(images[0]?.id ?? "");
+	const [modelId, setModelId] = useState(DEFAULT_CLIP_MODEL);
+	const withImage = start !== "none";
+	const models = CLIP_MODELS.filter((m) => (withImage ? m.imageToVideo : m.textToVideo));
+	const model = models.find((m) => m.id === modelId) ?? models[0];
+	const [duration, setDuration] = useState(String(model?.durations[0] ?? 5));
+	const seconds = model?.durations.includes(Number(duration))
+		? Number(duration)
+		: (model?.durations[0] ?? 5);
+	return (
+		<Section title="Video clip">
+			{!video?.ready && <Problem text={video?.problem} action="Connect" />}
+			<TextInput
+				multiline
+				rows={3}
+				value={prompt}
+				onCommit={setPrompt}
+				placeholder="Slow dolly-in on a steaming coffee cup on a wooden table, morning light, shallow depth of field…"
+			/>
+			<Field label="Start from">
+				<Segmented
+					size="xs"
+					value={start}
+					onChange={setStart}
+					options={[
+						{ value: "none", label: "Prompt only" },
+						{ value: "media", label: "A picture" },
+						{ value: "frame", label: "Frame at playhead" },
+					]}
+				/>
+			</Field>
+			{start === "media" &&
+				(images.length ? (
+					<select
+						value={imageId}
+						onChange={(e) => setImageId(e.target.value)}
+						className={selectClass}
+					>
+						{images.map((a) => (
+							<option key={a.id} value={a.id}>
+								{a.name}
+							</option>
+						))}
+					</select>
+				) : (
+					<p className="text-[12px] text-muted">No pictures in the media yet.</p>
+				))}
+			<div className="grid grid-cols-2 gap-2">
+				<Field label="Model">
+					<select
+						value={model?.id}
+						onChange={(e) => setModelId(e.target.value)}
+						className={selectClass}
+					>
+						{models.map((m) => (
+							<option key={m.id} value={m.id}>
+								{m.label}
+							</option>
+						))}
+					</select>
+				</Field>
+				<Field label="Length">
+					<Segmented
+						size="xs"
+						value={String(seconds)}
+						onChange={setDuration}
+						options={(model?.durations ?? [5]).map((d) => ({ value: String(d), label: `${d} s` }))}
+					/>
+				</Field>
+			</div>
+			<Button
+				variant="primary"
+				className="w-full gap-2"
+				isDisabled={
+					busy ||
+					prompt.trim().length < 3 ||
+					!video?.ready ||
+					!model ||
+					(start === "media" && !imageId)
+				}
+				onPress={async () => {
+					const at = Math.round(playback.currentMs);
+					const result = await run("generate_clip", {
+						prompt,
+						model: model?.id,
+						durationSec: seconds,
+						atMs: at,
+						...(start === "media" ? { imageAssetId: imageId } : {}),
+						...(start === "frame" ? { frameAtMs: at } : {}),
+					});
+					if (result) notify("Clip added at the playhead", "success");
+				}}
+			>
+				<VideoCamera className="size-4" /> Generate
+			</Button>
+			<JobProgress match={/^Generating a video clip/} />
+			<p className="text-[11px] leading-relaxed text-muted">
+				Takes one to a few minutes. Clips are silent and are saved in the project's generated
+				folder.
+			</p>
+		</Section>
 	);
 }

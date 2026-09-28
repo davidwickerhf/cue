@@ -199,6 +199,14 @@ const api = {
 		ipcRenderer.invoke("cue:chooseFolder", options) as Promise<string | null>,
 	reveal: (file: string) => ipcRenderer.invoke("cue:reveal", file),
 	setApiKey: (key: string | null) => ipcRenderer.invoke("cue:setApiKey", key),
+	/** Stores (null removes) an ElevenLabs key or a Higgsfield key id and secret. */
+	setConnection: (
+		provider: "elevenlabs" | "higgsfield",
+		value: string | { id: string; secret: string } | null,
+	) => ipcRenderer.invoke("cue:setConnection", provider, value) as Promise<void>,
+	/** Checks a stored key with a cheap call to the provider. */
+	testConnection: (provider: "elevenlabs" | "higgsfield") =>
+		ipcRenderer.invoke("cue:testConnection", provider) as Promise<{ ok: boolean; message: string }>,
 	getAppSettings: () =>
 		ipcRenderer.invoke("cue:getAppSettings") as Promise<import("./core/runtime").AppSettings>,
 	setAppSettings: (patch: Partial<import("./core/runtime").AppSettings>) =>

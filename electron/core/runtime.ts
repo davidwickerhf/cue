@@ -1,13 +1,27 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import {
 	type AiCredentials,
 	generateImage,
 	synthesizeSpeech,
 	type TranscriptSegment,
+	TTS_VOICES,
 	transcribe,
 } from "./ai";
+import {
+	ELEVEN_VOICE_ID,
+	type ElevenVoice,
+	elevenMusic,
+	elevenSound,
+	elevenSpeech,
+	elevenVoices,
+} from "./elevenlabs";
+import { generateClip } from "./higgsfield";
 import { chat, type LocalInventory, speakMac, transcribeLocal } from "./local-ai";
+import { ffmpeg } from "./media";
+import type { HiggsfieldKey } from "./secrets";
 
 /** App-wide preferences (not per project). Stored in the app's data folder. */
 export const appSettingsSchema = z.object({
@@ -23,7 +37,7 @@ export const appSettingsSchema = z.object({
 	autoInstallUpdates: z.boolean().default(false),
 	ai: z
 		.object({
-			tts: z.enum(["openai", "macos"]).default("openai"),
+			tts: z.enum(["openai", "macos", "elevenlabs"]).default("openai"),
 			transcription: z.enum(["openai", "whisper"]).default("openai"),
 			text: z.enum(["openai", "ollama", "lmstudio", "none"]).default("openai"),
 			image: z.enum(["openai", "none"]).default("openai"),
@@ -56,7 +70,17 @@ export const appSettingsSchema = z.object({
 });
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 
-export type Capability = "tts" | "transcription" | "text" | "image";
+/** sound: effects and music (ElevenLabs); video: generated clips (Higgsfield). */
+export type Capability = "tts" | "transcription" | "text" | "image" | "sound" | "video";
+
+/** Keys for the optional providers the user connects in Settings → AI. */
+export interface Connections {
+	elevenlabs?: string;
+	higgsfield?: HiggsfieldKey;
+}
+
+export const CONNECT_ELEVENLABS = "Connect ElevenLabs in Settings → AI";
+export const CONNECT_HIGGSFIELD = "Connect Higgsfield in Settings → AI";
 
 export interface ProviderStatus {
 	capability: Capability;
@@ -71,7 +95,13 @@ export interface ProviderStatus {
 export interface AiRuntime {
 	speak(
 		text: string,
-		options: { voice?: string; instructions?: string; model?: string },
+		options: {
+			voice?: string;
+			instructions?: string;
+			model?: string;
+			/** The project's ElevenLabs voice and model, used when ElevenLabs speaks. */
+			elevenlabs?: { voice: string; model: string };
+		},
 	): Promise<{ audio: Buffer; provider: string; model: string; voice: string }>;
 	transcribe(
 		file: string,
@@ -82,6 +112,27 @@ export interface AiRuntime {
 		options: { size: "1536x1024" | "1024x1536" | "1024x1024"; model?: string },
 	): Promise<Buffer>;
 	chat(system: string, prompt: string): Promise<string>;
+	/** A sound effect from a description (ElevenLabs, MP3 bytes). */
+	sound(
+		prompt: string,
+		options: { durationSeconds?: number; promptInfluence?: number; loop?: boolean },
+	): Promise<Buffer>;
+	/** Music from a description (ElevenLabs, MP3 bytes). */
+	music(prompt: string, options: { lengthMs: number; instrumental?: boolean }): Promise<Buffer>;
+	/** A video clip (Higgsfield), downloaded to `file`. */
+	clip(
+		input: {
+			prompt: string;
+			image?: string;
+			model?: string;
+			durationSec?: number;
+			negativePrompt?: string;
+		},
+		file: string,
+		onProgress?: (fraction: number) => void,
+	): Promise<{ file: string; url: string; model: string; label: string; durationSec: number }>;
+	/** The ElevenLabs voices the key can use, optionally searched. */
+	voices(search?: string): Promise<ElevenVoice[]>;
 	/**
 	 * One short description per picture (for searching footage): what is shown,
 	 * where, notable objects, text and actions. Uses the text provider's vision
@@ -91,10 +142,27 @@ export interface AiRuntime {
 	status(): ProviderStatus[];
 }
 
+/** Any audio as 16-bit WAV at 44.1 kHz, so takes from every provider match. */
+async function asWav(audio: Buffer, ext: string): Promise<Buffer> {
+	const base = path.join(
+		os.tmpdir(),
+		`cue-tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+	);
+	try {
+		await writeFile(`${base}.${ext}`, audio);
+		await ffmpeg(["-i", `${base}.${ext}`, "-ar", "44100", "-c:a", "pcm_s16le", `${base}.out.wav`]);
+		return await readFile(`${base}.out.wav`);
+	} finally {
+		await rm(`${base}.${ext}`, { force: true });
+		await rm(`${base}.out.wav`, { force: true });
+	}
+}
+
 export function buildRuntime(
 	settings: AppSettings,
 	creds: AiCredentials | null,
 	local: LocalInventory,
+	keys: Connections = {},
 ): AiRuntime {
 	const ai = settings.ai;
 	const whisperModel = ai.whisperModel ?? local.whisper.models[0]?.path;
@@ -107,24 +175,31 @@ export function buildRuntime(
 				: "gpt-4.1-mini");
 
 	const status = (): ProviderStatus[] => [
-		ai.tts === "openai"
+		ai.tts === "elevenlabs"
 			? {
 					capability: "tts",
-					provider: "OpenAI",
-					ready: !!creds,
-					problem: creds ? undefined : "Add an OpenAI API key",
+					provider: "ElevenLabs",
+					ready: !!keys.elevenlabs,
+					problem: keys.elevenlabs ? undefined : CONNECT_ELEVENLABS,
 				}
-			: {
-					capability: "tts",
-					provider: "macOS voices",
-					ready: local.macVoices.length > 0,
-					model: ai.macVoice,
-					problem: local.macVoices.length
-						? undefined
-						: process.platform === "darwin"
-							? "No system voices found"
-							: "macOS voices are only available on a Mac; choose OpenAI",
-				},
+			: ai.tts === "openai"
+				? {
+						capability: "tts",
+						provider: "OpenAI",
+						ready: !!creds,
+						problem: creds ? undefined : "Add an OpenAI API key",
+					}
+				: {
+						capability: "tts",
+						provider: "macOS voices",
+						ready: local.macVoices.length > 0,
+						model: ai.macVoice,
+						problem: local.macVoices.length
+							? undefined
+							: process.platform === "darwin"
+								? "No system voices found"
+								: "macOS voices are only available on a Mac; choose OpenAI",
+					},
 		ai.transcription === "openai"
 			? {
 					capability: "transcription",
@@ -187,10 +262,25 @@ export function buildRuntime(
 					problem: creds ? undefined : "Add an OpenAI API key",
 				}
 			: { capability: "image", provider: "Off", ready: false, problem: "Images turned off" },
+		{
+			capability: "sound",
+			provider: "ElevenLabs",
+			ready: !!keys.elevenlabs,
+			problem: keys.elevenlabs ? undefined : CONNECT_ELEVENLABS,
+		},
+		{
+			capability: "video",
+			provider: "Higgsfield",
+			ready: !!keys.higgsfield,
+			problem: keys.higgsfield ? undefined : CONNECT_HIGGSFIELD,
+		},
 	];
 
 	const need = (capability: Capability) => {
 		const s = status().find((x) => x.capability === capability);
+		// The optional providers' problem already says where to go.
+		if (!s?.ready && (capability === "sound" || capability === "video"))
+			throw new Error(`${s?.problem ?? "Not connected"}.`);
 		if (!s?.ready)
 			throw new Error(
 				`${capability === "tts" ? "Voice" : capability === "text" ? "Text model" : capability[0].toUpperCase() + capability.slice(1)} is not set up: ${s?.problem ?? "unavailable"}. Open Cue → Settings → AI.`,
@@ -213,6 +303,29 @@ export function buildRuntime(
 					voice,
 				};
 			}
+			if (ai.tts === "elevenlabs") {
+				// An OpenAI voice name (the project's other voice) is no ElevenLabs voice.
+				const asked =
+					options.voice &&
+					ELEVEN_VOICE_ID.test(options.voice) &&
+					!TTS_VOICES.includes(options.voice)
+						? options.voice
+						: undefined;
+				const voice = asked ?? options.elevenlabs?.voice;
+				const model = options.elevenlabs?.model;
+				if (!voice || !model) throw new Error("Choose an ElevenLabs voice (Generate → Voiceover).");
+				const spoken = await elevenSpeech(keys.elevenlabs as string, {
+					text,
+					voice,
+					model,
+				});
+				return {
+					audio: await asWav(spoken.audio, spoken.format),
+					provider: "elevenlabs",
+					model,
+					voice,
+				};
+			}
 			const model = options.model ?? "gpt-4o-mini-tts";
 			const voice = options.voice ?? "cedar";
 			return {
@@ -226,6 +339,22 @@ export function buildRuntime(
 				model,
 				voice,
 			};
+		},
+		async sound(prompt, options) {
+			need("sound");
+			return elevenSound(keys.elevenlabs as string, { text: prompt, ...options });
+		},
+		async music(prompt, options) {
+			need("sound");
+			return elevenMusic(keys.elevenlabs as string, { prompt, ...options });
+		},
+		async clip(input, file, onProgress) {
+			need("video");
+			return generateClip(keys.higgsfield as HiggsfieldKey, input, file, { onProgress });
+		},
+		async voices(search) {
+			if (!keys.elevenlabs) throw new Error(`${CONNECT_ELEVENLABS}.`);
+			return elevenVoices(keys.elevenlabs, { search });
 		},
 		async transcribe(file, options) {
 			need("transcription");

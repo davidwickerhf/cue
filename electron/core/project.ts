@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+	DEFAULT_ELEVEN_MODEL,
+	DEFAULT_ELEVEN_VOICE,
+	ELEVEN_MODEL_ID,
+	ELEVEN_VOICE_ID,
+} from "./elevenlabs";
 import { TRANSITION_KINDS } from "./transitions";
 import type {
 	AiSettings,
@@ -60,6 +66,9 @@ export const DEFAULT_AI: AiSettings = {
 	voiceInstructions: "Natural, warm and conversational. Clear, moderate pace.",
 	transcriptionModel: "gpt-4o-transcribe",
 	imageModel: "gpt-image-2.5-flare",
+	elevenVoice: DEFAULT_ELEVEN_VOICE,
+	elevenVoiceName: "George",
+	elevenModel: DEFAULT_ELEVEN_MODEL,
 };
 
 export const NO_CROP = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -275,6 +284,9 @@ export const aiSchema = z.object({
 	voiceInstructions: z.string().max(2000),
 	transcriptionModel: z.string().min(1),
 	imageModel: z.string().min(1),
+	elevenVoice: z.string().regex(ELEVEN_VOICE_ID, "Not an ElevenLabs voice id"),
+	elevenVoiceName: z.string().max(120),
+	elevenModel: z.string().regex(ELEVEN_MODEL_ID, "Not an ElevenLabs speech model"),
 });
 
 export const mediaInfoSchema = z.object({

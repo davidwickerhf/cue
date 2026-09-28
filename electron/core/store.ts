@@ -3451,7 +3451,7 @@ export class ProjectStore extends EventEmitter {
 		return added;
 	}
 
-	/** Generates a spoken take for a line (OpenAI voices or the macOS synthesiser). */
+	/** Generates a spoken take for a line (OpenAI, ElevenLabs or the macOS synthesiser). */
 	async generateTake(
 		lineId: string,
 		runtime: AiRuntime,
@@ -3466,6 +3466,7 @@ export class ProjectStore extends EventEmitter {
 			voice: overrides.voice ?? ai.voice,
 			instructions: overrides.instructions ?? ai.voiceInstructions,
 			model: ai.ttsModel,
+			elevenlabs: { voice: ai.elevenVoice, model: ai.elevenModel },
 		});
 		const folder = path.join(this.projectDir, "takes", safeSegment(line.id));
 		await fs.mkdir(folder, { recursive: true });
@@ -3476,7 +3477,7 @@ export class ProjectStore extends EventEmitter {
 		);
 		await fs.writeFile(wav, spoken.audio);
 		return this.addTakeFile(line.id, wav, "tts", actor, {
-			name: `AI ${spoken.voice} ${count}`,
+			name: `AI ${spoken.provider === "elevenlabs" && spoken.voice === ai.elevenVoice ? (ai.elevenVoiceName ?? spoken.voice) : spoken.voice} ${count}`,
 			generation: {
 				provider: spoken.provider,
 				model: spoken.model,

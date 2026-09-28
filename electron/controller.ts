@@ -33,6 +33,7 @@ import {
 	recordCursor,
 	studioDir,
 } from "./core/cursor";
+import { ELEVEN_MUSIC_MODEL, ELEVEN_SOUND_MODEL } from "./core/elevenlabs";
 import type { Rasteriser } from "./core/exporter";
 import { downloadFound, type FoundMedia, findMedia } from "./core/findMedia";
 import { scanProjects, summarise } from "./core/library";
@@ -61,7 +62,7 @@ import {
 	saveRecipes,
 } from "./core/recipes";
 import { analyzeReference } from "./core/reference";
-import type { AiRuntime } from "./core/runtime";
+import { type AiRuntime, CONNECT_ELEVENLABS, CONNECT_HIGGSFIELD } from "./core/runtime";
 import { type NativeCapture, nativeMp4Args, startNativeCapture } from "./core/screenrec";
 import { downloadSfx, generateSfx, searchSfx } from "./core/sfx";
 import { parseSrt } from "./core/srt";
@@ -79,6 +80,13 @@ import type {
 	RecentProject,
 	RecorderStatus,
 } from "./core/types";
+
+const slugName = (s: string) =>
+	s
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, 40);
 
 /** Tracks found with find_music, by id, for import_music. */
 const foundMusic = new Map<string, MusicTrack>();
@@ -1898,15 +1906,22 @@ export class Controller extends EventEmitter {
 			}
 			case "generate_music": {
 				const input = parseInput("generate_music", params);
+				const startMs = input.atMs ?? input.startMs;
 				const end = this.store.timelineEndMs();
-				const durationMs = input.durationMs ?? Math.max(10000, end - input.startMs);
+				const durationMs = input.durationMs ?? input.lengthMs ?? Math.max(10000, end - startMs);
+				if (input.prompt) return this.composeMusic(input.prompt, startMs, durationMs, input, actor);
+				if (!input.mood)
+					throw new Error(
+						"Give a mood (Cue composes it) or a prompt (ElevenLabs composes it from the description).",
+					);
+				const mood = input.mood;
 				const file = path.join(
 					this.store.projectDir,
 					"generated",
-					`music-${input.mood}-${Date.now().toString(36)}.m4a`,
+					`music-${mood}-${Date.now().toString(36)}.m4a`,
 				);
-				const made = await this.job(`Composing ${input.mood} music`, () =>
-					generateMusic({ mood: input.mood, durationMs, key: input.key, bpm: input.bpm }, file),
+				const made = await this.job(`Composing ${mood} music`, () =>
+					generateMusic({ mood, durationMs, key: input.key, bpm: input.bpm }, file),
 				);
 				const { asset, clipId, trackId } = await this.store.addMusic(file, actor, {
 					name: `Music: ${made.mood}, ${made.key}, ${made.bpm} bpm`,
@@ -1918,7 +1933,7 @@ export class Controller extends EventEmitter {
 					place: input.place
 						? {
 								trackId: input.trackId,
-								startMs: input.startMs,
+								startMs,
 								durationMs,
 								fadeInMs: 0,
 								fadeOutMs: 0,
@@ -2020,6 +2035,74 @@ export class Controller extends EventEmitter {
 					note: "Original sounds made by Cue: no credit needed. Each is a different variant.",
 				};
 			}
+			case "generate_sound": {
+				const input = parseInput("generate_sound", params);
+				const runtime = await this.connected("sound");
+				const times = Array.isArray(input.atMs)
+					? input.atMs
+					: input.atMs !== undefined
+						? [input.atMs]
+						: [];
+				const count = Math.max(input.variants, times.length);
+				const name = input.prompt.replace(/\s+/g, " ").slice(0, 50);
+				// Every variant is made first (one job), then all are filed and placed.
+				const files = await this.job(
+					`Generating ${count > 1 ? `${count} sounds` : "a sound"}`,
+					async (progress) => {
+						const out: string[] = [];
+						for (let i = 0; i < count; i++) {
+							const mp3 = await runtime.sound(input.prompt, {
+								durationSeconds: input.durationSeconds,
+								promptInfluence: input.promptInfluence,
+								loop: input.loop,
+							});
+							out.push(await this.saveGeneratedAudio(mp3, "sfx", `${name}-${i + 1}`, "wav"));
+							progress((i + 1) / count);
+						}
+						return out;
+					},
+				);
+				const made = [];
+				for (const [i, file] of files.entries()) {
+					const at = times.length > 1 ? times[i] : i === 0 ? times[0] : undefined;
+					const { asset, clipId, trackId } = await this.store.addSound(file, actor, {
+						name: `SFX: ${name}${count > 1 ? ` #${i + 1}` : ""}`,
+						generation: {
+							provider: "elevenlabs",
+							model: ELEVEN_SOUND_MODEL,
+							prompt: input.prompt,
+						},
+						place:
+							at !== undefined
+								? { trackId: input.trackId, atMs: at, volume: input.volume }
+								: undefined,
+					});
+					made.push({ ...this.describeAsset(asset), clipId, trackId });
+				}
+				return {
+					sounds: made,
+					note: "Made with ElevenLabs from your description: no credit needed. Listen with preview_media; unplaced variants are in the media.",
+				};
+			}
+			case "list_voices": {
+				const { search } = parseInput("list_voices", params);
+				const runtime = await this.hooks.runtime();
+				const voices = await runtime.voices(search);
+				const ai = this.store.isOpen ? this.store.current.ai : undefined;
+				return {
+					voices: voices.map((v) => ({
+						id: v.id,
+						name: v.name,
+						category: v.category,
+						labels: v.labels,
+						previewUrl: v.previewUrl,
+						...(ai?.elevenVoice === v.id ? { chosen: true } : {}),
+					})),
+					note: "Choose one with update_ai {ai: {elevenVoice: id, elevenVoiceName: name}}.",
+				};
+			}
+			case "generate_clip":
+				return this.generateClip(parseInput("generate_clip", params), actor);
 			case "seek":
 				return this.command({ type: "seek", ms: parseInput("seek", params).ms });
 			case "play":
@@ -2235,6 +2318,161 @@ export class Controller extends EventEmitter {
 				this.changed();
 			}, 6000);
 		}
+	}
+
+	/** The runtime, once the optional provider behind a capability is connected (else says where to connect it). */
+	private async connected(capability: "sound" | "video"): Promise<AiRuntime> {
+		const runtime = await this.hooks.runtime();
+		const status = runtime.status().find((s) => s.capability === capability);
+		if (!status?.ready)
+			throw new Error(
+				`${status?.problem ?? (capability === "sound" ? CONNECT_ELEVENLABS : CONNECT_HIGGSFIELD)}.`,
+			);
+		return runtime;
+	}
+
+	/** Converts generated audio into the project (WAV for sounds, so they start exactly on time). */
+	private async saveGeneratedAudio(
+		audio: Buffer,
+		folder: string,
+		name: string,
+		ext: "wav" | "mp3",
+	): Promise<string> {
+		const dir = path.join(this.store.projectDir, folder);
+		await fs.mkdir(dir, { recursive: true });
+		const base = path.join(dir, `${slugName(name) || "sound"}-${Date.now().toString(36)}`);
+		if (ext === "mp3") {
+			await fs.writeFile(`${base}.mp3`, audio);
+			return `${base}.mp3`;
+		}
+		await fs.writeFile(`${base}.download`, audio);
+		try {
+			await ffmpeg(["-i", `${base}.download`, "-ar", "48000", "-ac", "2", `${base}.wav`]);
+		} finally {
+			await fs.rm(`${base}.download`, { force: true });
+		}
+		return `${base}.wav`;
+	}
+
+	/** generate_music with a prompt: ElevenLabs composes it, then it goes on the music track. */
+	private async composeMusic(
+		prompt: string,
+		startMs: number,
+		durationMs: number,
+		input: MethodInput<"generate_music">,
+		actor: Actor,
+	) {
+		if (durationMs < 3000 || durationMs > 600000)
+			throw new Error(
+				"ElevenLabs music is 3 seconds to 10 minutes long: set durationMs in that range.",
+			);
+		const runtime = await this.connected("sound");
+		const file = await this.job("Composing music with ElevenLabs", async () =>
+			this.saveGeneratedAudio(
+				await runtime.music(prompt, { lengthMs: durationMs, instrumental: input.instrumental }),
+				"generated",
+				`music-${prompt.slice(0, 30)}`,
+				"mp3",
+			),
+		);
+		const { asset, clipId, trackId } = await this.store.addMusic(file, actor, {
+			name: `Music: ${prompt.replace(/\s+/g, " ").slice(0, 60)}`,
+			generation: { provider: "elevenlabs", model: ELEVEN_MUSIC_MODEL, prompt },
+			place: input.place
+				? { trackId: input.trackId, startMs, durationMs, fadeInMs: 1000, fadeOutMs: 2500 }
+				: undefined,
+		});
+		return {
+			...this.describeAsset(asset),
+			clipId,
+			trackId,
+			note: "Made with ElevenLabs from your description: no credit needed. It is ducked under the voiceover.",
+		};
+	}
+
+	/** generate_clip: a Higgsfield clip, from a prompt and optionally a start picture. */
+	private async generateClip(input: MethodInput<"generate_clip">, actor: Actor) {
+		const runtime = await this.connected("video");
+		const starts = [input.imageAssetId, input.imagePath, input.frameAtMs].filter(
+			(x) => x !== undefined,
+		);
+		if (starts.length > 1)
+			throw new Error("Give one start picture: imageAssetId, imagePath or frameAtMs.");
+		let image: string | undefined;
+		if (input.imageAssetId !== undefined) {
+			const asset = this.store.current.assets.find((a) => a.id === input.imageAssetId);
+			if (!asset) throw new Error(`No media "${input.imageAssetId}".`);
+			if (asset.kind !== "image")
+				throw new Error(
+					`${asset.name} is not a picture: pass an image, or frameAtMs for a frame of the edit.`,
+				);
+			image = this.store.assetPath(asset.id);
+		} else if (input.imagePath !== undefined) {
+			image = path.resolve(input.imagePath);
+			if (!/\.(png|jpe?g|webp)$/i.test(image))
+				throw new Error("imagePath must be a PNG, JPEG or WebP picture.");
+			if (!existsSync(image)) throw new Error(`No such file: ${image}`);
+		} else if (input.frameAtMs !== undefined) {
+			image = await this.hooks.captureFrame(input.frameAtMs);
+		}
+		const file = path.join(
+			this.store.projectDir,
+			"generated",
+			`clip-${slugName(input.prompt).slice(0, 40) || "video"}-${Date.now().toString(36)}.mp4`,
+		);
+		const made = await this.job("Generating a video clip with Higgsfield", (progress) =>
+			runtime.clip(
+				{
+					prompt: input.prompt,
+					image,
+					model: input.model,
+					durationSec: input.durationSec,
+					...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
+				},
+				file,
+				progress,
+			),
+		);
+		let trackId = input.trackId;
+		if (input.atMs !== undefined && !trackId)
+			trackId =
+				this.store.current.tracks.find((t) => t.kind === "video" && !t.locked)?.id ??
+				(this.store.apply({ type: "addTrack", kind: "video", name: "Video" }, actor)
+					.created?.[0] as string);
+		const [imported] = await this.store.importMedia(
+			[made.file],
+			actor,
+			input.atMs !== undefined && trackId ? { trackId, startMs: input.atMs } : undefined,
+		);
+		if (!imported) throw new Error("Could not import the clip.");
+		const line = `Video generated with Higgsfield (${made.label}).`;
+		const patch = {
+			name: `AI clip: ${input.prompt.replace(/\s+/g, " ").slice(0, 60)}`,
+			origin: "generated" as const,
+			generation: { provider: "higgsfield", model: made.model, prompt: input.prompt },
+			credit: {
+				title: input.prompt.slice(0, 120),
+				creator: `Higgsfield (${made.label})`,
+				licence: "Generated",
+				sourceUrl: made.url,
+				line,
+			},
+		};
+		this.store.apply({ type: "updateAsset", id: imported.id, patch }, actor);
+		const placed =
+			input.atMs !== undefined
+				? [...this.store.current.clips]
+						.reverse()
+						.find((c) => c.type === "media" && c.assetId === imported.id)
+				: undefined;
+		return {
+			...this.describeAsset({ ...imported, ...patch }),
+			clipId: placed?.id,
+			trackId: placed?.trackId,
+			seconds: made.durationSec,
+			model: made.label,
+			note: `Saved to ${path.relative(this.store.projectDir, made.file)}. ${line} It has no sound; check it with render_frame.`,
+		};
 	}
 
 	private async requireCredentials(): Promise<AiRuntime> {

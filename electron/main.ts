@@ -33,7 +33,9 @@ import type { AiCredentials } from "./core/ai";
 import { type CaptureSources, WALLPAPERS } from "./core/capture";
 import { cursorBinary, studioDir } from "./core/cursor";
 import { diffSnapshot } from "./core/delta";
+import { testElevenLabs } from "./core/elevenlabs";
 import type { TextRender } from "./core/exporter";
+import { testHiggsfield } from "./core/higgsfield";
 import {
 	detectLocal,
 	downloadWhisperModel,
@@ -45,8 +47,20 @@ import { mcpClients } from "./core/mcpClients";
 import { ffmpeg } from "./core/media";
 import { resolveInProject } from "./core/paths";
 import { isProjectFile, PROJECT_EXTENSION } from "./core/project";
-import { type AppSettings, appSettingsSchema, buildRuntime } from "./core/runtime";
+import {
+	type AppSettings,
+	appSettingsSchema,
+	buildRuntime,
+	type Connections,
+} from "./core/runtime";
 import { captureBinary } from "./core/screenrec";
+import {
+	parseSecrets,
+	type SecretProvider,
+	type Secrets,
+	serializeSecrets,
+	withSecret,
+} from "./core/secrets";
 import { ProjectStore } from "./core/store";
 import type {
 	Asset,
@@ -362,28 +376,64 @@ async function handleDisplayMedia(
 // Credentials: stored encrypted with the OS keychain via safeStorage
 // ---------------------------------------------------------------------------
 
-async function credentials(): Promise<AiCredentials | null> {
+/** Every stored key (OpenAI, ElevenLabs, Higgsfield); files from older versions hold only OpenAI's. */
+async function readSecrets(): Promise<Secrets> {
 	try {
-		const raw = await fs.readFile(secretsFile);
-		const parsed = JSON.parse(safeStorage.decryptString(raw)) as { openai?: string };
-		if (parsed.openai) return { apiKey: parsed.openai };
-	} catch {}
+		return parseSecrets(safeStorage.decryptString(await fs.readFile(secretsFile)));
+	} catch {
+		return {};
+	}
+}
+
+async function credentials(): Promise<AiCredentials | null> {
+	const { openai } = await readSecrets();
+	if (openai) return { apiKey: openai };
 	return process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : null;
 }
 
-async function saveApiKey(key: string | null): Promise<void> {
-	if (!key) {
+async function connections(): Promise<Connections> {
+	const { elevenlabs, higgsfield } = await readSecrets();
+	return { elevenlabs, higgsfield };
+}
+
+/** Stores (or with null removes) one provider's key, keeping the others. */
+async function saveSecret<P extends SecretProvider>(
+	provider: P,
+	value: Secrets[P] | null,
+): Promise<void> {
+	const next = serializeSecrets(withSecret(await readSecrets(), provider, value));
+	if (!next) {
 		await fs.rm(secretsFile, { force: true });
 		return;
 	}
 	if (!safeStorage.isEncryptionAvailable())
 		throw new Error("Secure storage is not available on this system.");
 	await fs.mkdir(dataDir, { recursive: true });
-	await fs.writeFile(
-		secretsFile,
-		safeStorage.encryptString(JSON.stringify({ openai: key.trim() })),
-		{ mode: 0o600 },
-	);
+	await fs.writeFile(secretsFile, safeStorage.encryptString(next), { mode: 0o600 });
+}
+
+async function saveApiKey(key: string | null): Promise<void> {
+	await saveSecret("openai", key?.trim() || null);
+}
+
+/** Checks a connected provider's stored key with a cheap call; the reply never holds the key. */
+async function testConnection(provider: "elevenlabs" | "higgsfield"): Promise<{
+	ok: boolean;
+	message: string;
+}> {
+	const keys = await connections();
+	try {
+		if (provider === "elevenlabs") {
+			if (!keys.elevenlabs) return { ok: false, message: "No ElevenLabs key saved." };
+			await testElevenLabs(keys.elevenlabs);
+			return { ok: true, message: "ElevenLabs accepted the key." };
+		}
+		if (!keys.higgsfield) return { ok: false, message: "No Higgsfield key saved." };
+		await testHiggsfield(keys.higgsfield);
+		return { ok: true, message: "Higgsfield accepted the key." };
+	} catch (error) {
+		return { ok: false, message: (error as Error).message };
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -453,7 +503,12 @@ async function localInventory(force = false): Promise<LocalInventory> {
 }
 
 async function runtime() {
-	return buildRuntime(appSettings, await credentials(), await localInventory());
+	return buildRuntime(
+		appSettings,
+		await credentials(),
+		await localInventory(),
+		await connections(),
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -1428,6 +1483,29 @@ function registerIpc() {
 		await localInventory(true);
 		await controller.refreshAi();
 	});
+	ipcMain.handle(
+		"cue:setConnection",
+		async (
+			_event,
+			provider: "elevenlabs" | "higgsfield",
+			value: string | { id: string; secret: string } | null,
+		) => {
+			if (provider === "elevenlabs")
+				await saveSecret("elevenlabs", typeof value === "string" ? value.trim() || null : null);
+			else if (provider === "higgsfield")
+				await saveSecret(
+					"higgsfield",
+					value && typeof value === "object" && value.id?.trim() && value.secret?.trim()
+						? { id: value.id.trim(), secret: value.secret.trim() }
+						: null,
+				);
+			else throw new Error(`Unknown provider ${provider}`);
+			await controller.refreshAi();
+		},
+	);
+	ipcMain.handle("cue:testConnection", (_event, provider: "elevenlabs" | "higgsfield") =>
+		testConnection(provider),
+	);
 	ipcMain.handle("cue:getAppSettings", () => appSettings);
 	ipcMain.handle("cue:setAppSettings", (_event, patch: Partial<AppSettings>) =>
 		saveAppSettings(patch),
