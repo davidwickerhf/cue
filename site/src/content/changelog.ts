@@ -9,6 +9,16 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.10",
+		date: "2026-09-28",
+		summary: "Agents know what they can generate with your connected services, and when not to.",
+		changes: [
+			"Agents see at the start of every job what can be generated right now (voice, sound and music, video clips, images) and with which service, or which one to connect.",
+			"A new 'ai-generation' playbook: when to generate rather than find or film, honesty rules for news and documentary, prompts for each service, one voice and one look per project, silent clips given a sound, and spending your credits sensibly.",
+			"ElevenLabs v3 delivery tags such as [whispers] go only into the spoken take, never into the script or captions.",
+		],
+	},
+	{
 		version: "0.2.9",
 		date: "2026-09-28",
 		summary: "An After Effects–style timeline for motion graphics, one key for all AI services, and a calmer editor.",
