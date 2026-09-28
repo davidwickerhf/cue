@@ -9,6 +9,20 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.19",
+		date: "2026-09-28",
+		summary: "Motion tracking and corner pin.",
+		changes: [
+			"Track a green screen, a flat surface or anything that moves, then pin a clip onto it (a recording onto a laptop screen, a picture onto a wall) or make a title follow it. Tracks run both ways from every set of corners you give, show how sure they are, and are fixed by giving the right corners where they slip.",
+			"Agents track too (track_motion, apply_track, review_track), and check their work with a review image of the tracked corners.",
+			"The timeline shows which clips are keyed, tracked and pinned, and links them; the Inspector puts the corner pin and tracker first.",
+			"Chroma keys now remove green or blue spill on the edges.",
+			"Seedance goes to Higgsfield even with a fal key stored, and Kling and Hailuo switch to Higgsfield when a fal key stops working.",
+			"Images can be made from reference pictures (same person, place or style), and music can be composed section by section to an edit's structure.",
+			"Fixed: exports of clips with many keyframes, clips generated at the same moment sharing a start picture, and saving one key erasing others when the key file couldn't be read.",
+		],
+	},
+	{
 		version: "0.2.18",
 		date: "2026-09-28",
 		summary: "Seedance 2.0 video and photographic stills.",
