@@ -558,49 +558,89 @@ describe("compositing", () => {
 		expect(store.current.clips.filter((c) => c.trackId === "V1")).toHaveLength(1);
 	}, 90000);
 
-	it("never flashes black before the end of a clip that starts between two frames", async () => {
-		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-cut-grid-"));
-		const files = ["red", "blue", "green"].map((c) => path.join(dir, `${c}.mp4`));
-		for (const file of files)
-			await ffmpeg([
-				"-f",
-				"lavfi",
-				"-i",
-				`color=c=${path.basename(file, ".mp4")}:s=320x180:r=30:d=3`,
-				"-pix_fmt",
-				"yuv420p",
-				file,
-			]);
-		const store = new ProjectStore({
-			mediaUrl: (f) => f,
-			recentFile: path.join(dir, "recent.json"),
-			autoProxies: () => false,
-		});
-		await store.create({ path: path.join(dir, "grid"), name: "grid" });
-		store.apply({ type: "setCanvas", canvas: { width: 320, height: 180, fps: 24 } }, "user");
-		const [a, b, c] = await store.importMedia(files, "user");
-		// The blue clip starts at 1040 ms, between frames 24 and 25 at 24 fps, and ends on frame 48.
-		store.apply(
-			{
-				type: "addClips",
-				clips: [
-					{ type: "media", trackId: "V1", assetId: a.id, startMs: 0, durationMs: 1040 },
-					{ type: "media", trackId: "V1", assetId: b.id, startMs: 1040, durationMs: 960 },
-					{ type: "media", trackId: "V1", assetId: c.id, startMs: 2000, durationMs: 1000 },
-				],
-			},
-			"user",
-		);
-		store.apply(
-			{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
-			"user",
-		);
-		const out = (await store.export("video", "grid.mp4", "user")).outputs[0];
-		for (let f = 22; f <= 50; f++) {
-			const [r, g, bl] = await pixel(out, (f + 0.5) / 24, 160, 90, 320);
-			expect(r + g + bl, `frame ${f}`).toBeGreaterThan(100);
-		}
-	}, 90000);
+	it.each([
+		[1600, 1700],
+		[2150, 850],
+	])(
+		"never flashes black at the cuts around a clip at %i ms for %i ms",
+		async (st, du) => {
+			const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-cut-grid-"));
+			const files = ["red", "blue", "green"].map((c) => path.join(dir, `${c}.mp4`));
+			for (const file of files)
+				await ffmpeg([
+					"-f",
+					"lavfi",
+					"-i",
+					`color=c=${path.basename(file, ".mp4")}:s=432x270:r=30:d=3`,
+					"-pix_fmt",
+					"yuv420p",
+					file,
+				]);
+			const store = new ProjectStore({
+				mediaUrl: (f) => f,
+				recentFile: path.join(dir, "recent.json"),
+				autoProxies: () => false,
+			});
+			await store.create({ path: path.join(dir, "grid"), name: "grid" });
+			store.apply({ type: "setCanvas", canvas: { width: 320, height: 180, fps: 24 } }, "user");
+			const [a, b, c] = await store.importMedia(files, "user");
+			// The blue clip starts and ends between two frames at 24 fps and pushes in (keyframed scale and position).
+			store.apply(
+				{
+					type: "addClips",
+					clips: [
+						{ type: "media", trackId: "V1", assetId: a.id, startMs: 0, durationMs: st },
+						{
+							type: "media",
+							trackId: "V1",
+							assetId: b.id,
+							startMs: st,
+							durationMs: du,
+							transform: {
+								x: 0.4658,
+								y: 0.88,
+								scale: 1.9,
+								opacity: 1,
+								crop: { left: 0, top: 0, right: 0, bottom: 0 },
+							},
+							keyframes: {
+								scale: [
+									{ atMs: 0, value: 1.9, ease: "ease" },
+									{ atMs: du, value: 2.052, ease: "ease" },
+								],
+								x: [
+									{ atMs: 0, value: 0.4658, ease: "ease" },
+									{ atMs: du, value: 0.463064, ease: "ease" },
+								],
+								y: [
+									{ atMs: 0, value: 0.88, ease: "ease" },
+									{ atMs: du, value: 0.9104, ease: "ease" },
+								],
+							},
+						} as never,
+						{ type: "media", trackId: "V1", assetId: c.id, startMs: st + du, durationMs: 1000 },
+					],
+				},
+				"user",
+			);
+			store.apply(
+				{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
+				"user",
+			);
+			const out = (await store.export("video", "grid.mp4", "user")).outputs[0];
+			const bad: number[] = [];
+			for (
+				let f = Math.floor((st * 24) / 1000) - 1;
+				f <= Math.ceil(((st + du) * 24) / 1000) + 1;
+				f++
+			) {
+				const [r, g, bl] = await pixel(out, (f + 0.5) / 24, 160, 90, 320);
+				if (r + g + bl < 100) bad.push(f);
+			}
+			expect(bad, "black frames").toEqual([]);
+		},
+		90000,
+	);
 
 	it("exports wipes, slides, zoom, blur, paper, signal and ink transitions", async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-transitions-"));

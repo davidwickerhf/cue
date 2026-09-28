@@ -628,13 +628,16 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 		return `${index}:v`;
 	};
 
-	// Clips start and end on whole frames. A clip that starts between two frames has its own
-	// frames between the output's too, so its last one can come before the output frame just
-	// before its end, and that frame goes black.
-	const onFrame = (ms: number) => (Math.round((ms * fps) / 1000) * 1000) / fps;
+	// Clips start and end on whole frames, written exactly (38/24, not 1.583): setpts truncates
+	// a rounded start to the frame before, and a rounded end can give the frame at a cut to
+	// neither clip, so it goes black. A clip shows from its first frame up to the frame it ends on.
+	const frameOf = (ms: number) => Math.round((ms * fps) / 1000);
+	const edge = (frame: number) => ((frame - 0.5) / fps).toFixed(6);
 	for (const clip of layers) {
-		const start = s(onFrame(clip.startMs));
-		const end = s(onFrame(clipEnd(clip)));
+		const first = frameOf(clip.startMs);
+		const start = `${first}/${fps}`;
+		const from = edge(first);
+		const until = edge(frameOf(clipEnd(clip)));
 		const label = `v${n}`;
 		if (clip.type === "text") {
 			const render = rendered[clip.id];
@@ -652,9 +655,9 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 							render.file,
 						])
 					: addInput(["-framerate", String(render.fps), "-i", render.pattern]);
-			chains.push(`[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS+${start}/TB[${label}]`);
+			chains.push(`[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS+round(${start}/TB)[${label}]`);
 			chains.push(
-				`[${current}][${label}]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
+				`[${current}][${label}]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass[o${index}]`,
 			);
 			current = `o${index}`;
 			continue;
@@ -688,11 +691,11 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 				chains.push(`[${m}:v]format=gray,scale=${W}:${H}[${out}m]`);
 				chains.push(`[${out}g][${out}m]alphamerge[${out}k]`);
 				chains.push(
-					`[${out}a][${out}k]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass,format=yuva420p[${out}]`,
+					`[${out}a][${out}k]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass,format=yuva420p[${out}]`,
 				);
 			} else {
 				const vin = await vignetteInput(clip.effects?.vignette, W, H, lengthMs + 1000);
-				const timed = filterPiece(filters, out, `:enable='between(t,${start},${end})'`, vin);
+				const timed = filterPiece(filters, out, `:enable='between(t,${from},${until})'`, vin);
 				chains.push(`[${current}]null${timed},format=yuva420p[${out}]`);
 			}
 			current = out;
@@ -887,7 +890,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 					return `,scale=${W - 2 * PIN_PAD}:${H - 2 * PIN_PAD},format=rgba,pad=${W}:${H}:${PIN_PAD}:${PIN_PAD}:color=black@0,perspective=sense=destination:eval=frame:x0='${x0}':y0='${y0}':x1='${x1}':y1='${y1}':x2='${x2}':y2='${y2}':x3='${x3}':y3='${y3}'`;
 				})()
 			: "";
-		const finish = `${crop}${rounded}${pinned || size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+${start}/TB[${label}]`;
+		const finish = `${crop}${rounded}${pinned || size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+round(${start}/TB)[${label}]`;
 		if (clip.mask) {
 			// The mask is drawn once at the picture's size and becomes its alpha, before cropping and scaling.
 			// With a chroma key too, the key's alpha and the mask are multiplied so both apply.
@@ -952,10 +955,10 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 					: "",
 			].filter(Boolean);
 			chains.push(
-				`[${shade}:v]format=rgba,fps=${fps}${fadeShadow.length ? `,${fadeShadow.join(",")}` : ""},setpts=PTS-STARTPTS+${start}/TB[sd${label}]`,
+				`[${shade}:v]format=rgba,fps=${fps}${fadeShadow.length ? `,${fadeShadow.join(",")}` : ""},setpts=PTS-STARTPTS+round(${start}/TB)[sd${label}]`,
 			);
 			chains.push(
-				`[${current}][sd${label}]overlay=x=0:y=0:enable='between(t,${start},${end})':eof_action=pass[sdo${label}]`,
+				`[${current}][sd${label}]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass[sdo${label}]`,
 			);
 			current = `sdo${label}`;
 		}
@@ -982,13 +985,13 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			}[clip.blend];
 			chains.push(
 				`color=c=${neutral}:s=${W}x${H}:r=${fps}:d=${s(lengthMs)},format=rgba[nb${label}]`,
-				`[nb${label}][${label}]overlay=${position}:enable='between(t,${start},${end})':eof_action=pass,format=gbrap[nl${label}]`,
+				`[nb${label}][${label}]overlay=${position}:enable='between(t,${from},${until})':eof_action=pass,format=gbrap[nl${label}]`,
 				`[${current}]format=gbrap[bb${label}]`,
-				`[bb${label}][nl${label}]blend=all_mode=${mode}:enable='between(t,${start},${end})',format=yuva420p[o${index}]`,
+				`[bb${label}][nl${label}]blend=all_mode=${mode}:enable='between(t,${from},${until})',format=yuva420p[o${index}]`,
 			);
 		} else
 			chains.push(
-				`[${current}][${label}]overlay=${position}:enable='between(t,${start},${end})':eof_action=pass[o${index}]`,
+				`[${current}][${label}]overlay=${position}:enable='between(t,${from},${until})':eof_action=pass[o${index}]`,
 			);
 		current = `o${index}`;
 	}
