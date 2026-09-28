@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { Asset } from "../../../electron/core/types";
 import { motionPoster } from "../../lib/motion";
+import { app } from "../../lib/state";
 
 const peaksCache = new Map<string, Promise<number[]>>();
 const thumbsCache = new Map<string, Promise<{ intervalMs: number; urls: string[] }>>();
 
-// Keyed by media id and file, so relinked media and re-rendered sequences load afresh.
+// Keyed by project, media id and file, so relinked media, re-rendered sequences and a copy of
+// the project (same media ids, its own cache folder) load afresh.
+const cacheKey = (assetId: string, file: string) =>
+	`${app.get().state?.project?.path ?? ""}|${assetId}|${file}`;
+
 function loadPeaks(assetId: string, file: string) {
-	const key = `${assetId}|${file}`;
+	const key = cacheKey(assetId, file);
 	let p = peaksCache.get(key);
 	if (!p) {
 		p = window.cue.peaks(assetId).catch(() => []);
@@ -17,7 +22,7 @@ function loadPeaks(assetId: string, file: string) {
 }
 
 export function loadThumbs(assetId: string, file: string) {
-	const key = `${assetId}|${file}`;
+	const key = cacheKey(assetId, file);
 	let p = thumbsCache.get(key);
 	if (!p) {
 		p = window.cue.thumbnails(assetId).catch(() => ({ intervalMs: 0, urls: [] }));
