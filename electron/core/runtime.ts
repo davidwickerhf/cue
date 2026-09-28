@@ -398,8 +398,15 @@ export function buildRuntime(
 		},
 		async music(prompt, options) {
 			need("sound");
-			if (sounds.engine === "elevenlabs")
-				return elevenMusic(keys.elevenlabs as string, { prompt, ...options });
+			if (sounds.engine === "elevenlabs") {
+				try {
+					return await elevenMusic(keys.elevenlabs as string, { prompt, ...options });
+				} catch (error) {
+					// Music needs a paid ElevenLabs plan; fal's copy of the same model works on any fal key.
+					if (!keys.fal || !/\b402\b|paid plan|not available for free/i.test((error as Error).message))
+						throw error;
+				}
+			}
 			return falAudio(keys.fal as string, FAL_MUSIC_MODEL, {
 				prompt,
 				music_length_ms: Math.round(Math.min(600000, Math.max(3000, options.lengthMs))),
