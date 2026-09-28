@@ -337,6 +337,12 @@ export interface Frame {
 export interface Transition {
 	kind: import("./transitions").TransitionKind;
 	durationMs: number;
+	/**
+	 * How the clips were overlapped: head (this clip starts earlier into its own
+	 * spare frames), tail (the clip before runs on under it) or shift (no spare
+	 * frames, so this clip and the rest of its track moved left; older projects).
+	 */
+	made?: "head" | "tail" | "shift";
 }
 
 export interface MediaClip {

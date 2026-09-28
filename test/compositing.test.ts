@@ -613,16 +613,18 @@ describe("compositing", () => {
 				{ type: "addTransition", clipId: incoming.id, transition: { kind, durationMs: 1000 } },
 				"user",
 			);
+			// The overlap uses spare frames (the clip before runs on), so the cut stays at 2 s.
 			const moved = store.current.clips.find((c) => c.id === incoming.id) as MediaClip;
-			expect(moved.startMs).toBe(1000);
+			expect(moved.startMs).toBe(2000);
+			const mid = (moved.startMs + 500) / 1000;
 			store.apply(
 				{ type: "updateExport", export: { hardware: false, videoQuality: "high" } },
 				"user",
 			);
 			const out = (await store.export("video", `${kind}.mp4`, "user")).outputs[0];
-			// Halfway through (1.5 s): the incoming blue has covered half the frame.
-			const leftPx = await pixel(out, 1.5, 40, 90, 320);
-			const rightPx = await pixel(out, 1.5, 280, 90, 320);
+			// Halfway through: the incoming blue has covered half the frame.
+			const leftPx = await pixel(out, mid, 40, 90, 320);
+			const rightPx = await pixel(out, mid, 280, 90, 320);
 			if (kind === "wipe-left" || kind === "slide-left") {
 				expect(isRed(leftPx)).toBe(true);
 				expect(isBlue(rightPx)).toBe(true);
@@ -635,14 +637,14 @@ describe("compositing", () => {
 				expect(isBlue(leftPx)).toBe(true);
 				expect(isRed(rightPx)).toBe(true);
 			} else if (kind === "ink-blot") {
-				expect(isBlue(await pixel(out, 1.5, 160, 90, 320))).toBe(true);
-				expect(isRed(await pixel(out, 1.5, 2, 2, 320))).toBe(true);
+				expect(isBlue(await pixel(out, mid, 160, 90, 320))).toBe(true);
+				expect(isRed(await pixel(out, mid, 2, 2, 320))).toBe(true);
 			} else {
 				// Fading in: a mix of both.
 				expect(isRed(leftPx) || isBlue(leftPx)).toBe(false);
 			}
 			// Afterwards only the incoming clip shows.
-			expect(isBlue(await pixel(out, 2.5, 160, 90, 320))).toBe(true);
+			expect(isBlue(await pixel(out, mid + 0.75, 160, 90, 320))).toBe(true);
 		}
 	}, 180000);
 

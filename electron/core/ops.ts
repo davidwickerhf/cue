@@ -914,6 +914,78 @@ function media(data: ProjectData, id: string): MediaClip {
 	return c;
 }
 
+/** Spare source before a clip's in-point (ms of timeline); pictures and graphics have any amount. */
+function headRoom(data: ProjectData, c: MediaClip): number {
+	const a = data.assets.find((x) => x.id === c.assetId);
+	if (!a || a.kind !== "video") return Number.POSITIVE_INFINITY;
+	return c.inMs / c.speed;
+}
+
+/** Spare source after a clip's out-point (ms of timeline). */
+function tailRoom(data: ProjectData, c: MediaClip): number {
+	const a = data.assets.find((x) => x.id === c.assetId);
+	if (!a || a.kind !== "video" || !a.durationMs) return Number.POSITIVE_INFINITY;
+	return Math.max(0, (a.durationMs - c.inMs - c.durationMs * c.speed) / c.speed);
+}
+
+/** Clip-local times (keyframes, zooms, corner pin) moved by delta, so they stay at the same timeline moments. */
+function shiftLocal(c: MediaClip, delta: number): MediaClip {
+	const keyframes = c.keyframes
+		? Object.fromEntries(
+				Object.entries(c.keyframes).map(([p, list]) => [
+					p,
+					(list ?? []).map((k) => ({ ...k, atMs: Math.max(0, k.atMs + delta) })),
+				]),
+			)
+		: undefined;
+	return {
+		...c,
+		...(keyframes ? { keyframes } : {}),
+		...(c.zooms
+			? {
+					zooms: c.zooms.map((z) => ({
+						...z,
+						startMs: Math.max(0, z.startMs + delta),
+						endMs: Math.max(0, z.endMs + delta),
+					})),
+				}
+			: {}),
+		...(c.pin
+			? {
+					pin: {
+						keys: c.pin.keys.map((k) => ({ ...k, atMs: Math.max(0, k.atMs + delta) })),
+					},
+				}
+			: {}),
+	};
+}
+
+/** The clip starting ms earlier into its own spare frames; its end and everything it shows stay put. */
+function startEarlier(c: MediaClip, ms: number): MediaClip {
+	return shiftLocal(
+		{
+			...c,
+			startMs: c.startMs - ms,
+			durationMs: c.durationMs + ms,
+			inMs: Math.max(0, Math.round(c.inMs - ms * c.speed)),
+		},
+		ms,
+	);
+}
+
+/** Undoes startEarlier. */
+function startLater(c: MediaClip, ms: number): MediaClip {
+	return shiftLocal(
+		{
+			...c,
+			startMs: c.startMs + ms,
+			durationMs: c.durationMs - ms,
+			inMs: Math.round(c.inMs + ms * c.speed),
+		},
+		-ms,
+	);
+}
+
 function replaceClip(data: ProjectData, next: Clip): ProjectData {
 	return { ...data, clips: data.clips.map((c) => (c.id === next.id ? next : c)) };
 }
@@ -2491,18 +2563,43 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				next = applyOp(next, { type: "removeTransition", clipId: c.id }).data;
 			}
 			if (kind !== "dip") {
-				// Overlap the clips by d: this clip and everything after it on the track move left.
-				const current = clip(next, c.id);
-				const before = leftNeighbour(next, current) ?? left;
-				const shift = d - Math.max(0, clipEnd(before) - current.startMs);
-				next = shiftTrackFrom(next, current, -shift);
+				// Overlap the clips by d without moving the cut or anything after it, as editors do:
+				// this clip starts earlier into its own spare frames (head), or the clip before runs
+				// on under it (tail). Only with no spare frames on either side does the rest of the
+				// track move left (shift), which the summary says.
+				const current = clip(next, c.id) as MediaClip;
+				const before = (leftNeighbour(next, current) ?? left) as Clip;
+				const already = Math.max(0, clipEnd(before) - current.startMs);
+				const need = d - already;
+				const fade = fadesIn({ kind, durationMs: d }) ? d : 0;
+				const spareHead = headRoom(next, current);
+				const spareTail = before.type === "media" ? tailRoom(next, before) : 0;
+				let made: "head" | "tail" | "shift";
+				if (need <= 0) made = "head";
+				else if (spareHead >= need) {
+					made = "head";
+					next = replaceClip(next, startEarlier(current, need));
+				} else if (spareTail >= need) {
+					made = "tail";
+					next = replaceClip(next, {
+						...(before as MediaClip),
+						durationMs: before.durationMs + need,
+					});
+				} else {
+					made = "shift";
+					next = shiftTrackFrom(next, current, -need);
+				}
 				const moved = clip(next, c.id) as MediaClip;
 				next = replaceClip(next, {
 					...moved,
 					// Wipes and slides keep the picture solid; the others fade it in too.
-					fadeInMs: fadesIn({ kind, durationMs: d }) ? d : 0,
-					transitionIn: { kind, durationMs: d },
+					fadeInMs: fade,
+					transitionIn: { kind, durationMs: d, made },
 				});
+				return {
+					data: next,
+					summary: `Added a ${sec(d)} ${transitionLabel(kind).toLowerCase()} into ${c.name ?? c.id}${made === "shift" ? ` (no spare frames on either side, so the clips after it moved ${sec(need)} earlier)` : ""}`,
+				};
 			} else {
 				next = replaceClip(next, { ...(left as MediaClip), fadeOutMs: Math.round(d / 2) });
 				next = replaceClip(next, {
@@ -2522,8 +2619,11 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			let next = data;
 			const left = leftNeighbour(data, c, c.transitionIn.durationMs + 60);
 			if (overlaps(c.transitionIn)) {
-				const shift = left ? Math.max(0, clipEnd(left) - c.startMs) : 0;
-				next = shiftTrackFrom(next, c, shift);
+				const overlap = left ? Math.max(0, clipEnd(left) - c.startMs) : 0;
+				if (c.transitionIn.made === "head") next = replaceClip(next, startLater(c, overlap));
+				else if (c.transitionIn.made === "tail" && left)
+					next = replaceClip(next, { ...left, durationMs: left.durationMs - overlap });
+				else next = shiftTrackFrom(next, c, overlap);
 			} else if (left && left.type === "media") next = replaceClip(next, { ...left, fadeOutMs: 0 });
 			const { transitionIn: _gone, ...rest } = clip(next, c.id) as MediaClip;
 			next = replaceClip(next, { ...rest, fadeInMs: 0 });

@@ -94,6 +94,53 @@ describe("editing operations", () => {
 		expect((back.clips.find((c) => c.id === right.id) as MediaClip).startMs).toBe(4000);
 	});
 
+	it("a crossfade uses spare frames and leaves the rest of the track where it was", () => {
+		let { data, right } = twoClips();
+		data = applyOp(data, {
+			type: "addClips",
+			clips: [
+				{
+					type: "media",
+					trackId: "V1",
+					assetId: video.id,
+					startMs: 8000,
+					durationMs: 2000,
+					inMs: 0,
+				},
+			],
+		}).data;
+		const third = data.clips[2] as MediaClip;
+		// The incoming clip has 5 s of spare head: it starts earlier, its end and later clips stay.
+		const head = applyOp(data, {
+			type: "addTransition",
+			clipId: right.id,
+			transition: { kind: "crossfade", durationMs: 600 },
+		}).data;
+		const r = head.clips.find((c) => c.id === right.id) as MediaClip;
+		expect(r).toMatchObject({ startMs: 3400, durationMs: 4600, inMs: 4400 });
+		expect(r.transitionIn?.made).toBe("head");
+		expect(head.clips.find((c) => c.id === third.id)?.startMs).toBe(8000);
+		const undone = applyOp(head, { type: "removeTransition", clipId: right.id }).data;
+		expect(undone.clips.find((c) => c.id === right.id)).toMatchObject({
+			startMs: 4000,
+			durationMs: 4000,
+			inMs: 5000,
+		});
+		// The third clip has no spare head (in-point 0): the clip before it runs on under it instead.
+		const tail = applyOp(data, {
+			type: "addTransition",
+			clipId: third.id,
+			transition: { kind: "crossfade", durationMs: 600 },
+		}).data;
+		expect(tail.clips.find((c) => c.id === third.id)?.startMs).toBe(8000);
+		expect(tail.clips.find((c) => c.id === right.id)?.durationMs).toBe(4600);
+		expect((tail.clips.find((c) => c.id === third.id) as MediaClip).transitionIn?.made).toBe(
+			"tail",
+		);
+		const tailBack = applyOp(tail, { type: "removeTransition", clipId: third.id }).data;
+		expect(tailBack.clips.find((c) => c.id === right.id)?.durationMs).toBe(4000);
+	});
+
 	it("slip, roll and slide keep within the source", () => {
 		const { data, left, right } = twoClips();
 		const slipped = applyOp(data, { type: "slipClip", id: right.id, deltaMs: 2000 }).data;

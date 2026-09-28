@@ -295,6 +295,7 @@ export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temper
 export const transitionSchema = z.object({
 	kind: z.enum(TRANSITION_KINDS),
 	durationMs: z.number().min(40).max(5000),
+	made: z.enum(["head", "tail", "shift"]).optional(),
 });
 
 export const exportSchema = z.object({
