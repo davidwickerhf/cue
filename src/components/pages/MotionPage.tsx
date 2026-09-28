@@ -397,20 +397,61 @@ function topPictureTrack(tracks: { id: string; kind: string; locked?: boolean }[
 const DRAFT_PREFIX = "motion-draft:";
 let draftCount = 0;
 
-function hasImages(layers: unknown): boolean {
-	return (
-		Array.isArray(layers) && layers.some((l: Json) => l?.type === "image" || hasImages(l?.layers))
-	);
+/** The picture files a graphic's layers use (data URLs need no loading). */
+function imageSources(layers: unknown, into: string[] = []): string[] {
+	if (!Array.isArray(layers)) return into;
+	for (const l of layers as Json[]) {
+		if (l?.type === "image" && typeof l.src === "string" && !l.src.startsWith("data:"))
+			into.push(l.src);
+		imageSources(l?.layers, into);
+	}
+	return into;
 }
+
+/** Pictures read once as data URLs, so drafts with pictures compile here as well. */
+const pictures = new Map<string, string | null>();
+const loading = new Map<string, Promise<void>>();
+
+function loadPicture(file: string): Promise<void> {
+	let job = loading.get(file);
+	if (!job) {
+		job = fetch(`cue-media://local/${encodeURIComponent(file)}`)
+			.then((res) => (res.ok ? res.blob() : Promise.reject(new Error(String(res.status)))))
+			.then(
+				(blob) =>
+					new Promise<void>((resolve) => {
+						const reader = new FileReader();
+						reader.onload = () => {
+							pictures.set(file, typeof reader.result === "string" ? reader.result : null);
+							resolve();
+						};
+						reader.onerror = () => {
+							pictures.set(file, null);
+							resolve();
+						};
+						reader.readAsDataURL(blob);
+					}),
+			)
+			.catch(() => {
+				pictures.set(file, null);
+			});
+		loading.set(file, job);
+	}
+	return job;
+}
+
+const inProject = (dir: string, src: string) =>
+	/^(\/|[A-Za-z]:[\\/])/.test(src) ? src : `${dir.replace(/[\\/]$/, "")}/${src}`;
 
 /**
  * An unsaved version of the graphic compiled here, so the preview follows a
  * drag live (at most every few frames); saved versions come from the file.
- * Graphics with pictures wait for the save (their files are read by the app).
+ * Pictures are read once through the media protocol and kept as data.
  */
 function useDraftMotion(
 	draft: Json | null,
 	comp: { width: number; height: number; fps: number },
+	dir: string | undefined,
 ): string | null {
 	const [key, setKey] = useState<string | null>(null);
 	const pending = useRef<Json | null>(null);
@@ -419,7 +460,7 @@ function useDraftMotion(
 	const made = useRef<string[]>([]);
 	useEffect(() => {
 		pending.current = draft;
-		if (!draft || hasImages(draft.layers)) {
+		if (!draft) {
 			if (timer.current !== null) window.clearTimeout(timer.current);
 			timer.current = null;
 			setKey(null);
@@ -431,10 +472,22 @@ function useDraftMotion(
 			lastAt.current = performance.now();
 			const next = pending.current;
 			if (!next) return;
+			// Pictures load once; the draft compiles when they are here (the next change retries).
+			const files = imageSources(next.layers).map((src) => inProject(dir ?? "", src));
+			const missing = files.filter((f) => !pictures.has(f));
+			if (missing.length) {
+				void Promise.all(missing.map(loadPicture)).then(() => {
+					if (pending.current === next && timer.current === null) build();
+				});
+				return;
+			}
 			try {
 				// Only the size and rate: the project's own background is not the graphic's.
 				const { width, height, fps } = comp;
-				const json = compileMotion({ width, height, fps, ...next });
+				const json = compileMotion(
+					{ width, height, fps, ...next },
+					{ resolveImage: (src) => pictures.get(inProject(dir ?? "", src)) ?? null },
+				);
 				const k = `${DRAFT_PREFIX}${++draftCount}`;
 				provideMotion(k, json);
 				// Keep the last few (the preview shows the newest that has loaded), free the rest.
@@ -447,7 +500,7 @@ function useDraftMotion(
 		};
 		const wait = Math.max(0, 70 - (performance.now() - lastAt.current));
 		timer.current = window.setTimeout(build, wait);
-	}, [draft, comp]);
+	}, [draft, comp, dir]);
 	useEffect(
 		() => () => {
 			if (timer.current !== null) window.clearTimeout(timer.current);
@@ -510,7 +563,7 @@ function Stage({
 	const scale = Math.min(area.w / W, area.h / H) * 0.94;
 	const w = Math.max(2, Math.round(W * scale));
 	const h = Math.max(2, Math.round(H * scale));
-	const draftKey = useDraftMotion(draft, comp);
+	const draftKey = useDraftMotion(draft, comp, useProject()?.dir);
 	// What was drawn last: shown while a new version loads, so edits never blink.
 	const lastGood = useRef<string | null>(null);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: redraw when loaded (ready) too

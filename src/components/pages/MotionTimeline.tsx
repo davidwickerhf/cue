@@ -336,9 +336,14 @@ export function MotionTimeline({
 	// biome-ignore lint/correctness/useExhaustiveDependencies: listeners read the latest values through refs
 	useEffect(() => {
 		if (!dragging) return;
-		const onMove = (e: PointerEvent) => {
+		// Scrolled during the drag (at an edge): the time under the pointer moves by that much too.
+		const scroll0 = scroller.current?.scrollLeft ?? 0;
+		let last: { clientX: number; clientY: number } | null = null;
+		const onMove = (e: { clientX: number; clientY: number }) => {
+			last = { clientX: e.clientX, clientY: e.clientY };
 			const d = dragRef.current;
 			if (!d) return;
+			const shift = (scroller.current?.scrollLeft ?? scroll0) - scroll0;
 			const { px: p, atMs: playhead, rows: rs } = latest.current;
 			const tol = 6 / p;
 			if (d.kind === "scrub") return seekTo(msAt(e.clientX));
@@ -366,8 +371,8 @@ export function MotionTimeline({
 				setDrag({ ...d, x1, y1, picked });
 				return;
 			}
-			const moved = d.moved || Math.abs(e.clientX - d.x0) > 2;
-			const raw = (e.clientX - d.x0) / p;
+			const moved = d.moved || Math.abs(e.clientX + shift - d.x0) > 2;
+			const raw = (e.clientX + shift - d.x0) / p;
 			if (d.kind === "keys") {
 				const target = snapTime(d.anchor + raw, fps, [playhead], tol);
 				const delta = Math.round(clampKeyDelta(d.base, d.sel, target - d.anchor));
@@ -446,10 +451,29 @@ export function MotionTimeline({
 			if (next === d.base) return preview(null);
 			void commit(next);
 		};
+		// Near an edge of the visible time, the timeline scrolls, faster the further out.
+		let raf = 0;
+		const edgeScroll = () => {
+			raf = requestAnimationFrame(edgeScroll);
+			const el = scroller.current;
+			if (!el || !last) return;
+			const r = el.getBoundingClientRect();
+			const from = r.left + LEFT + 24;
+			const to = r.right - 32;
+			const x = last.clientX;
+			const speed =
+				x > to ? Math.min(28, (x - to) / 2 + 4) : x < from ? -Math.min(28, (from - x) / 2 + 4) : 0;
+			if (!speed) return;
+			const before = el.scrollLeft;
+			el.scrollLeft = Math.max(0, before + speed);
+			if (el.scrollLeft !== before) onMove(last);
+		};
+		raf = requestAnimationFrame(edgeScroll);
 		window.addEventListener("pointermove", onMove);
 		window.addEventListener("pointerup", onUp);
 		window.addEventListener("pointercancel", onUp);
 		return () => {
+			cancelAnimationFrame(raf);
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", onUp);
 			window.removeEventListener("pointercancel", onUp);
