@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.13",
+		date: "2026-09-28",
+		summary: "Shared usage includes how long exports take.",
+		changes: [
+			"If you share anonymous usage, an export also reports how many seconds it took and how that compares with the video's length, so slow exports show up and get fixed.",
+		],
+	},
+	{
 		version: "0.2.12",
 		date: "2026-09-28",
 		summary: "Help shape Cue: optional, anonymous usage sharing.",
