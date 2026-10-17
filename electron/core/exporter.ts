@@ -608,470 +608,591 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			) ?? Promise.reject(new Error("Open the Cue window to render text and graphics.")))
 		: {};
 
-	const inputs: string[] = [];
-	const chains: string[] = [
-		`color=c=${background}:s=${W}x${H}:r=${fps}:d=${s(lengthMs)},format=yuva420p[base]`,
-	];
-	let current = "base";
-	let n = 0;
-	// Labels for adjustment layers have their own counter: `n` must stay equal to the input count.
-	let adjustments = 0;
-	const addInput = (args: string[]) => {
-		inputs.push(...args);
-		return n++;
-	};
-	/** A looped vignette mask at a picture's size, as an input stream label. */
-	const vignetteInput = async (amount: number | undefined, w: number, h: number, ms: number) => {
-		if (!amount || amount <= 0) return undefined;
-		const file = await vignetteMask(amount, w, h);
-		const index = addInput(["-loop", "1", "-framerate", String(fps), "-t", s(ms), "-i", file]);
-		return `${index}:v`;
-	};
-
 	// Clips start and end on whole frames, written exactly (38/24, not 1.583): setpts truncates
 	// a rounded start to the frame before, and a rounded end can give the frame at a cut to
 	// neither clip, so it goes black. A clip shows from its first frame up to the frame it ends on.
 	const frameOf = (ms: number) => Math.round((ms * fps) / 1000);
 	const edge = (frame: number) => ((frame - 0.5) / fps).toFixed(6);
-	for (const clip of layers) {
-		const first = frameOf(clip.startMs);
-		const start = `${first}/${fps}`;
-		const from = edge(first);
-		const until = edge(frameOf(clipEnd(clip)));
-		const label = `v${n}`;
-		if (clip.type === "text") {
-			const render = rendered[clip.id];
-			if (!render) continue;
-			const index =
-				render.kind === "still"
-					? addInput([
-							"-loop",
-							"1",
-							"-framerate",
-							String(fps),
-							"-t",
-							s(clip.durationMs),
-							"-i",
-							render.file,
-						])
-					: addInput(["-framerate", String(render.fps), "-i", render.pattern]);
-			chains.push(`[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS+round(${start}/TB)[${label}]`);
-			chains.push(
-				`[${current}][${label}]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass[o${index}]`,
-			);
-			current = `o${index}`;
-			continue;
-		}
-		const a = assetOf(data, clip.assetId);
-		if (a.kind === "adjustment") {
-			// An adjustment layer grades everything composited so far, for as long as it lasts.
-			const filters = [
-				...gradeFilters(clip.color),
-				...effectFilters(clip.effects, H).filter((f) => !f.startsWith("glow:")),
-			];
-			if (!filters.length) continue;
-			const out = `adj${adjustments++}`;
-			if (clip.mask) {
-				// Masked: grade a copy, keep only the masked part of it and lay it over the
-				// original, so only that area changes (blur and redact boxes).
-				const maskFile = await maskImage(ctx.dir, clip.mask, W, H);
-				const m = addInput([
-					"-loop",
-					"1",
-					"-framerate",
-					String(fps),
-					"-t",
-					s(lengthMs + 1000),
-					"-i",
-					maskFile,
-				]);
-				chains.push(`[${current}]split[${out}a][${out}b]`);
-				const vin = await vignetteInput(clip.effects?.vignette, W, H, lengthMs + 1000);
-				chains.push(`[${out}b]null${filterPiece(filters, out, "", vin)},format=yuva420p[${out}g]`);
-				chains.push(`[${m}:v]format=gray,scale=${W}:${H}[${out}m]`);
-				chains.push(`[${out}g][${out}m]alphamerge[${out}k]`);
-				chains.push(
-					`[${out}a][${out}k]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass,format=yuva420p[${out}]`,
-				);
-			} else {
-				const vin = await vignetteInput(clip.effects?.vignette, W, H, lengthMs + 1000);
-				const timed = filterPiece(filters, out, `:enable='between(t,${from},${until})'`, vin);
-				chains.push(`[${current}]null${timed},format=yuva420p[${out}]`);
-			}
-			current = out;
-			continue;
-		}
-		const file = resolveInProject(ctx.dir, a.path);
-		const t = clip.transform;
-		const c = t.crop;
-		const motion = a.kind === "lottie" ? rendered[clip.id] : undefined;
-		if (a.kind === "lottie" && !motion) continue;
-		const sw = a.kind === "lottie" ? motionSizes[clip.id].width : a.width || W;
-		const sh = a.kind === "lottie" ? motionSizes[clip.id].height : a.height || H;
-		const fitBase = Math.min(W / sw, H / sh);
-		const cropW = 1 - c.left - c.right;
-		const cropH = 1 - c.top - c.bottom;
-		// Keyframes are stored in clip-local ms; keyframeExpr takes a variable in local seconds (`t` here).
-		const kf = clip.keyframes ?? {};
-		// The transition into this clip, as expressions of local seconds (same easing as the preview).
-		const tr =
-			clip.transitionIn && clip.transitionIn.kind !== "dip" ? clip.transitionIn : undefined;
-		const enteredAt = (T: string) => {
-			const p = `clip((${T})/${s(tr?.durationMs ?? 1)},0,1)`;
-			return `(${p})*(${p})*(3-2*(${p}))`;
+
+	/**
+	 * The filter graph for `win.frames` frames of the edit from frame `win.first`, with its
+	 * inputs. Times in the graph count from the window's first frame. A clip that began
+	 * before the window is read from where the window starts (`cut`, in its own ms) and its
+	 * own clock carries on from there, so its keyframes, fades and transitions stay where
+	 * they were. With `withAudio` the mix is added to the same graph.
+	 */
+	const buildGraph = async (win: { first: number; frames: number }, withAudio: boolean) => {
+		const inputs: string[] = [];
+		const chains: string[] = [
+			`color=c=${background}:s=${W}x${H}:r=${fps}:d=${(win.frames / fps).toFixed(6)},format=yuva420p[base]`,
+		];
+		let current = "base";
+		let n = 0;
+		// Labels for adjustment layers have their own counter: `n` must stay equal to the input count.
+		let adjustments = 0;
+		const addInput = (args: string[]) => {
+			inputs.push(...args);
+			return n++;
 		};
-		const zoomIn = (T: string) =>
-			tr?.kind === "zoom" ? `*(1+${ZOOM_FROM}*(1-${enteredAt(T)}))` : "";
-		const animatedScale = !!kf.scale?.length || tr?.kind === "zoom";
-		// Keyframes and wiggle may move in whole steps ("on twos"); `t` here is clip-local.
-		const stepT = steppedExpr("t", clip.stepFps);
-		const S = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, stepT) : String(t.scale)}${zoomIn("t")}`;
-		const seed = seedOf(clip.id);
-		const rotating = !!(t.rotation || kf.rotation?.length || clip.wiggle?.rotation);
-		// Zooms: zoompan keeps the frame size fixed (a scale that changes size per frame
-		// would leave crop working on the old size, pinning every zoom to the top left).
-		// The focus is centred where it can be, without showing past the picture's edge.
-		const zoom = zoomExprs(clip.zooms, "it");
-		const zoomChain = zoom
-			? `,zoompan=z='${zoom.scale}':x='max(0,min(iw-iw/zoom,${zoom.x}*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,${zoom.y}*ih-ih/zoom/2))':d=1:s=${sw}x${sh}:fps=${fps}`
-			: "";
-		const colorChain =
-			gradeFilters(clip.color)
-				.map((f) => `,${f}`)
-				.join("") +
-			effectChain(
-				clip.effects,
-				sh,
-				label,
-				await vignetteInput(clip.effects?.vignette, sw, sh, clip.durationMs + 1000),
-			) +
-			// Blur transition: a blurred copy dissolves into the sharp picture.
-			(tr?.kind === "blur"
-				? `,split[tbA${label}][tbB${label}];[tbB${label}]gblur=sigma=${((BLUR_FROM * sh) / 1080).toFixed(2)}:enable='lt(t,${s(tr.durationMs)})'[tbC${label}];` +
-					`[tbC${label}][tbA${label}]blend=all_expr='A*(1-${enteredAt("T")})+B*${enteredAt("T")}':enable='lt(t,${s(tr.durationMs)})'`
-				: "");
-		// Chroma key removes the screen colour before anything is composited.
-		// Then the spill: edge pixels still tinted by the screen are pulled back to neutral.
-		const keyChain = clip.key
-			? `,format=yuva420p,chromakey=color=0x${clip.key.color.slice(1)}:similarity=${clip.key.similarity.toFixed(3)}:blend=${clip.key.blend.toFixed(3)},format=rgba,despill=type=${spillOf(clip.key.color)}:mix=0.5:expand=0`
-			: "";
-		const crop =
-			c.left || c.top || c.right || c.bottom
-				? `,crop=w=iw*${cropW.toFixed(4)}:h=ih*${cropH.toFixed(4)}:x=iw*${c.left.toFixed(4)}:y=ih*${c.top.toFixed(4)}`
-				: "";
-		const baseW = sw * cropW * fitBase;
-		const baseH = sh * cropH * fitBase;
-		// Turning: the picture is turned at its own size inside a square that fits any angle
-		// (a filter can't follow a picture whose size changes), then that square is scaled.
-		const side = Math.hypot(sw * cropW, sh * cropH);
-		const turn = rotating
-			? `,format=rgba,pad=w=${Math.ceil(side / 2) * 2}:h=${Math.ceil(side / 2) * 2}:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0,rotate=a='(${keyframeExpr(kf.rotation, t.rotation ?? 0, stepT)}+${wiggleExpr(clip.wiggle, seed, stepT).rotation})*PI/180':c=none`
-			: "";
-		const boxW = rotating ? side * fitBase : baseW;
-		const boxH = rotating ? side * fitBase : baseH;
-		// A picture whose size changes each frame is padded to a fixed box (its largest size,
-		// centred): overlay keeps the first frame's size, so without it the scale never moved.
-		const peak =
-			Math.max(t.scale, ...(kf.scale ?? []).map((k) => k.value)) *
-			(tr?.kind === "zoom" ? 1 + ZOOM_FROM : 1) *
-			// Bezier eases can overshoot their keyframes.
-			((kf.scale ?? []).some((k) => k.ease === "bezier") ? 1.5 : 1);
-		const padW = Math.max(2, Math.ceil((boxW * peak) / 2) * 2 + 2);
-		const padH = Math.max(2, Math.ceil((boxH * peak) / 2) * 2 + 2);
-		const size =
-			turn +
-			(animatedScale
-				? `,scale=w='max(2,trunc(min(${padW},${boxW.toFixed(2)}*(${S}))/2)*2)':h='max(2,trunc(min(${padH},${boxH.toFixed(2)}*(${S}))/2)*2)':eval=frame,format=rgba,pad=w=${padW}:h=${padH}:x='(ow-iw)/2':y='(oh-ih)/2':color=black@0:eval=frame`
-				: `,scale=${Math.max(2, Math.round((boxW * t.scale) / 2) * 2)}:${Math.max(2, Math.round((boxH * t.scale) / 2) * 2)}`);
-		const opacity =
-			(kf.opacity?.length
-				? // Opacity keyframes: the alpha follows the curve (T is clip-local seconds here).
-					`,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*clip(${keyframeExpr(kf.opacity, t.opacity, steppedExpr("T", clip.stepFps))},0,1)'`
-				: t.opacity < 1
-					? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}`
-					: "") +
-			// Wipes: the alpha is cut off beyond a moving edge while the transition runs.
-			(tr?.kind === "wipe-left" || tr?.kind === "wipe-right"
-				? `,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*${tr.kind === "wipe-left" ? `gte(X,W*(1-${enteredAt("T")}))` : `lte(X,W*${enteredAt("T")})`}':enable='lt(t,${s(tr.durationMs)})'`
-				: "") +
-			(tr?.kind === "paper-tear"
-				? (() => {
-						const edge = `W*(${enteredAt("T")}+0.015*sin(Y/H*37.7)+0.009*sin(Y/H*100.5+1.2))`;
-						const fringe = `between(X,${edge}-8,${edge})`;
-						return `,geq=r='if(${fringe},235,r(X,Y))':g='if(${fringe},226,g(X,Y))':b='if(${fringe},206,b(X,Y))':a='alpha(X,Y)*lte(X,${edge})':enable='lt(t,${s(tr.durationMs)})'`;
-					})()
-				: "") +
-			(tr?.kind === "signal-glitch"
-				? (() => {
-						const edge = `W*(${enteredAt("T")}+0.13*sin(floor(Y/H*16)*13.2+floor(T*24)*2.3))`;
-						const scan = `if(lt(mod(Y,4),1),0.7,1)`;
-						return `,geq=r='r(min(W-1,X+7),Y)*${scan}':g='g(X,Y)*${scan}':b='b(max(0,X-7),Y)*${scan}':a='alpha(X,Y)*lte(X,${edge})':enable='lt(t,${s(tr.durationMs)})'`;
-					})()
-				: "") +
-			(tr?.kind === "ink-blot"
-				? (() => {
-						const dist = `sqrt((X/W-0.5)*(X/W-0.5)+(Y/H-0.5)*(Y/H-0.5))`;
-						const edge = `${enteredAt("T")}*0.82+0.02*sin(X/W*35)+0.015*sin(Y/H*51)`;
-						const rim = `between(${dist},${edge}-0.012,${edge})`;
-						return `,geq=r='if(${rim},18,r(X,Y))':g='if(${rim},28,g(X,Y))':b='if(${rim},23,b(X,Y))':a='alpha(X,Y)*lte(${dist},${edge})':enable='lt(t,${s(tr.durationMs)})'`;
-					})()
-				: "");
-		const fades = [
-			clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",
-			clip.fadeOutMs > 0
-				? `fade=t=out:st=${s(clip.durationMs - clip.fadeOutMs)}:d=${s(clip.fadeOutMs)}:alpha=1`
-				: "",
-		].filter(Boolean);
-		let index: number;
-		let source: string;
-		if (a.kind === "image") {
-			index = addInput([
+		/** Seek a held picture (or mask) past `cut` ms and keep its clock: frames start at `cut`. */
+		const seekHeld = (cut: number) => (cut > 0 ? ["-ss", s(cut), "-itsoffset", s(cut)] : []);
+		/** A picture held for `ms`, read from `cut` ms on. */
+		const heldInput = (file: string, ms: number, cut: number) =>
+			addInput([
+				...seekHeld(cut),
 				"-loop",
 				"1",
 				"-framerate",
 				String(fps),
 				"-t",
-				s(clip.durationMs),
+				s(Math.max(1000 / fps, ms - cut)),
 				"-i",
 				file,
 			]);
-			source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS`;
-		} else if (a.kind === "lottie" && motion?.kind === "still") {
-			// A graphic that doesn't change over the clip: one picture, held.
-			index = addInput([
-				"-loop",
-				"1",
-				"-framerate",
-				String(fps),
-				"-t",
-				s(clip.durationMs),
-				"-i",
-				motion.file,
-			]);
-			source = `[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS`;
-		} else if (a.kind === "lottie" && motion?.kind === "sequence") {
-			// Already one frame per output frame from the clip's start, speed and looping applied.
-			index = addInput(["-framerate", String(motion.fps), "-i", motion.pattern]);
-			source = `[${index}:v]format=rgba,setpts=PTS-STARTPTS,fps=${fps}`;
-		} else if (a.kind === "video") {
-			index = addInput(["-i", file]);
-			const steady = clip.effects?.stabilize
-				? `,vidstabtransform=input='${(await shakeAnalysis(ctx.dir, file, clip)).replace(/'/g, "\\'")}':smoothing=20:zoom=4`
-				: "";
-			source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))}${steady},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
-		} else continue;
-		// Rounded corners: an alpha mask the size of the cropped picture, multiplied into its alpha.
-		let rounded = "";
-		if (clip.frame?.radius) {
-			const cw = Math.max(2, Math.round((sw * cropW) / 2) * 2);
-			const ch = Math.max(2, Math.round((sh * cropH) / 2) * 2);
-			const radius = clip.frame.radius / (fitBase * Math.max(0.01, t.scale));
-			const m = addInput([
-				"-loop",
-				"1",
-				"-framerate",
-				String(fps),
-				"-t",
-				s(clip.durationMs + 1000),
-				"-i",
-				await roundedMask(ctx.dir, cw, ch, radius),
-			]);
-			chains.push(`[${m}:v]format=gray,scale=${cw}:${ch}[fm${label}]`);
-			rounded =
-				`,scale=${cw}:${ch},format=rgba,split[fa${label}][fb${label}];[fb${label}]alphaextract[fx${label}];` +
-				`[fx${label}][fm${label}]blend=all_mode=multiply:shortest=1[fy${label}];[fa${label}][fy${label}]alphamerge`;
-		}
-		// A pinned clip is stretched onto its corners instead: scaled to the canvas inside a
-		// transparent border, then sent there frame by frame (see pinExprs).
-		const PIN_PAD = 4;
-		const pinned = clip.pin
-			? (() => {
-					const [x0, y0, x1, y1, x2, y2, x3, y3] = pinExprs(clip.pin, fps, W, H, PIN_PAD);
-					return `,scale=${W - 2 * PIN_PAD}:${H - 2 * PIN_PAD},format=rgba,pad=${W}:${H}:${PIN_PAD}:${PIN_PAD}:color=black@0,perspective=sense=destination:eval=frame:x0='${x0}':y0='${y0}':x1='${x1}':y1='${y1}':x2='${x2}':y2='${y2}':x3='${x3}':y3='${y3}'`;
-				})()
-			: "";
-		const finish = `${crop}${rounded}${pinned || size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+round(${start}/TB)[${label}]`;
-		if (clip.mask) {
-			// The mask is drawn once at the picture's size and becomes its alpha, before cropping and scaling.
-			// With a chroma key too, the key's alpha and the mask are multiplied so both apply.
-			const maskFile = await maskImage(ctx.dir, clip.mask, sw, sh);
-			const m = addInput([
-				"-loop",
-				"1",
-				"-framerate",
-				String(fps),
-				"-t",
-				s(clip.durationMs + 1000),
-				"-i",
-				maskFile,
-			]);
-			chains.push(`${source}${zoomChain}${colorChain}${keyChain},format=yuva420p[pre${label}]`);
-			chains.push(`[${m}:v]format=gray,scale=${sw}:${sh}[mask${label}]`);
-			if (clip.key) {
-				chains.push(`[pre${label}]split[pic${label}][alp${label}]`);
-				chains.push(`[alp${label}]alphaextract[ka${label}]`);
-				chains.push(`[ka${label}][mask${label}]blend=all_mode=multiply[ma${label}]`);
-				chains.push(`[pic${label}][ma${label}]alphamerge${finish}`);
-			} else chains.push(`[pre${label}][mask${label}]alphamerge${finish}`);
-		} else {
-			chains.push(`${source}${zoomChain}${colorChain}${keyChain}${finish}`);
-		}
-		// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
-		const local = steppedExpr(`(t-${start})`, clip.stepFps);
-		const wig = wiggleExpr(clip.wiggle, seed, local);
-		const slide =
-			tr?.kind === "slide-left"
-				? `+(1-${enteredAt(local)})`
-				: tr?.kind === "slide-right"
-					? `-(1-${enteredAt(local)})`
-					: "";
-		const X = `${kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x)}${slide}`;
-		const Y = kf.y?.length ? keyframeExpr(kf.y, t.y, local) : String(t.y);
-		const Sg = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale)}${zoomIn(local)}`;
-		const dx = `${(((c.left - c.right) / 2) * sw * fitBase).toFixed(3)}*(${Sg})`;
-		const dy = `${(((c.top - c.bottom) / 2) * sh * fitBase).toFixed(3)}*(${Sg})`;
-		if (clip.frame?.shadow && !clip.pin) {
-			// The shadow sits under the picture where it rests (its keyframes aren't followed).
-			const box = {
-				x: W * t.x + ((c.left - c.right) / 2) * sw * fitBase * t.scale,
-				y: H * t.y + ((c.top - c.bottom) / 2) * sh * fitBase * t.scale,
-				w: baseW * t.scale,
-				h: baseH * t.scale,
+		/** A looped vignette mask at a picture's size, as an input stream label. */
+		const vignetteInput = async (
+			amount: number | undefined,
+			w: number,
+			h: number,
+			ms: number,
+			cut: number,
+		) => {
+			if (!amount || amount <= 0) return undefined;
+			const file = await vignetteMask(amount, w, h);
+			return `${heldInput(file, ms, cut)}:v`;
+		};
+		const winEnd = win.first + win.frames;
+		// Adjustment layers grade the picture composited so far, which runs on the window's
+		// clock: their masks are held for the window from its start, not from the clip's.
+		const windowMs = (win.frames * 1000) / fps;
+		const inWindow = layers.filter(
+			(c) => frameOf(clipEnd(c)) > win.first && frameOf(c.startMs) < winEnd,
+		);
+		for (const clip of inWindow) {
+			const first = frameOf(clip.startMs) - win.first;
+			const start = `${first}/${fps}`;
+			const from = edge(first);
+			const until = edge(frameOf(clipEnd(clip)) - win.first);
+			const label = `v${n}`;
+			// How far into the clip the window starts, in the clip's own ms. Stabilised video
+			// is analysed frame by frame from its start, so it is read from the start instead.
+			const stabilised = clip.type === "media" && !!clip.effects?.stabilize;
+			const cut = first < 0 && !stabilised ? (-first * 1000) / fps : 0;
+			// Sources start their clock at the clip's own `cut` instead of 0.
+			const local0 = cut > 0 ? `+${s(cut)}/TB` : "";
+			const fromFrame = cut > 0 ? ["-start_number", String(Math.round((cut * fps) / 1000))] : [];
+			if (clip.type === "text") {
+				const render = rendered[clip.id];
+				if (!render) continue;
+				const index =
+					render.kind === "still"
+						? heldInput(render.file, clip.durationMs, cut)
+						: addInput([...fromFrame, "-framerate", String(render.fps), "-i", render.pattern]);
+				chains.push(
+					`[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS${local0}+round(${start}/TB)[${label}]`,
+				);
+				chains.push(
+					`[${current}][${label}]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass[o${index}]`,
+				);
+				current = `o${index}`;
+				continue;
+			}
+			const a = assetOf(data, clip.assetId);
+			if (a.kind === "adjustment") {
+				// An adjustment layer grades everything composited so far, for as long as it lasts.
+				const filters = [
+					...gradeFilters(clip.color),
+					...effectFilters(clip.effects, H).filter((f) => !f.startsWith("glow:")),
+				];
+				if (!filters.length) continue;
+				const out = `adj${adjustments++}`;
+				if (clip.mask) {
+					// Masked: grade a copy, keep only the masked part of it and lay it over the
+					// original, so only that area changes (blur and redact boxes).
+					const maskFile = await maskImage(ctx.dir, clip.mask, W, H);
+					const m = heldInput(maskFile, windowMs + 1000, 0);
+					chains.push(`[${current}]split[${out}a][${out}b]`);
+					const vin = await vignetteInput(clip.effects?.vignette, W, H, windowMs + 1000, 0);
+					chains.push(
+						`[${out}b]null${filterPiece(filters, out, "", vin)},format=yuva420p[${out}g]`,
+					);
+					chains.push(`[${m}:v]format=gray,scale=${W}:${H}[${out}m]`);
+					chains.push(`[${out}g][${out}m]alphamerge[${out}k]`);
+					chains.push(
+						`[${out}a][${out}k]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass,format=yuva420p[${out}]`,
+					);
+				} else {
+					const vin = await vignetteInput(clip.effects?.vignette, W, H, windowMs + 1000, 0);
+					const timed = filterPiece(filters, out, `:enable='between(t,${from},${until})'`, vin);
+					chains.push(`[${current}]null${timed},format=yuva420p[${out}]`);
+				}
+				current = out;
+				continue;
+			}
+			const file = resolveInProject(ctx.dir, a.path);
+			const t = clip.transform;
+			const c = t.crop;
+			const motion = a.kind === "lottie" ? rendered[clip.id] : undefined;
+			if (a.kind === "lottie" && !motion) continue;
+			const sw = a.kind === "lottie" ? motionSizes[clip.id].width : a.width || W;
+			const sh = a.kind === "lottie" ? motionSizes[clip.id].height : a.height || H;
+			const fitBase = Math.min(W / sw, H / sh);
+			const cropW = 1 - c.left - c.right;
+			const cropH = 1 - c.top - c.bottom;
+			// Keyframes are stored in clip-local ms; keyframeExpr takes a variable in local seconds (`t` here).
+			const kf = clip.keyframes ?? {};
+			// The transition into this clip, as expressions of local seconds (same easing as the preview).
+			const tr =
+				clip.transitionIn && clip.transitionIn.kind !== "dip" ? clip.transitionIn : undefined;
+			const enteredAt = (T: string) => {
+				const p = `clip((${T})/${s(tr?.durationMs ?? 1)},0,1)`;
+				return `(${p})*(${p})*(3-2*(${p}))`;
 			};
-			const shade = addInput([
-				"-loop",
-				"1",
-				"-framerate",
-				String(fps),
-				"-t",
-				s(clip.durationMs),
-				"-i",
-				await shadowImage(ctx.dir, W, H, box, clip.frame),
-			]);
-			const fadeShadow = [
+			const zoomIn = (T: string) =>
+				tr?.kind === "zoom" ? `*(1+${ZOOM_FROM}*(1-${enteredAt(T)}))` : "";
+			const animatedScale = !!kf.scale?.length || tr?.kind === "zoom";
+			// Keyframes and wiggle may move in whole steps ("on twos"); `t` here is clip-local.
+			const stepT = steppedExpr("t", clip.stepFps);
+			const S = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, stepT) : String(t.scale)}${zoomIn("t")}`;
+			const seed = seedOf(clip.id);
+			const rotating = !!(t.rotation || kf.rotation?.length || clip.wiggle?.rotation);
+			// Zooms: zoompan keeps the frame size fixed (a scale that changes size per frame
+			// would leave crop working on the old size, pinning every zoom to the top left).
+			// The focus is centred where it can be, without showing past the picture's edge.
+			const zoom = zoomExprs(clip.zooms, "it");
+			// zoompan numbers its frames from 0 again, so a clip read from `cut` gets its clock back.
+			const zoomChain = zoom
+				? `,zoompan=z='${zoom.scale}':x='max(0,min(iw-iw/zoom,${zoom.x}*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,${zoom.y}*ih-ih/zoom/2))':d=1:s=${sw}x${sh}:fps=${fps}${local0 ? `,setpts=PTS-STARTPTS${local0}` : ""}`
+				: "";
+			const colorChain =
+				gradeFilters(clip.color)
+					.map((f) => `,${f}`)
+					.join("") +
+				effectChain(
+					clip.effects,
+					sh,
+					label,
+					await vignetteInput(clip.effects?.vignette, sw, sh, clip.durationMs + 1000, cut),
+				) +
+				// Blur transition: a blurred copy dissolves into the sharp picture.
+				(tr?.kind === "blur"
+					? `,split[tbA${label}][tbB${label}];[tbB${label}]gblur=sigma=${((BLUR_FROM * sh) / 1080).toFixed(2)}:enable='lt(t,${s(tr.durationMs)})'[tbC${label}];` +
+						`[tbC${label}][tbA${label}]blend=all_expr='A*(1-${enteredAt("T")})+B*${enteredAt("T")}':enable='lt(t,${s(tr.durationMs)})'`
+					: "");
+			// Chroma key removes the screen colour before anything is composited.
+			// Then the spill: edge pixels still tinted by the screen are pulled back to neutral.
+			const keyChain = clip.key
+				? `,format=yuva420p,chromakey=color=0x${clip.key.color.slice(1)}:similarity=${clip.key.similarity.toFixed(3)}:blend=${clip.key.blend.toFixed(3)},format=rgba,despill=type=${spillOf(clip.key.color)}:mix=0.5:expand=0`
+				: "";
+			const crop =
+				c.left || c.top || c.right || c.bottom
+					? `,crop=w=iw*${cropW.toFixed(4)}:h=ih*${cropH.toFixed(4)}:x=iw*${c.left.toFixed(4)}:y=ih*${c.top.toFixed(4)}`
+					: "";
+			const baseW = sw * cropW * fitBase;
+			const baseH = sh * cropH * fitBase;
+			// Turning: the picture is turned at its own size inside a square that fits any angle
+			// (a filter can't follow a picture whose size changes), then that square is scaled.
+			const side = Math.hypot(sw * cropW, sh * cropH);
+			const turn = rotating
+				? `,format=rgba,pad=w=${Math.ceil(side / 2) * 2}:h=${Math.ceil(side / 2) * 2}:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0,rotate=a='(${keyframeExpr(kf.rotation, t.rotation ?? 0, stepT)}+${wiggleExpr(clip.wiggle, seed, stepT).rotation})*PI/180':c=none`
+				: "";
+			const boxW = rotating ? side * fitBase : baseW;
+			const boxH = rotating ? side * fitBase : baseH;
+			// A picture whose size changes each frame is padded to a fixed box (its largest size,
+			// centred): overlay keeps the first frame's size, so without it the scale never moved.
+			const peak =
+				Math.max(t.scale, ...(kf.scale ?? []).map((k) => k.value)) *
+				(tr?.kind === "zoom" ? 1 + ZOOM_FROM : 1) *
+				// Bezier eases can overshoot their keyframes.
+				((kf.scale ?? []).some((k) => k.ease === "bezier") ? 1.5 : 1);
+			const padW = Math.max(2, Math.ceil((boxW * peak) / 2) * 2 + 2);
+			const padH = Math.max(2, Math.ceil((boxH * peak) / 2) * 2 + 2);
+			const size =
+				turn +
+				(animatedScale
+					? `,scale=w='max(2,trunc(min(${padW},${boxW.toFixed(2)}*(${S}))/2)*2)':h='max(2,trunc(min(${padH},${boxH.toFixed(2)}*(${S}))/2)*2)':eval=frame,format=rgba,pad=w=${padW}:h=${padH}:x='(ow-iw)/2':y='(oh-ih)/2':color=black@0:eval=frame`
+					: `,scale=${Math.max(2, Math.round((boxW * t.scale) / 2) * 2)}:${Math.max(2, Math.round((boxH * t.scale) / 2) * 2)}`);
+			const opacity =
+				(kf.opacity?.length
+					? // Opacity keyframes: the alpha follows the curve (T is clip-local seconds here).
+						`,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*clip(${keyframeExpr(kf.opacity, t.opacity, steppedExpr("T", clip.stepFps))},0,1)'`
+					: t.opacity < 1
+						? `,colorchannelmixer=aa=${t.opacity.toFixed(3)}`
+						: "") +
+				// Wipes: the alpha is cut off beyond a moving edge while the transition runs.
+				(tr?.kind === "wipe-left" || tr?.kind === "wipe-right"
+					? `,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*${tr.kind === "wipe-left" ? `gte(X,W*(1-${enteredAt("T")}))` : `lte(X,W*${enteredAt("T")})`}':enable='lt(t,${s(tr.durationMs)})'`
+					: "") +
+				(tr?.kind === "paper-tear"
+					? (() => {
+							const edge = `W*(${enteredAt("T")}+0.015*sin(Y/H*37.7)+0.009*sin(Y/H*100.5+1.2))`;
+							const fringe = `between(X,${edge}-8,${edge})`;
+							return `,geq=r='if(${fringe},235,r(X,Y))':g='if(${fringe},226,g(X,Y))':b='if(${fringe},206,b(X,Y))':a='alpha(X,Y)*lte(X,${edge})':enable='lt(t,${s(tr.durationMs)})'`;
+						})()
+					: "") +
+				(tr?.kind === "signal-glitch"
+					? (() => {
+							const edge = `W*(${enteredAt("T")}+0.13*sin(floor(Y/H*16)*13.2+floor(T*24)*2.3))`;
+							const scan = `if(lt(mod(Y,4),1),0.7,1)`;
+							return `,geq=r='r(min(W-1,X+7),Y)*${scan}':g='g(X,Y)*${scan}':b='b(max(0,X-7),Y)*${scan}':a='alpha(X,Y)*lte(X,${edge})':enable='lt(t,${s(tr.durationMs)})'`;
+						})()
+					: "") +
+				(tr?.kind === "ink-blot"
+					? (() => {
+							const dist = `sqrt((X/W-0.5)*(X/W-0.5)+(Y/H-0.5)*(Y/H-0.5))`;
+							const edge = `${enteredAt("T")}*0.82+0.02*sin(X/W*35)+0.015*sin(Y/H*51)`;
+							const rim = `between(${dist},${edge}-0.012,${edge})`;
+							return `,geq=r='if(${rim},18,r(X,Y))':g='if(${rim},28,g(X,Y))':b='if(${rim},23,b(X,Y))':a='alpha(X,Y)*lte(${dist},${edge})':enable='lt(t,${s(tr.durationMs)})'`;
+						})()
+					: "");
+			const fades = [
 				clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",
 				clip.fadeOutMs > 0
 					? `fade=t=out:st=${s(clip.durationMs - clip.fadeOutMs)}:d=${s(clip.fadeOutMs)}:alpha=1`
 					: "",
 			].filter(Boolean);
-			chains.push(
-				`[${shade}:v]format=rgba,fps=${fps}${fadeShadow.length ? `,${fadeShadow.join(",")}` : ""},setpts=PTS-STARTPTS+round(${start}/TB)[sd${label}]`,
-			);
-			chains.push(
-				`[${current}][sd${label}]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass[sdo${label}]`,
-			);
-			current = `sdo${label}`;
+			let index: number;
+			let source: string;
+			if (a.kind === "image") {
+				index = heldInput(file, clip.durationMs, cut);
+				source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS${local0}`;
+			} else if (a.kind === "lottie" && motion?.kind === "still") {
+				// A graphic that doesn't change over the clip: one picture, held.
+				index = heldInput(motion.file, clip.durationMs, cut);
+				source = `[${index}:v]format=rgba,fps=${fps},setpts=PTS-STARTPTS${local0}`;
+			} else if (a.kind === "lottie" && motion?.kind === "sequence") {
+				// Already one frame per output frame from the clip's start, speed and looping applied.
+				index = addInput([...fromFrame, "-framerate", String(motion.fps), "-i", motion.pattern]);
+				source = `[${index}:v]format=rgba,setpts=PTS-STARTPTS${local0},fps=${fps}`;
+			} else if (a.kind === "video") {
+				const steady = clip.effects?.stabilize
+					? `,vidstabtransform=input='${(await shakeAnalysis(ctx.dir, file, clip)).replace(/'/g, "\\'")}':smoothing=20:zoom=4`
+					: "";
+				if (cut > 0) {
+					// Seek the source to where the window starts instead of decoding up to it.
+					const skipped = cut * clip.speed;
+					index = addInput(["-ss", s(clip.inMs + skipped), "-i", file]);
+					source = `[${index}:v]trim=start=0:duration=${s(Math.max(1000 / fps, sourceSpan(clip) - skipped))}${steady},setpts=(PTS-STARTPTS)/${clip.speed}${local0},fps=${fps}`;
+				} else {
+					index = addInput(["-i", file]);
+					source = `[${index}:v]trim=start=${s(clip.inMs)}:duration=${s(sourceSpan(clip))}${steady},setpts=(PTS-STARTPTS)/${clip.speed},fps=${fps}`;
+				}
+			} else continue;
+			// Rounded corners: an alpha mask the size of the cropped picture, multiplied into its alpha.
+			let rounded = "";
+			if (clip.frame?.radius) {
+				const cw = Math.max(2, Math.round((sw * cropW) / 2) * 2);
+				const ch = Math.max(2, Math.round((sh * cropH) / 2) * 2);
+				const radius = clip.frame.radius / (fitBase * Math.max(0.01, t.scale));
+				const m = heldInput(
+					await roundedMask(ctx.dir, cw, ch, radius),
+					clip.durationMs + 1000,
+					cut,
+				);
+				chains.push(`[${m}:v]format=gray,scale=${cw}:${ch}[fm${label}]`);
+				rounded =
+					`,scale=${cw}:${ch},format=rgba,split[fa${label}][fb${label}];[fb${label}]alphaextract[fx${label}];` +
+					`[fx${label}][fm${label}]blend=all_mode=multiply:shortest=1[fy${label}];[fa${label}][fy${label}]alphamerge`;
+			}
+			// A pinned clip is stretched onto its corners instead: scaled to the canvas inside a
+			// transparent border, then sent there frame by frame (see pinExprs).
+			const PIN_PAD = 4;
+			const pinned = clip.pin
+				? (() => {
+						const [x0, y0, x1, y1, x2, y2, x3, y3] = pinExprs(clip.pin, fps, W, H, PIN_PAD);
+						return `,scale=${W - 2 * PIN_PAD}:${H - 2 * PIN_PAD},format=rgba,pad=${W}:${H}:${PIN_PAD}:${PIN_PAD}:color=black@0,perspective=sense=destination:eval=frame:x0='${x0}':y0='${y0}':x1='${x1}':y1='${y1}':x2='${x2}':y2='${y2}':x3='${x3}':y3='${y3}'`;
+					})()
+				: "";
+			const finish = `${crop}${rounded}${pinned || size},format=rgba${opacity}${fades.length ? `,${fades.join(",")}` : ""},setpts=PTS+round(${start}/TB)[${label}]`;
+			if (clip.mask) {
+				// The mask is drawn once at the picture's size and becomes its alpha, before cropping and scaling.
+				// With a chroma key too, the key's alpha and the mask are multiplied so both apply.
+				const maskFile = await maskImage(ctx.dir, clip.mask, sw, sh);
+				const m = heldInput(maskFile, clip.durationMs + 1000, cut);
+				chains.push(`${source}${zoomChain}${colorChain}${keyChain},format=yuva420p[pre${label}]`);
+				chains.push(`[${m}:v]format=gray,scale=${sw}:${sh}[mask${label}]`);
+				if (clip.key) {
+					chains.push(`[pre${label}]split[pic${label}][alp${label}]`);
+					chains.push(`[alp${label}]alphaextract[ka${label}]`);
+					chains.push(`[ka${label}][mask${label}]blend=all_mode=multiply[ma${label}]`);
+					chains.push(`[pic${label}][ma${label}]alphamerge${finish}`);
+				} else chains.push(`[pre${label}][mask${label}]alphamerge${finish}`);
+			} else {
+				chains.push(`${source}${zoomChain}${colorChain}${keyChain}${finish}`);
+			}
+			// Position: centre of the (uncropped) picture, shifted so the visible crop stays where it was.
+			const local = steppedExpr(`(t-${start})`, clip.stepFps);
+			const wig = wiggleExpr(clip.wiggle, seed, local);
+			const slide =
+				tr?.kind === "slide-left"
+					? `+(1-${enteredAt(local)})`
+					: tr?.kind === "slide-right"
+						? `-(1-${enteredAt(local)})`
+						: "";
+			const X = `${kf.x?.length ? keyframeExpr(kf.x, t.x, local) : String(t.x)}${slide}`;
+			const Y = kf.y?.length ? keyframeExpr(kf.y, t.y, local) : String(t.y);
+			const Sg = `${kf.scale?.length ? keyframeExpr(kf.scale, t.scale, local) : String(t.scale)}${zoomIn(local)}`;
+			const dx = `${(((c.left - c.right) / 2) * sw * fitBase).toFixed(3)}*(${Sg})`;
+			const dy = `${(((c.top - c.bottom) / 2) * sh * fitBase).toFixed(3)}*(${Sg})`;
+			if (clip.frame?.shadow && !clip.pin) {
+				// The shadow sits under the picture where it rests (its keyframes aren't followed).
+				const box = {
+					x: W * t.x + ((c.left - c.right) / 2) * sw * fitBase * t.scale,
+					y: H * t.y + ((c.top - c.bottom) / 2) * sh * fitBase * t.scale,
+					w: baseW * t.scale,
+					h: baseH * t.scale,
+				};
+				const shade = heldInput(
+					await shadowImage(ctx.dir, W, H, box, clip.frame),
+					clip.durationMs,
+					cut,
+				);
+				const fadeShadow = [
+					clip.fadeInMs > 0 ? `fade=t=in:st=0:d=${s(clip.fadeInMs)}:alpha=1` : "",
+					clip.fadeOutMs > 0
+						? `fade=t=out:st=${s(clip.durationMs - clip.fadeOutMs)}:d=${s(clip.fadeOutMs)}:alpha=1`
+						: "",
+				].filter(Boolean);
+				chains.push(
+					`[${shade}:v]format=rgba,fps=${fps}${fadeShadow.length ? `,${fadeShadow.join(",")}` : ""},setpts=PTS-STARTPTS${local0}+round(${start}/TB)[sd${label}]`,
+				);
+				chains.push(
+					`[${current}][sd${label}]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass[sdo${label}]`,
+				);
+				current = `sdo${label}`;
+			}
+			// Wiggle is in pixels of a 1080-line frame.
+			const position = clip.pin
+				? "x=0:y=0"
+				: `x='${W}*(${X})+${dx}+(${wig.x})*${(H / 1080).toFixed(5)}-w/2':y='${H}*(${Y})+${dy}+(${wig.y})*${(H / 1080).toFixed(5)}-h/2'`;
+			if (clip.blend && clip.blend !== "normal") {
+				// Blend modes: the picture is laid on a canvas of the mode's neutral colour (which
+				// leaves what is below unchanged), then that whole frame is blended with the edit.
+				const neutral =
+					clip.blend === "multiply" || clip.blend === "darken"
+						? "white"
+						: clip.blend === "screen" || clip.blend === "lighten"
+							? "black"
+							: "0x808080";
+				const mode = {
+					multiply: "multiply",
+					screen: "screen",
+					overlay: "overlay",
+					"soft-light": "softlight",
+					darken: "darken",
+					lighten: "lighten",
+				}[clip.blend];
+				chains.push(
+					`color=c=${neutral}:s=${W}x${H}:r=${fps}:d=${(win.frames / fps).toFixed(6)},format=rgba[nb${label}]`,
+					`[nb${label}][${label}]overlay=${position}:enable='between(t,${from},${until})':eof_action=pass,format=gbrap[nl${label}]`,
+					`[${current}]format=gbrap[bb${label}]`,
+					`[bb${label}][nl${label}]blend=all_mode=${mode}:enable='between(t,${from},${until})',format=yuva420p[o${index}]`,
+				);
+			} else
+				chains.push(
+					`[${current}][${label}]overlay=${position}:enable='between(t,${from},${until})':eof_action=pass[o${index}]`,
+				);
+			current = `o${index}`;
 		}
-		// Wiggle is in pixels of a 1080-line frame.
-		const position = clip.pin
-			? "x=0:y=0"
-			: `x='${W}*(${X})+${dx}+(${wig.x})*${(H / 1080).toFixed(5)}-w/2':y='${H}*(${Y})+${dy}+(${wig.y})*${(H / 1080).toFixed(5)}-h/2'`;
-		if (clip.blend && clip.blend !== "normal") {
-			// Blend modes: the picture is laid on a canvas of the mode's neutral colour (which
-			// leaves what is below unchanged), then that whole frame is blended with the edit.
-			const neutral =
-				clip.blend === "multiply" || clip.blend === "darken"
-					? "white"
-					: clip.blend === "screen" || clip.blend === "lighten"
-						? "black"
-						: "0x808080";
-			const mode = {
-				multiply: "multiply",
-				screen: "screen",
-				overlay: "overlay",
-				"soft-light": "softlight",
-				darken: "darken",
-				lighten: "lighten",
-			}[clip.blend];
-			chains.push(
-				`color=c=${neutral}:s=${W}x${H}:r=${fps}:d=${s(lengthMs)},format=rgba[nb${label}]`,
-				`[nb${label}][${label}]overlay=${position}:enable='between(t,${from},${until})':eof_action=pass,format=gbrap[nl${label}]`,
-				`[${current}]format=gbrap[bb${label}]`,
-				`[bb${label}][nl${label}]blend=all_mode=${mode}:enable='between(t,${from},${until})',format=yuva420p[o${index}]`,
-			);
-		} else
-			chains.push(
-				`[${current}][${label}]overlay=${position}:enable='between(t,${from},${until})':eof_action=pass[o${index}]`,
-			);
-		current = `o${index}`;
-	}
-	const scale = data.export.scale;
-	const outW = Math.round((W * scale) / 2) * 2;
-	const outH = Math.round((H * scale) / 2) * 2;
-	chains.push(`[${current}]${scale !== 1 ? `scale=${outW}:${outH},` : ""}format=yuv420p[vout]`);
+		const scale = data.export.scale;
+		const outW = Math.round((W * scale) / 2) * 2;
+		const outH = Math.round((H * scale) / 2) * 2;
+		chains.push(`[${current}]${scale !== 1 ? `scale=${outW}:${outH},` : ""}format=yuv420p[vout]`);
 
-	const audio = audibleClips(ctx);
-	const audioMaps: string[] = [];
-	if (audio.length) {
-		const first = n;
-		for (const src of audio) addInput(["-i", src.file]);
-		chains.push(...mixGraph(audio, first, lengthMs, data.export.normalize, "aout"));
-		audioMaps.push(
-			"-map",
-			"[aout]",
-			"-c:a",
-			data.export.codec === "prores" ? "pcm_s16le" : "aac",
-			...(data.export.codec === "prores" ? [] : ["-b:a", "192k"]),
-		);
-	}
+		const audioMaps: string[] = [];
+		const audio = withAudio ? audibleClips(ctx) : [];
+		if (audio.length) {
+			const first = n;
+			for (const src of audio) addInput(["-i", src.file]);
+			chains.push(...mixGraph(audio, first, lengthMs, data.export.normalize, "aout"));
+			audioMaps.push("-map", "[aout]", ...videoAudioCodec(data));
+		}
+		return { inputs, chains, audioMaps };
+	};
 
-	// Unique per export: two exports started in the same millisecond (tests run several at once)
-	// used to share a name and read each other's graph ("Invalid file index … in filtergraph").
-	const graph = path.join(
-		os.tmpdir(),
-		`cue-graph-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.txt`,
-	);
-	await fs.writeFile(graph, chains.join(";\n"));
 	const exported = ctx.range ? Math.min(lengthMs, ctx.range.endMs) - ctx.range.startMs : lengthMs;
-	// Every input gets its own decoder threads (about one per core) by default. A long,
-	// layered edit has 150–200 inputs, which runs the process out of threads (macOS allows
-	// 4,096) before the encoder opens: "Error initializing output stream" with any encoder.
-	// One decoder thread per input is plenty for stills, sequences and short clips; the
-	// filter graph and the encoder still use every core.
-	const inputCount = inputs.filter((a) => a === "-i").length;
-	const decodeThreads = inputCount > 24 ? ["-threads", "1"] : [];
-	const threadedInputs = inputs.flatMap((a) => (a === "-i" ? [...decodeThreads, a] : [a]));
-	const encode = (video: string[]) =>
-		ffmpegWithProgress(
-			[
-				...threadedInputs,
-				"-filter_complex_script",
-				graph,
-				"-map",
-				"[vout]",
-				...audioMaps,
-				...video,
-				"-r",
-				String(fps),
-				...rangeArgs(ctx.range, lengthMs),
-				...(out.endsWith(".mp4") ? ["-movflags", "+faststart"] : []),
-				out,
-			],
-			exported,
-			(fraction) =>
-				ctx.onProgress?.((drawn.length ? 0.5 : 0) + fraction * (drawn.length ? 0.5 : 1)),
+	const progress = (fraction: number) =>
+		ctx.onProgress?.((drawn.length ? 0.5 : 0) + fraction * (drawn.length ? 0.5 : 1));
+	// Once the Mac's hardware encoder has refused, the rest of the export uses the software one.
+	let encodeWith = data;
+
+	/** Encode one graph to `file`; `timing` limits what is written. */
+	const encodeGraph = async (
+		built: { inputs: string[]; chains: string[]; audioMaps: string[] },
+		file: string,
+		timing: string[],
+		ms: number,
+		onFraction: (fraction: number) => void,
+	) => {
+		// Unique per export: two exports started in the same millisecond (tests run several at once)
+		// used to share a name and read each other's graph ("Invalid file index … in filtergraph").
+		const graph = path.join(
+			os.tmpdir(),
+			`cue-graph-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.txt`,
 		);
-	try {
+		await fs.writeFile(graph, built.chains.join(";\n"));
+		// Every input gets its own decoder threads (about one per core) by default. A long,
+		// layered edit has 150–200 inputs, which runs the process out of threads (macOS allows
+		// 4,096) before the encoder opens: "Error initializing output stream" with any encoder.
+		// One decoder thread per input is plenty for stills, sequences and short clips; the
+		// filter graph and the encoder still use every core.
+		const inputCount = built.inputs.filter((a) => a === "-i").length;
+		const decodeThreads = inputCount > 24 ? ["-threads", "1"] : [];
+		const threadedInputs = built.inputs.flatMap((a) => (a === "-i" ? [...decodeThreads, a] : [a]));
+		const graphThreads = filterGraphThreads(inputCount);
+		const encode = (video: string[]) =>
+			ffmpegWithProgress(
+				[
+					...threadedInputs,
+					...(graphThreads ? ["-filter_complex_threads", String(graphThreads)] : []),
+					"-filter_complex_script",
+					graph,
+					"-map",
+					"[vout]",
+					...built.audioMaps,
+					...video,
+					"-r",
+					String(fps),
+					...timing,
+					...(file.endsWith(".mp4") ? ["-movflags", "+faststart"] : []),
+					file,
+				],
+				ms,
+				onFraction,
+			);
 		try {
-			await encode(encoder(data));
+			try {
+				await encode(encoder(encodeWith));
+			} catch (error) {
+				// The Mac's hardware encoder sometimes refuses to start ("Error initializing
+				// output stream"); the software encoder always can, so try that before failing.
+				const hardwareFailed =
+					encodeWith.export.hardware &&
+					/videotoolbox|Error initializing output stream/i.test((error as Error).message);
+				if (!hardwareFailed) throw error;
+				encodeWith = { ...data, export: { ...data.export, hardware: false } };
+				await encode(encoder(encodeWith));
+				return "switched to software";
+			}
 		} catch (error) {
-			// The Mac's hardware encoder sometimes refuses to start ("Error initializing
-			// output stream"); the software encoder always can, so try that before failing.
-			const hardwareFailed =
-				data.export.hardware &&
-				/videotoolbox|Error initializing output stream/i.test((error as Error).message);
-			if (!hardwareFailed) throw error;
-			await encode(encoder({ ...data, export: { ...data.export, hardware: false } }));
+			// A failed export leaves no half-written file behind to block the next one.
+			await fs.rm(file, { force: true });
+			throw error;
+		} finally {
+			// CUE_KEEP_GRAPH keeps the filter graph, to run a failed export's command by hand.
+			if (!process.env.CUE_KEEP_GRAPH) await fs.rm(graph, { force: true });
 		}
+		return "done";
+	};
+
+	// The range's own checks (in and out points too close together) apply to either way of exporting.
+	const timing = rangeArgs(ctx.range, lengthMs);
+	if (!exportsInChunks(layers.length, exported)) {
+		const built = await buildGraph({ first: 0, frames: Math.ceil((lengthMs * fps) / 1000) }, true);
+		await encodeGraph(built, out, timing, exported, progress);
+		return { kind: "video", outputs: [out], missing: [], durationMs: exported };
+	}
+
+	// A long edit is drawn in chunks, each with only the clips it shows, then joined without
+	// re-encoding; the sound is mixed once over the whole range and laid under it. One graph
+	// with every clip of a 15-minute edit (440 inputs) ran out of threads, and with fewer
+	// threads it held frames for every input at once and used up the Mac's memory.
+	const firstFrame = frameOf(ctx.range ? Math.max(0, ctx.range.startMs) : 0);
+	const endFrame = frameOf(ctx.range ? Math.min(lengthMs, ctx.range.endMs) : lengthMs);
+	const windows = chunkWindows(firstFrame, endFrame, Math.round((CHUNK_MS * fps) / 1000));
+	const totalFrames = endFrame - firstFrame;
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-chunks-"));
+	const ext = data.export.codec === "prores" ? ".mov" : ".mp4";
+	try {
+		const files: string[] = [];
+		let doneFrames = 0;
+		for (let i = 0; i < windows.length; i++) {
+			const win = windows[i];
+			const file = path.join(dir, `part-${String(i).padStart(4, "0")}${ext}`);
+			const result = await encodeGraph(
+				await buildGraph(win, false),
+				file,
+				["-frames:v", String(win.frames)],
+				(win.frames * 1000) / fps,
+				(fraction) => progress((0.95 * (doneFrames + fraction * win.frames)) / totalFrames),
+			);
+			if (result === "switched to software" && i > 0) {
+				// Parts from two encoders can't be joined without re-encoding: start again in software.
+				files.length = 0;
+				doneFrames = 0;
+				i = -1;
+				continue;
+			}
+			files.push(file);
+			doneFrames += win.frames;
+		}
+		const list = path.join(dir, "parts.txt");
+		await fs.writeFile(list, files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
+		const audio = audibleClips(ctx);
+		const mix = path.join(dir, "mix.wav");
+		if (audio.length) await mixAudio(audio, mix, lengthMs, data.export.normalize, ctx.range);
+		await ffmpeg([
+			"-f",
+			"concat",
+			"-safe",
+			"0",
+			"-i",
+			list,
+			...(audio.length ? ["-i", mix, "-map", "0:v", "-map", "1:a", ...videoAudioCodec(data)] : []),
+			"-c:v",
+			"copy",
+			"-t",
+			s((totalFrames * 1000) / fps),
+			...(out.endsWith(".mp4") ? ["-movflags", "+faststart"] : []),
+			out,
+		]);
+		progress(1);
 	} catch (error) {
-		// A failed export leaves no half-written file behind to block the next one.
 		await fs.rm(out, { force: true });
 		throw error;
 	} finally {
-		// CUE_KEEP_GRAPH keeps the filter graph, to run a failed export's command by hand.
-		if (!process.env.CUE_KEEP_GRAPH) await fs.rm(graph, { force: true });
+		if (!process.env.CUE_KEEP_GRAPH) await fs.rm(dir, { recursive: true, force: true });
 	}
 	return { kind: "video", outputs: [out], missing: [], durationMs: exported };
+}
+
+/** Length of one chunk of a long export. */
+const CHUNK_MS = 20000;
+
+/** Whether an export of `layerCount` picture clips lasting `ms` is drawn in chunks. */
+export function exportsInChunks(layerCount: number, ms: number): boolean {
+	return ms > 60000 || layerCount > 60;
+}
+
+/** Consecutive windows of at most `size` frames covering frames `first` up to `end`. */
+export function chunkWindows(
+	first: number,
+	end: number,
+	size: number,
+): { first: number; frames: number }[] {
+	const windows: { first: number; frames: number }[] = [];
+	for (let at = first; at < end; at += size)
+		windows.push({ first: at, frames: Math.min(size, end - at) });
+	return windows;
+}
+
+/** The sound codec for a video export. */
+function videoAudioCodec(data: ProjectData): string[] {
+	return data.export.codec === "prores" ? ["-c:a", "pcm_s16le"] : ["-c:a", "aac", "-b:a", "192k"];
+}
+
+/**
+ * Threads for the filter graph of an export with `inputCount` inputs, or undefined for
+ * ffmpeg's default (one per core). Every scaler in the graph, including the two ffmpeg
+ * inserts around each overlay to convert formats, starts that many threads of its own, so
+ * a 15-minute edit with 440 inputs asked for about 9,700 on an 11-core Mac. macOS allows
+ * 4,096 per process; past that, configuring the graph fails with "Resource temporarily
+ * unavailable" (EAGAIN). The overlays run one after another anyway, so a few threads
+ * export as fast as many.
+ */
+export function filterGraphThreads(inputCount: number): number | undefined {
+	if (inputCount <= 24) return undefined;
+	return Math.max(1, Math.min(4, Math.floor(1500 / inputCount)));
 }
 
 /**
