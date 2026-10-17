@@ -101,7 +101,7 @@ export default function Page() {
 				rows={[
 					["Blur", "Softens the picture, 0 to 1."],
 					["Sharpen", "Crisps up detail, 0 to 1."],
-					["Vignette", "Darkens the corners, 0 to 1."],
+					["Vignette", "Darkens the corners, 0 to 1. Midpoint, Roundness and Feather (shown once it is on) set where the darkening starts, its shape from the frame's rectangle to a circle, and how soft its edge is."],
 					["Glow", "Adds a soft, blurred glow over the picture, 0 to 1."],
 					["Stabilise", "Smooths out shaky footage, zooming in slightly to hide the moving edges. It is analysed when you export, so the preview shows the clip unstabilised."],
 				]}

@@ -21,6 +21,7 @@ import type {
 	ProjectSnapshot,
 	TextClip,
 } from "../../../electron/core/types";
+import { VIGNETTE_DEFAULTS } from "../../../electron/core/vignette";
 import { notify, run } from "../../lib/api";
 import { askAbout, draftMessage } from "../../lib/chat";
 import { goToPage, pageState } from "../../lib/pages";
@@ -1820,6 +1821,41 @@ function EffectsSection({
 			{slider("blur", "Blur")}
 			{slider("sharpen", "Sharpen")}
 			{slider("vignette", "Vignette")}
+			{e.vignette > 0 && (
+				// Lightroom-style shaping, set apart under the amount it shapes.
+				<div className="flex flex-col gap-2.5 border-l border-separator pl-3">
+					<Field label="Midpoint">
+						<Range
+							value={e.vignetteMidpoint ?? VIGNETTE_DEFAULTS.midpoint}
+							min={0}
+							max={1}
+							step={0.01}
+							format={(v) => `${Math.round(v * 100)}`}
+							onCommit={(v) => set({ vignetteMidpoint: v })}
+						/>
+					</Field>
+					<Field label="Roundness">
+						<Range
+							value={e.vignetteRoundness ?? VIGNETTE_DEFAULTS.roundness}
+							min={-1}
+							max={1}
+							step={0.01}
+							format={(v) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}`}
+							onCommit={(v) => set({ vignetteRoundness: v })}
+						/>
+					</Field>
+					<Field label="Feather">
+						<Range
+							value={e.vignetteFeather ?? VIGNETTE_DEFAULTS.feather}
+							min={0}
+							max={1}
+							step={0.01}
+							format={(v) => `${Math.round(v * 100)}`}
+							onCommit={(v) => set({ vignetteFeather: v })}
+						/>
+					</Field>
+				</div>
+			)}
 			{/* Glow needs the picture itself, so an adjustment layer can't glow what's below it. */}
 			{!adjustment && slider("glow", "Glow")}
 			{slider("grain", "Film grain")}
