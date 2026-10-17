@@ -1657,6 +1657,11 @@ export class Controller extends EventEmitter {
 				const { assetId, layer, patch, move, remove } = parseInput("edit_motion_layer", params);
 				return this.store.editMotionLayer(assetId, { layer, patch, move, remove }, actor);
 			}
+			case "replace_motion_font": {
+				const { from, to } = parseInput("replace_motion_font", params);
+				const changed = await this.store.replaceMotionFont(from, to, actor);
+				return { changed: changed.map((a) => ({ id: a.id, name: a.name })) };
+			}
 			case "get_motion_graphic": {
 				const { assetId } = parseInput("get_motion_graphic", params);
 				const source = this.store.motionGraphicSource(assetId);

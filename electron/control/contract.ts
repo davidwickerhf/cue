@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { WALLPAPERS } from "../core/capture";
+import { FONT_FAMILIES } from "../core/motionSpec";
 import { clipInput, clipPatch } from "../core/ops";
 import {
 	aiSchema,
@@ -121,6 +122,14 @@ export const contract = {
 			patch: z.record(z.string(), z.unknown()).optional(),
 			move: z.object({ dx: z.number(), dy: z.number() }).optional(),
 			remove: z.boolean().optional(),
+		},
+	},
+	replace_motion_font: {
+		description:
+			"Swap one font family for another in every motion graphic made in Cue (titles, cards, charts, lower thirds…), in one undoable step: e.g. {from: 'serif', to: 'editorial'} gives the whole edit a different headline face. Text with no font set is sans. Graphics made from a template that use the font become their own designs. Returns the graphics changed.",
+		input: {
+			from: z.enum(FONT_FAMILIES),
+			to: z.enum(FONT_FAMILIES),
 		},
 	},
 	get_motion_graphic: {

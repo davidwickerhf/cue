@@ -435,4 +435,64 @@ describe("motion graphics made in a project", () => {
 		expect(own.asset.width).toBe(1920);
 		expect(own.asset.durationMs).toBe(2000);
 	});
+
+	it("swaps a font across every graphic in one undoable step", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cue-fonts-"));
+		const store = new ProjectStore({
+			mediaUrl: (f) => f,
+			recentFile: path.join(dir, "recent.json"),
+			autoProxies: () => false,
+		});
+		await store.create({ path: dir, name: "Fonts" });
+		const title = await store.createMotionGraphic(
+			{
+				spec: {
+					durationMs: 2000,
+					layers: [
+						{ type: "text", text: "Where to look", font: "serif", size: 120 },
+						{
+							type: "group",
+							layers: [
+								{
+									type: "text",
+									text: "",
+									font: "mono",
+									size: 60,
+									runs: [{ text: "Pilot the " }, { text: "kit", font: "serif" }],
+								},
+							],
+						},
+					],
+				},
+			},
+			"agent",
+		);
+		const plain = await store.createMotionGraphic(
+			{ spec: { durationMs: 2000, layers: [{ type: "text", text: "Sans by default", size: 60 }] } },
+			"agent",
+		);
+		const before = store.current.assets.find((a) => a.id === plain.asset.id)?.path;
+
+		const changed = await store.replaceMotionFont("serif", "editorial", "agent");
+		expect(changed.map((a) => a.id)).toEqual([title.asset.id]);
+		const spec = store.motionGraphicSource(title.asset.id).spec as {
+			layers: { font?: string; layers?: { font?: string; runs: { font?: string }[] }[] }[];
+		};
+		expect(spec.layers[0].font).toBe("editorial");
+		expect(spec.layers[1].layers?.[0].font).toBe("mono");
+		expect(spec.layers[1].layers?.[0].runs[1].font).toBe("editorial");
+		expect(changed[0].motion?.fonts).toContain("Source Serif 4");
+		expect(changed[0].motion?.fonts).not.toContain("Instrument Serif");
+		// The graphic without the font is left alone.
+		expect(store.current.assets.find((a) => a.id === plain.asset.id)?.path).toBe(before);
+
+		// Text without a font is sans, so swapping sans reaches it too.
+		expect((await store.replaceMotionFont("sans", "display", "agent")).map((a) => a.id)).toEqual([
+			plain.asset.id,
+		]);
+		store.undo("user");
+		store.undo("user");
+		const back = store.motionGraphicSource(title.asset.id).spec as { layers: { font?: string }[] };
+		expect(back.layers[0].font).toBe("serif");
+	});
 });

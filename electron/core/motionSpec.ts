@@ -248,7 +248,7 @@ const pathShape = z.object({
 	/** SVG path data (M, L, H, V, C, S, Q, A, Z; absolute or relative), in canvas pixels. */
 	d: z.string().max(20000),
 });
-const FONT_FAMILIES = ["sans", "display", "serif", "mono", "ui"] as const;
+export const FONT_FAMILIES = ["sans", "display", "serif", "editorial", "mono", "ui"] as const;
 const text = z.object({
 	type: z.literal("text"),
 	...base,
@@ -405,11 +405,20 @@ export const MOTION_FONTS: {
 		face: "Instrument Serif",
 		italic: true,
 	},
+	{ family: "editorial", name: "SourceSerif4-400", weight: 400, face: "Source Serif 4" },
+	{ family: "editorial", name: "SourceSerif4-600", weight: 600, face: "Source Serif 4" },
+	{
+		family: "editorial",
+		name: "SourceSerif4-400i",
+		weight: 400,
+		face: "Source Serif 4",
+		italic: true,
+	},
 	{ family: "mono", name: "JetBrainsMono-500", weight: 500, face: "JetBrains Mono" },
 ];
 
 function fontFor(family: (typeof FONT_FAMILIES)[number], weight: number, italic = false) {
-	// Italic when the family has one (sans and serif do), otherwise upright.
+	// Italic when the family has one (sans, serif and editorial do), otherwise upright.
 	// A family this build doesn't bundle (a graphic from a newer Cue) is drawn in sans, not an error.
 	const known = MOTION_FONTS.some((f) => f.family === family) ? family : "sans";
 	const slanted = MOTION_FONTS.filter((f) => f.family === known && !!f.italic === italic);
@@ -426,6 +435,7 @@ const AVERAGE_WIDTH: Record<string, number> = {
 	sans: 0.56,
 	display: 0.58,
 	serif: 0.46,
+	editorial: 0.5,
 	mono: 0.6,
 	ui: 0.56,
 };

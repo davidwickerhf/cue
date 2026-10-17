@@ -2996,6 +2996,58 @@ export class ProjectStore extends EventEmitter {
 	}
 
 	/**
+	 * Swaps one font family for another in every motion graphic made in Cue (text
+	 * layers and their runs; text without a font is sans), in one undoable step. A
+	 * graphic made from a template that uses the font becomes its own design.
+	 */
+	async replaceMotionFont(from: string, to: string, actor: Actor): Promise<Asset[]> {
+		const swap = (node: unknown): unknown => {
+			if (Array.isArray(node)) return node.map(swap);
+			if (!node || typeof node !== "object") return node;
+			const entries = Object.entries(node).map(([k, v]) => [
+				k,
+				k === "font" && v === from ? to : swap(v),
+			]);
+			const out = Object.fromEntries(entries) as Record<string, unknown>;
+			if (from === "sans" && out.type === "text" && out.font === undefined) out.font = to;
+			return out;
+		};
+		const changed: { asset: Asset; spec: Record<string, unknown> }[] = [];
+		for (const a of this.current.assets) {
+			if (a.kind !== "lottie" || !a.motionSource) continue;
+			const spec = this.motionSpecOf(a.motionSource);
+			const next = swap(spec) as Record<string, unknown>;
+			if (JSON.stringify(next) !== JSON.stringify(spec)) changed.push({ asset: a, spec: next });
+		}
+		if (!changed.length) return [];
+		// Written one at a time: a long edit has dozens of graphics.
+		const written: { id: string; spec: Record<string, unknown>; fields: Partial<Asset> }[] = [];
+		for (const c of changed)
+			written.push({
+				id: c.asset.id,
+				spec: c.spec,
+				fields: await this.writeMotion(this.compileSource({ spec: c.spec }), c.asset.name),
+			});
+		await this.transaction(
+			actor,
+			`Changed the font of ${written.length} motion graphic${written.length === 1 ? "" : "s"}`,
+			() => {
+				for (const w of written)
+					this.apply(
+						{
+							type: "updateAsset",
+							id: w.id,
+							patch: { ...w.fields, motionSource: { spec: w.spec } },
+						},
+						actor,
+					);
+			},
+		);
+		const ids = new Set(written.map((w) => w.id));
+		return this.current.assets.filter((a) => ids.has(a.id));
+	}
+
+	/**
 	 * Cuts the subject out of a picture (or a video frame at `atMs`) into a new
 	 * image with transparency, with a paper-white outline and a soft shadow, as in
 	 * collage-style explainers. Optionally placed on a track.
