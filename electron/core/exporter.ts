@@ -734,16 +734,37 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			const c = t.crop;
 			const motion = a.kind === "lottie" ? rendered[clip.id] : undefined;
 			if (a.kind === "lottie" && !motion) continue;
-			const sw = a.kind === "lottie" ? motionSizes[clip.id].width : a.width || W;
-			const sh = a.kind === "lottie" ? motionSizes[clip.id].height : a.height || H;
-			const fitBase = Math.min(W / sw, H / sh);
-			const cropW = 1 - c.left - c.right;
-			const cropH = 1 - c.top - c.bottom;
+			const srcW = a.kind === "lottie" ? motionSizes[clip.id].width : a.width || W;
+			const srcH = a.kind === "lottie" ? motionSizes[clip.id].height : a.height || H;
 			// Keyframes are stored in clip-local ms; keyframeExpr takes a variable in local seconds (`t` here).
 			const kf = clip.keyframes ?? {};
 			// The transition into this clip, as expressions of local seconds (same easing as the preview).
 			const tr =
 				clip.transitionIn && clip.transitionIn.kind !== "dip" ? clip.transitionIn : undefined;
+			// The largest the picture is ever drawn, as a share of its fitted size.
+			const peak =
+				Math.max(t.scale, ...(kf.scale ?? []).map((k) => k.value)) *
+				(tr?.kind === "zoom" ? 1 + ZOOM_FROM : 1) *
+				// Bezier eases can overshoot their keyframes.
+				((kf.scale ?? []).some((k) => k.ease === "bezier") ? 1.5 : 1);
+			// A photo much larger than it is ever drawn is shrunk once, at the start of its chain,
+			// and is that size from then on: a 40-megapixel photo turned a few degrees was padded
+			// to 9314 × 9314 and turned 30 times a second, gigabytes of frames.
+			const drawnShare = Math.min(1, Math.min(W / srcW, H / srcH) * peak * 1.05);
+			const shrunk =
+				a.kind === "image" &&
+				drawnShare < 0.8 &&
+				!clip.zooms?.length &&
+				!clip.mask &&
+				!clip.frame?.radius &&
+				!clip.key &&
+				!clip.pin;
+			const even = (v: number) => Math.max(2, Math.round(v / 2) * 2);
+			const sw = shrunk ? even(srcW * drawnShare) : srcW;
+			const sh = shrunk ? even(srcH * drawnShare) : srcH;
+			const fitBase = Math.min(W / sw, H / sh);
+			const cropW = 1 - c.left - c.right;
+			const cropH = 1 - c.top - c.bottom;
 			const enteredAt = (T: string) => {
 				const p = `clip((${T})/${s(tr?.durationMs ?? 1)},0,1)`;
 				return `(${p})*(${p})*(3-2*(${p}))`;
@@ -800,11 +821,6 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			const boxH = rotating ? side * fitBase : baseH;
 			// A picture whose size changes each frame is padded to a fixed box (its largest size,
 			// centred): overlay keeps the first frame's size, so without it the scale never moved.
-			const peak =
-				Math.max(t.scale, ...(kf.scale ?? []).map((k) => k.value)) *
-				(tr?.kind === "zoom" ? 1 + ZOOM_FROM : 1) *
-				// Bezier eases can overshoot their keyframes.
-				((kf.scale ?? []).some((k) => k.ease === "bezier") ? 1.5 : 1);
 			const padW = Math.max(2, Math.ceil((boxW * peak) / 2) * 2 + 2);
 			const padH = Math.max(2, Math.ceil((boxH * peak) / 2) * 2 + 2);
 			const size =
@@ -854,8 +870,12 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			let index: number;
 			let source: string;
 			if (a.kind === "image") {
-				index = heldInput(file, clip.durationMs, cut);
-				source = `[${index}:v]fps=${fps},setpts=PTS-STARTPTS${local0}`;
+				// A photo is decoded once and its frame repeated, not read again for every frame:
+				// a 40-megapixel photo re-read 30 times a second queued gigabytes of frames.
+				index = addInput(["-framerate", String(fps), "-i", file]);
+				const frames = Math.max(1, Math.round(((clip.durationMs - cut) * fps) / 1000));
+				const shrink = shrunk ? `scale=${sw}:${sh},` : "";
+				source = `[${index}:v]${shrink}loop=loop=${frames - 1}:size=1:start=0,setpts=N/(${fps}*TB)${local0},fps=${fps}`;
 			} else if (a.kind === "lottie" && motion?.kind === "still") {
 				// A graphic that doesn't change over the clip: one picture, held.
 				index = heldInput(motion.file, clip.durationMs, cut);
