@@ -1,6 +1,6 @@
 {
 	"source": "electron/control/contract.ts",
-	"count": 172,
+	"count": 193,
 	"groups": [
 		{
 			"title": "Overview",
@@ -43,7 +43,7 @@
 				},
 				{
 					"name": "list_playbooks",
-					"description": "Cue's playbooks: how to work in Cue (read 'working-in-cue' first), how to match a reference video ('match-a-reference', with analyze_reference), a complete worked example ('example-why-we-say-ok'), editing craft, premium motion design, and recognisable styles (Vox explainer, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
+					"description": "Cue's playbooks: how to work in Cue (read 'working-in-cue' first, then 'before-your-first-pass': the mistakes earlier builds made), the editing techniques pros use and how to build each in Cue ('editing-techniques'), where to get footage, stills, music and sounds ('finding-assets'), how to match a reference video ('match-a-reference', with analyze_reference), complete worked examples ('example-why-we-say-ok', 'example-the-red-cars'), editing craft, premium motion design, and recognisable styles (Vox explainer, archive history documentary, screen-recording demo, map documentary, flat vector, tech review, captions talking head, product film, true crime, video essay, news, beat montage, podcast clip, product explainer, vlog) taken apart into techniques with Cue's tools and numbers. Read the relevant one with get_playbook before building a video in a style.",
 					"inputs": [
 						{
 							"name": "category",
@@ -216,6 +216,22 @@
 					]
 				},
 				{
+					"name": "replace_motion_font",
+					"description": "Swap one font family for another in every motion graphic made in Cue (titles, cards, charts, lower thirds…), in one undoable step: e.g. {from: 'serif', to: 'editorial'} gives the whole edit a different headline face. Text with no font set is sans. Graphics made from a template that use the font become their own designs. Returns the graphics changed.",
+					"inputs": [
+						{
+							"name": "from",
+							"type": "enum",
+							"required": true
+						},
+						{
+							"name": "to",
+							"type": "enum",
+							"required": true
+						}
+					]
+				},
+				{
 					"name": "get_motion_graphic",
 					"description": "A motion graphic's source: the template and params it was made from, its full spec (for templates, the spec they build) and its layers (name, type, path) for edit_motion_layer. Copy and change the spec to make a new graphic in the same style.",
 					"inputs": [
@@ -253,6 +269,17 @@
 					]
 				},
 				{
+					"name": "view_attachment",
+					"description": "Look at a screenshot the user attached to a chat message (its path is given in the message). Returns the picture.",
+					"inputs": [
+						{
+							"name": "path",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
 					"name": "render_frame",
 					"description": "Show the actual viewer image at a moment, with its PNG path. Use it to inspect framing, text and captions.",
 					"inputs": [
@@ -282,6 +309,39 @@
 							"type": "integer",
 							"required": false,
 							"default": "4"
+						}
+					]
+				},
+				{
+					"name": "contact_sheet",
+					"description": "See many moments of the edit at once, without exporting: viewer frames tiled into one image (returned as an image), with each tile's time in reading order. Spread count frames over fromMs–toMs (default: the whole edit), or pass atMs for exact moments. Use it to check pacing, framing and graphics across a whole section in one look; render_frame for one frame at full size.",
+					"inputs": [
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "count",
+							"type": "integer",
+							"required": false,
+							"default": "24"
+						},
+						{
+							"name": "atMs",
+							"type": "number[]",
+							"required": false
+						},
+						{
+							"name": "columns",
+							"type": "integer",
+							"required": false,
+							"default": "6"
 						}
 					]
 				},
@@ -587,7 +647,7 @@
 			"tools": [
 				{
 					"name": "list_library_assets",
-					"description": "Browse Cue's curated library: stock footage, original graphics, Textures (paper, kraft, cardboard, newsprint and construction-paper boards; film dust, light leak, halftone and vignette overlays) and Sound effects (whooshes, paper slaps and rustles, pop, tick, camera shutter, typewriter, riser, impacts, a title chime, room tone). category narrows it (e.g. \"Textures\", \"Sound effects\"); query searches names, descriptions and tags. Each result has its kind (video, image, audio), duration for sounds and loops, source, credit and license, and `use`: how to use it (blend, opacity, track: bottom for boards, top for overlays, audio; volume; loop; syncMs, the moment in a sound to line up with the event; and a note). Add one with import_library_asset.",
+					"description": "Browse Cue's curated library: stock footage, original graphics, Textures (paper, kraft, cardboard, newsprint and construction-paper boards; film dust, light leak, halftone and vignette overlays) and Sound effects (whooshes, paper slaps and rustles, pop, tick, camera shutter, typewriter, riser, impacts, a title chime, room tone). category narrows it (e.g. \"Textures\", \"Sound effects\"); query searches names, descriptions and tags. Each result has its kind (video, image, audio), duration for sounds and loops, source, credit and license, and `use`: how to use it (blend, opacity, track: bottom for boards, top for overlays, audio; volume; loop; syncMs, the moment in a sound to line up with the event; and a note). Add one with import_library_asset. There is no music in the library: find openly licensed music with find_music, or compose an original bed with generate_music.",
 					"inputs": [
 						{
 							"name": "query",
@@ -1061,7 +1121,7 @@
 				},
 				{
 					"name": "update_clip",
-					"description": "Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow, grain (film grain): 0–1, stabilize: boolean} (partial, merged) or null; on an adjustment layer vignette and grain give the whole edit a filmic look. transform.rotation turns a picture (degrees; cut-outs and clippings look placed by hand at -3 to 3). wiggle {position: px drift, rotation: degrees, speed: per second} or null adds a gentle hand-held drift (e.g. {position: 4, rotation: 0.5, speed: 1}); stepFps (12 = 'on twos') moves keyframes, wiggle and motion graphics in whole steps like stop-motion paper, or null for smooth. blend: normal | multiply | screen | overlay | soft-light | darken | lighten combines a picture with the tracks below (multiply a paper texture over everything, screen a light leak) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
+					"description": "Change a clip: timing, in-point, speed, volume, fades, denoise (off | light: FFT filter for steady hiss and hum | voice: RNNoise speech model that removes most non-speech noise; true means light), color {brightness -1–1, contrast 0–3, saturation 0–3, temperature -1–1, lut: .cube path}, transform (x, y, scale, opacity, crop {left,top,right,bottom} as shares 0–0.45), text, style or animations. mask {shape rectangle|ellipse, x, y, width, height (shares of the picture), feather 0–1, invert} or null. key (chroma key) {color '#00ff00', similarity 0.01–0.6, blend 0–0.5} or null. effects {blur, sharpen, vignette, glow, grain (film grain): 0–1, stabilize: boolean; vignetteMidpoint 0–1 (where the darkening starts, higher keeps it in the corners, default 0.5), vignetteRoundness -1–1 (-1 follows the frame's rectangle, 0 an ellipse of the frame's shape, the default, 1 a circle), vignetteFeather 0–1 (softness of its edge, 0 hard, default 0.5)} (partial, merged) or null; on an adjustment layer vignette and grain give the whole edit a filmic look. transform.rotation turns a picture (degrees; cut-outs and clippings look placed by hand at -3 to 3). wiggle {position: px drift, rotation: degrees, speed: per second} or null adds a gentle hand-held drift (e.g. {position: 4, rotation: 0.5, speed: 1}); stepFps (12 = 'on twos') moves keyframes, wiggle and motion graphics in whole steps like stop-motion paper, or null for smooth. blend: normal | multiply | screen | overlay | soft-light | darken | lighten combines a picture with the tracks below (multiply a paper texture over everything, screen a light leak) or null. frame {radius: corner radius in canvas pixels, shadow 0–1} rounds and shadows a picture (the studio look of screen recordings) or null. Motion graphics (media kind lottie): motion {text: {layerId: 'new text'}, colors: {'#original': '#new'}, loop: boolean} rewrites text layers and swaps colours without changing the file (ids and colours come from list_media motion); patches merge, an empty string removes a text change, mapping a colour to itself removes that swap, null resets. Past its end a graphic holds its last frame, or loops; if the file has an 'out' or 'outro' marker, a longer clip holds before the outro and plays it as the clip ends. Text clips: wordStyle {mode highlight|reveal|pop|bounce, color} animates word by word (words are timed from speech for captions, else spread over the clip); words [{text, startMs, endMs}] (clip-local) sets the timing; null clears either. disabled: true keeps it on the timeline but unseen and unheard. label: a colour tag (red, orange, yellow, green, blue, purple, pink) or null.",
 					"inputs": [
 						{
 							"name": "id",
@@ -2008,6 +2068,87 @@
 					]
 				},
 				{
+					"name": "detect_activity",
+					"description": "What happens on screen in a video (screen recordings, app demos, tutorials), found without looking at frames: each change between frames is sorted into screen-change (a new page or view), ui-change (a small area changes: usually a click's result, with its region), scroll (with how far), typing, pointer (the cursor moving) and idle (nothing happens for idleMs). Give clipId for events in timeline time within what the clip plays (or assetId for source time). Each kind comes with what editors usually do there (click sounds, zooms to the region, whooshes, cutting or speeding up idle stretches). markers true adds a timeline marker per event (not pointer). Use it instead of stepping through frames with render_frame; check a few moments with render_frame afterwards.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "kinds",
+							"type": "(\"screen-change\" | \"ui-change\" | \"scroll\" | \"typing\" | \"pointer\" | \"idle\")[]",
+							"required": false
+						},
+						{
+							"name": "idleMs",
+							"type": "number",
+							"required": false,
+							"default": "1500"
+						},
+						{
+							"name": "markers",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						}
+					]
+				},
+				{
+					"name": "trim_take",
+					"description": "Measure again where a take's speech starts and ends and, if it's the take in use, place it again so the silence before and after is left out (a recording stopped late, a pause before speaking). New takes are measured this way when saved.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "level_take",
+					"description": "Raise a quiet voiceover take (or any speech audio) to voiceover level: measured, raised by up to 30 dB towards -18 LUFS and limited so it never clips, written as a new file (the original stays). Use it when a recorded take is much quieter than the others: a clip's volume only goes up to +6 dB. New recordings are levelled automatically.",
+					"inputs": [
+						{
+							"name": "assetId",
+							"type": "string",
+							"required": true
+						}
+					]
+				},
+				{
+					"name": "ripple_from",
+					"description": "Move everything that starts at or after fromMs (clips on every track, script lines and markers) by deltaMs, in one undoable step: positive makes room (a take that runs long, an inserted scene), negative closes a gap. Pictures, music and voice stay in sync with each other.",
+					"inputs": [
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": true
+						},
+						{
+							"name": "deltaMs",
+							"type": "number",
+							"required": true
+						}
+					]
+				},
+				{
 					"name": "select_line",
 					"description": "Focus a line in the editor (teleprompter and takes).",
 					"inputs": [
@@ -2117,7 +2258,7 @@
 			"tools": [
 				{
 					"name": "generate_take",
-					"description": "Generate a spoken take for a line with text-to-speech (placeholder or final voice). Optional voice and delivery instructions.",
+					"description": "Generate a spoken take for a line with text-to-speech (placeholder or final voice) from the voice provider in Settings → AI (OpenAI, ElevenLabs directly or through fal, or macOS). Optional voice and delivery instructions. With ElevenLabs, voice comes from list_voices (an ElevenLabs voice id with a direct key, a default voice's name such as George through fal; default: the project's elevenVoice or falVoice) and instructions are ignored: steer delivery with audio tags in the text such as [whispers] or [excited] (model eleven_v3).",
 					"inputs": [
 						{
 							"name": "lineId",
@@ -2633,12 +2774,12 @@
 				},
 				{
 					"name": "get_ai_status",
-					"description": "Which providers handle voice, transcription, text and images (cloud or on this Mac), and whether each is ready.",
+					"description": "Which providers handle voice, transcription, text and images (cloud or on this Mac), and whether each is ready; plus sound (sound effects and music from a description: ElevenLabs, directly or through fal) and video (generated clips: fal, or Higgsfield). Each says which provider it will use, or which service to connect (the user connects keys in Settings → AI; fal alone covers voice, sound, music, video and images).",
 					"inputs": []
 				},
 				{
 					"name": "generate_voiceover",
-					"description": "Generate takes for many lines at once (by default only lines without a take).",
+					"description": "Generate takes for many lines at once (by default only lines without a take), with the voice provider in Settings → AI (see generate_take for ElevenLabs voices).",
 					"inputs": [
 						{
 							"name": "lineIds",
@@ -2831,7 +2972,7 @@
 				},
 				{
 					"name": "generate_image",
-					"description": "Generate a still image (title card, B-roll, background). With trackId it is placed at startMs for 5 s.",
+					"description": "Generate a still image (title card, B-roll, background) with OpenAI, or GPT Image 2 through fal when only fal is connected. With trackId it is placed at startMs for 5 s. model: gpt-image-2.5-flare (fast, the default) or gpt-image-2.5-sunburst (slower, more natural skin, fabric and light: use it for people and photographic stills, and as start pictures for video clips). quality: high for anything that must look real. referenceAssetIds (up to 8 project pictures, OpenAI) makes the image from those: the same person, place, product or style in a new shot (\"the man from the first picture, now opening the blinds of the same room in the morning\"); say in the prompt what to keep from each. Use it to keep characters and places consistent across a project's stills.",
 					"inputs": [
 						{
 							"name": "prompt",
@@ -2845,6 +2986,21 @@
 							"default": "\"landscape\""
 						},
 						{
+							"name": "model",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "quality",
+							"type": "\"low\" | \"medium\" | \"high\" | \"auto\"",
+							"required": false
+						},
+						{
+							"name": "referenceAssetIds",
+							"type": "string[]",
+							"required": false
+						},
+						{
 							"name": "trackId",
 							"type": "string",
 							"required": false
@@ -2854,6 +3010,534 @@
 							"type": "number",
 							"required": false,
 							"default": "0"
+						}
+					]
+				},
+				{
+					"name": "find_media",
+					"description": "Find openly licensed pictures or footage outside the project when the library and your own media don't have what the edit needs: kind image (Openverse: Flickr, museums, Wikimedia and more; plus Wikimedia Commons) or video (Wikimedia Commons). Only CC0, public domain, CC BY and CC BY-SA (usable in any video with credit). Returns id, title, creator, size, length, licence and the credit line for the credits. Add one with import_found. Prefer specific queries ('1950s office typewriter', 'aerial city night timelapse').",
+					"inputs": [
+						{
+							"name": "query",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "kind",
+							"type": "\"image\" | \"video\"",
+							"required": false,
+							"default": "\"image\""
+						},
+						{
+							"name": "minWidth",
+							"type": "integer",
+							"required": false
+						},
+						{
+							"name": "limit",
+							"type": "integer",
+							"required": false,
+							"default": "8"
+						}
+					]
+				},
+				{
+					"name": "import_found",
+					"description": "Download something found with find_media (by id) into the project's found folder, add it to the media with its credit (video is converted to MP4), and optionally place it on trackId at startMs (images for durationMs, default 5 s). Put its credit line in the credits.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false,
+							"default": "0"
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "find_music",
+					"description": "Search openly licensed music (CC0, public domain, CC BY, CC BY-SA: usable in any video, commercial ones too) by mood, genre or instrument, e.g. 'calm piano', 'lo-fi study', 'cinematic tension'. Returns tracks with id, title, creator, length, licence and the credit line that must go in the video's credits or description. Add one with import_music. Cue's library has sound effects but no music: use this or generate_music whenever a video needs a bed.",
+					"inputs": [
+						{
+							"name": "query",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "minSeconds",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "maxSeconds",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "licences",
+							"type": "(\"cc0\" | \"pdm\" | \"by\" | \"by-sa\")[]",
+							"required": false
+						},
+						{
+							"name": "limit",
+							"type": "integer",
+							"required": false,
+							"default": "8"
+						}
+					]
+				},
+				{
+					"name": "find_sfx",
+					"description": "Search openly licensed sound effects (Freesound and others through Openverse; CC0, public domain, CC BY, CC BY-SA) for the exact sound a moment needs: 'door slam', 'camera shutter', 'crowd cheer', 'keyboard typing', 'wind'. Returns short sounds with id, length, licence and credit. Add one with import_sfx. Use real recorded sounds for real-world things; generate_sfx for designed ones (whooshes, risers, hits, UI sounds).",
+					"inputs": [
+						{
+							"name": "query",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "maxSeconds",
+							"type": "number",
+							"required": false,
+							"default": "12"
+						},
+						{
+							"name": "limit",
+							"type": "integer",
+							"required": false,
+							"default": "8"
+						}
+					]
+				},
+				{
+					"name": "import_sfx",
+					"description": "Download a sound found with find_sfx (by id), add it to the media with its credit, and place it at atMs on an SFX track (a free one, so sounds never cover each other). Put the credit line in the credits.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "volume",
+							"type": "number",
+							"required": false,
+							"default": "0.8"
+						}
+					]
+				},
+				{
+					"name": "generate_sfx",
+					"description": "Synthesise original sound effects, a new variant every time (pitch, length, envelope and space vary), so repeated events don't repeat the same file. kind: whoosh, swish (short), riser, downlifter, impact, sub-drop, hit, pop, click, glitch, shimmer, beep, thump. character fits the material: soft (paper, gentle UI), bright (UI, tech), dark (tension, cinema), heavy (trailers, drops), digital (glitchy, screen), organic (neutral). variants makes several at once; atMs (one or a list, one per variant) places them on a free SFX track. No credit needed.",
+					"inputs": [
+						{
+							"name": "kind",
+							"type": "\"whoosh\" | \"swish\" | \"riser\" | \"downlifter\" | \"impact\" | \"sub-drop\" | \"hit\" | \"pop\" | \"click\" | \"glitch\" | \"shimmer\" | \"beep\" | \"thump\"",
+							"required": true
+						},
+						{
+							"name": "character",
+							"type": "\"soft\" | \"bright\" | \"dark\" | \"heavy\" | \"digital\" | \"organic\"",
+							"required": false,
+							"default": "\"organic\""
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "variants",
+							"type": "integer",
+							"required": false,
+							"default": "1"
+						},
+						{
+							"name": "atMs",
+							"type": "value",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "volume",
+							"type": "number",
+							"required": false,
+							"default": "0.7"
+						}
+					]
+				},
+				{
+					"name": "list_voices",
+					"description": "ElevenLabs voices, optionally searched. With a direct ElevenLabs key (via 'elevenlabs'): the account's own, cloned and default voices with id, name, category, labels (accent, age, gender, use) and a preview URL; set one with update_ai {ai: {elevenVoice: id, elevenVoiceName: name}}. Through fal (via 'fal'): ElevenLabs' default voices by name; set one with update_ai {ai: {falVoice: name}}.",
+					"inputs": [
+						{
+							"name": "search",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "generate_sound",
+					"description": "Generate a realistic, specific sound effect from a description with ElevenLabs, directly or through fal (get_ai_status 'sound'). Describe the sound concretely: the source, material, action, space and length, e.g. 'heavy wooden door slams shut in a stone hallway, short echo' or 'soft cardboard box sliding across a desk'. durationSeconds 0.5–30, at most 22 through fal (default: the model decides); promptInfluence 0–1 (higher follows the words more literally, default 0.3); loop makes a seamless loop (ambiences). variants makes several takes; atMs (one time or one per variant) places them on a free SFX track; with one atMs only the first variant is placed and the others wait in the media as alternatives. No credit needed.",
+					"inputs": [
+						{
+							"name": "prompt",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "durationSeconds",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "promptInfluence",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "loop",
+							"type": "boolean",
+							"required": false
+						},
+						{
+							"name": "variants",
+							"type": "integer",
+							"required": false,
+							"default": "1"
+						},
+						{
+							"name": "atMs",
+							"type": "value",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "volume",
+							"type": "number",
+							"required": false,
+							"default": "0.8"
+						}
+					]
+				},
+				{
+					"name": "track_motion",
+					"description": "Motion tracking, like After Effects' tracker: follow something in a clip's picture over time, then pin another clip onto it (corner pin: a screen recording onto a laptop or phone screen, a poster onto a wall) or make a clip follow it (text or a graphic riding along with a moving object). mode screen: a green or blue screen, found by its colour every frame (no corners needed; color defaults to the clip's key colour or #00ff00); the whole screen must stay in frame, so for one that leaves the frame use mode surface with its corners. mode surface: anything flat, given its four corners at one moment (atMs, timeline ms; corners as [x, y] canvas shares: top-left, top-right, bottom-right, bottom-left); perspective is followed. mode object: anything that moves, given a box (or corners) around it; position, size and rotation are followed. It tracks both ways from each anchor and every call adds the corners you give as another anchor (set replace: true to start over), so a track that slips is fixed by giving the right corners at the frame where it went wrong and tracking again. apply {clipId, as: pin|follow} pins or moves that clip with the result (follow keeps the clip where it is at the first anchor and moves it from there; followScale and followRotation add size and turning). For a screen replacement: the recording on the track below the plate, the plate keyed (update_clip key) and the recording pinned (as: pin), so hands in front of the screen stay in front. Returns how sure the tracker was (weak: stretches below 0.6, timeline ms) and a review image with the tracked corners drawn on frames (cyan sure, amber unsure, red lost): look at it, and correct weak stretches with an anchor there. Takes a few seconds per second of footage.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true,
+							"note": "The clip whose picture is tracked."
+						},
+						{
+							"name": "mode",
+							"type": "\"screen\" | \"surface\" | \"object\"",
+							"required": true
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": false,
+							"note": "Timeline ms of the corners or box (default: the clip's start)."
+						},
+						{
+							"name": "corners",
+							"type": "value",
+							"required": false
+						},
+						{
+							"name": "box",
+							"type": "object",
+							"required": false,
+							"note": "Object mode: the box around it (left, top, width, height) in canvas shares."
+						},
+						{
+							"name": "color",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "replace",
+							"type": "boolean",
+							"required": false,
+							"default": "false",
+							"note": "Forget earlier anchors on this clip."
+						},
+						{
+							"name": "fromMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "toMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "apply",
+							"type": "object",
+							"required": false,
+							"default": "false"
+						},
+						{
+							"name": "review",
+							"type": "integer",
+							"required": false,
+							"default": "12",
+							"note": "Frames in the review image (0: none)."
+						}
+					]
+				},
+				{
+					"name": "apply_track",
+					"description": "Use a clip's motion track (made with track_motion) again: pin another clip onto it (as: pin) or make it follow (as: follow), e.g. after moving or trimming either clip, or for a second graphic.",
+					"inputs": [
+						{
+							"name": "fromClipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "toClipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "as",
+							"type": "\"pin\" | \"follow\"",
+							"required": true
+						},
+						{
+							"name": "followScale",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						},
+						{
+							"name": "followRotation",
+							"type": "boolean",
+							"required": false,
+							"default": "false"
+						}
+					]
+				},
+				{
+					"name": "review_track",
+					"description": "The review image of a clip's motion track: frames with the tracked corners drawn (cyan sure, amber unsure, red lost), spread over the track or at chosen timeline times, plus the weak stretches. Read-only.",
+					"inputs": [
+						{
+							"name": "clipId",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "count",
+							"type": "integer",
+							"required": false,
+							"default": "12"
+						},
+						{
+							"name": "atMs",
+							"type": "number[]",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "generate_clip",
+					"description": "Generate a short video clip through fal (or Higgsfield when only that is connected; get_ai_status 'video'): from a prompt alone, or animating a start picture (imageAssetId of an image in the project, imagePath of a PNG/JPEG/WebP file, or frameAtMs for the edit's frame at that time). Describe the shot like a director: subject, action, camera move, light and style. model: kling-2.5-turbo-pro (default; text or picture), kling-2.5-turbo-standard (picture only, cheaper), hailuo-2.3 or seedance-2.0 (Higgsfield only; the most lifelike motion and people, 1080p, up to 15 s), or a raw fal model id such as fal-ai/kling-video/v2.5-turbo/pro/image-to-video (a path starting with / goes to Higgsfield). durationSec snaps to what the model makes (5 or 10 for Kling, 6 or 10 for Hailuo, 5, 10 or 15 for Seedance). Takes one to a few minutes (reply {status: 'running'}: use wait_for). The MP4 is saved in the project's generated folder and added to the media, marked AI with its prompt; with atMs it is placed there (on trackId or the first video track). Clips have no sound.",
+					"inputs": [
+						{
+							"name": "prompt",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "imageAssetId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "imagePath",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "frameAtMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "model",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "durationSec",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "negativePrompt",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						}
+					]
+				},
+				{
+					"name": "import_music",
+					"description": "Download a track found with find_music (by id), add it to the media with its credit, and lay it on the music track (made if missing) from startMs with fades, ducked under the voiceover. durationMs trims it (default: the whole track). Put the returned credit line in the credits. place false only adds it to the media.",
+					"inputs": [
+						{
+							"name": "id",
+							"type": "string",
+							"required": true
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false,
+							"default": "0"
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "fadeInMs",
+							"type": "number",
+							"required": false,
+							"default": "1500"
+						},
+						{
+							"name": "fadeOutMs",
+							"type": "number",
+							"required": false,
+							"default": "3000"
+						},
+						{
+							"name": "place",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
+						}
+					]
+				},
+				{
+					"name": "generate_music",
+					"description": "Make an original, royalty-free music bed to measure (no credit needed), in one of two ways. With mood, Cue composes it on this computer: calm (soft piano arpeggios over a pad: explainers, tutorials, study or assignment videos), lofi (jazzy chords, soft beat, vinyl), ambient (slow open chords), tension (dark minor pulse), uplifting (bright arpeggios, light beat) or documentary (dark drone); optional key (C, D, E, F, G, A, B and sharps) and bpm. With prompt, ElevenLabs composes real-sounding music from a description (directly or through fal; get_ai_status 'sound'): genre, mood, instruments, tempo and how it develops, e.g. 'warm acoustic guitar and soft piano, gentle and hopeful, 90 bpm, builds slightly at the end'; instrumental true keeps vocals out (use it under a voice); 3 s to 10 min. sections (with prompt, ElevenLabs) composes it part by part to the edit's structure: [{name, durationMs, styles, avoid}] in order, e.g. an intro of 8 s, a build of 12 s, a drop where the video turns; the prompt is then the style of the whole piece and durationMs is the sections' total. It is durationMs long (lengthMs is the same; default: to the end of the timeline), laid on the music track from startMs (atMs is the same) with fades, ducked under the voice, unless place is false.",
+					"inputs": [
+						{
+							"name": "mood",
+							"type": "\"calm\" | \"lofi\" | \"ambient\" | \"tension\" | \"uplifting\" | \"documentary\"",
+							"required": false
+						},
+						{
+							"name": "prompt",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "sections",
+							"type": "object[]",
+							"required": false
+						},
+						{
+							"name": "instrumental",
+							"type": "boolean",
+							"required": false
+						},
+						{
+							"name": "durationMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "lengthMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "startMs",
+							"type": "number",
+							"required": false,
+							"default": "0"
+						},
+						{
+							"name": "atMs",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "key",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "bpm",
+							"type": "number",
+							"required": false
+						},
+						{
+							"name": "trackId",
+							"type": "string",
+							"required": false
+						},
+						{
+							"name": "place",
+							"type": "boolean",
+							"required": false,
+							"default": "true"
 						}
 					]
 				}
@@ -2934,7 +3618,7 @@
 				},
 				{
 					"name": "update_ai",
-					"description": "Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable.",
+					"description": "Generation settings: ttsModel, voice, voiceInstructions, transcriptionModel, imageModel, and for ElevenLabs voices elevenVoice (a voice id from list_voices), elevenVoiceName, falVoice (a default voice's name, used through fal) and elevenModel (eleven_v3: most expressive, 70+ languages, audio tags like [whispers]; eleven_multilingual_v2: stable long-form; eleven_flash_v2_5: fast). ttsModel: keep gpt-4o-mini-tts (it follows OpenAI's newest speech model; a dated snapshot pins an old one), or tts-1-hd. For images, choose gpt-image-2.5-flare (fast) or gpt-image-2.5-sunburst (precise); older saved models remain usable. Which provider speaks is an app setting (update_app_settings {ai: {tts: 'auto' | 'openai' | 'elevenlabs' | 'macos'}}; auto uses what is connected).",
 					"inputs": [
 						{
 							"name": "ai",
