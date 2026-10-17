@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.27",
+		date: "2026-10-17",
+		summary: "Faster, lighter exports with large photos.",
+		changes: [
+			"A photo is decoded once per export instead of once per frame, and a photo much larger than it appears is drawn at the size it is shown. An edit with a 40-megapixel photo turned a few degrees used to export at a quarter of real time and need over 4 GB of memory.",
+		],
+	},
+	{
 		version: "0.2.26",
 		date: "2026-10-17",
 		summary: "Long videos export again.",
