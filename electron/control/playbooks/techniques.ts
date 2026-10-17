@@ -75,7 +75,7 @@ Plan an edit as a list of techniques tied to moments ("0:12 J-cut into the demo;
 ## Colour and look
 - **Consistency first.** Match shots to each other (copy_grade), then give the whole edit a look with an adjustment layer (add_adjustment_layer: grade, grain, vignette).
 - **Looks by genre.** Warm and saturated archive; desaturated cool for tension; black and white for the past or a flashback; clean neutral for tutorials and product.
-- **Film texture.** Grain 0.2–0.4, vignette 0.3–0.45, dust or light leaks from the library (import_library_asset, screen blend) on archive and nostalgic passages only.
+- **Film texture.** Grain 0.2–0.4, vignette 0.3–0.45 (shape it like a lens with vignetteRoundness 0.5–1 and a soft vignetteFeather 0.7; a low feather gives a hard, stylised edge), dust or light leaks from the library (import_library_asset, screen blend) on archive and nostalgic passages only.
 - **LUTs.** update_clip color lut with a .cube file for a known look; lower its effect with an adjustment layer's opacity.
 
 ## Transitions

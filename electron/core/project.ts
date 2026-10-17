@@ -265,6 +265,26 @@ export const effectsSchema = z.object({
 	blur: z.number().min(0).max(1),
 	sharpen: z.number().min(0).max(1),
 	vignette: z.number().min(0).max(1),
+	vignetteMidpoint: z
+		.number()
+		.min(0)
+		.max(1)
+		.optional()
+		.describe("Where the vignette starts darkening: higher keeps it in the corners (default 0.5)."),
+	vignetteRoundness: z
+		.number()
+		.min(-1)
+		.max(1)
+		.optional()
+		.describe(
+			"-1 follows the frame's rectangle, 0 an ellipse of the frame's shape (default), 1 a circle.",
+		),
+	vignetteFeather: z
+		.number()
+		.min(0)
+		.max(1)
+		.optional()
+		.describe("Softness of the vignette's edge: 0 is hard (default 0.5)."),
 	glow: z.number().min(0).max(1),
 	grain: z.number().min(0).max(1).default(0),
 	stabilize: z.boolean(),

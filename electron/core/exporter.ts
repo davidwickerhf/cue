@@ -29,6 +29,7 @@ import type {
 	TextClip,
 	Track,
 } from "./types";
+import { isClassicVignette, VIGNETTE_DEFAULTS, vignetteGeq } from "./vignette";
 
 /** A text clip rendered by the editor window: one still, or a frame sequence for animated text. */
 export type TextRender =
@@ -651,14 +652,14 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 			]);
 		/** A looped vignette mask at a picture's size, as an input stream label. */
 		const vignetteInput = async (
-			amount: number | undefined,
+			effects: Effects | undefined,
 			w: number,
 			h: number,
 			ms: number,
 			cut: number,
 		) => {
-			if (!amount || amount <= 0) return undefined;
-			const file = await vignetteMask(amount, w, h);
+			if (!effects || !(effects.vignette > 0)) return undefined;
+			const file = await vignetteMask(effects, w, h);
 			return `${heldInput(file, ms, cut)}:v`;
 		};
 		const winEnd = win.first + win.frames;
@@ -712,7 +713,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 					const maskFile = await maskImage(ctx.dir, clip.mask, W, H);
 					const m = heldInput(maskFile, windowMs + 1000, 0);
 					chains.push(`[${current}]split[${out}a][${out}b]`);
-					const vin = await vignetteInput(clip.effects?.vignette, W, H, windowMs + 1000, 0);
+					const vin = await vignetteInput(clip.effects, W, H, windowMs + 1000, 0);
 					chains.push(
 						`[${out}b]null${filterPiece(filters, out, "", vin)},format=yuva420p[${out}g]`,
 					);
@@ -722,7 +723,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 						`[${out}a][${out}k]overlay=x=0:y=0:enable='between(t,${from},${until})':eof_action=pass,format=yuva420p[${out}]`,
 					);
 				} else {
-					const vin = await vignetteInput(clip.effects?.vignette, W, H, windowMs + 1000, 0);
+					const vin = await vignetteInput(clip.effects, W, H, windowMs + 1000, 0);
 					const timed = filterPiece(filters, out, `:enable='between(t,${from},${until})'`, vin);
 					chains.push(`[${current}]null${timed},format=yuva420p[${out}]`);
 				}
@@ -793,7 +794,7 @@ export async function exportVideo(ctx: ExportContext, outFile?: string): Promise
 					clip.effects,
 					sh,
 					label,
-					await vignetteInput(clip.effects?.vignette, sw, sh, clip.durationMs + 1000, cut),
+					await vignetteInput(clip.effects, sw, sh, clip.durationMs + 1000, cut),
 				) +
 				// Blur transition: a blurred copy dissolves into the sharp picture.
 				(tr?.kind === "blur"
@@ -1284,28 +1285,38 @@ function filterPiece(filters: string[], label: string, enable = "", vignette?: s
 
 /**
  * The preview's vignette as a black mask `width` × `height` whose alpha is the
- * darkening: CSS radial-gradient(ellipse at center, transparent inner%,
- * rgba(0,0,0,A) 100%), the ellipse reaching the corners. Made once per amount
- * and size.
+ * darkening (see vignette.ts). With only an amount it is CSS
+ * radial-gradient(ellipse at center, transparent inner%, rgba(0,0,0,A) 100%),
+ * the ellipse reaching the corners. Made once per setting and size.
  */
-async function vignetteMask(amount: number, width: number, height: number): Promise<string> {
+export async function vignetteMask(
+	effects: Effects,
+	width: number,
+	height: number,
+): Promise<string> {
 	const w = Math.max(2, Math.round(width));
 	const h = Math.max(2, Math.round(height));
-	const file = path.join(os.tmpdir(), `cue-vignette-a-${amount.toFixed(3)}-${w}x${h}.png`);
-	const inner = Math.round(70 - amount * 45) / 100;
-	const dark = 0.35 + amount * 0.55;
+	// Midpoint, roundness and feather only name the file when they change the look.
+	const shape = isClassicVignette(effects)
+		? ""
+		: `-m${(effects.vignetteMidpoint ?? VIGNETTE_DEFAULTS.midpoint).toFixed(3)}` +
+			`-r${(effects.vignetteRoundness ?? VIGNETTE_DEFAULTS.roundness).toFixed(3)}` +
+			`-f${(effects.vignetteFeather ?? VIGNETTE_DEFAULTS.feather).toFixed(3)}`;
+	const file = path.join(
+		os.tmpdir(),
+		`cue-vignette-a-${effects.vignette.toFixed(3)}${shape}-${w}x${h}.png`,
+	);
 	try {
 		await fs.access(file);
 	} catch {
 		const tmp = `${file}.${process.pid}-${Date.now()}.png`;
-		const d = "sqrt(pow((X-W/2)/(W/2),2)+pow((Y-H/2)/(H/2),2))/sqrt(2)";
 		await ffmpeg([
 			"-f",
 			"lavfi",
 			"-i",
 			`color=c=black:s=${w}x${h}`,
 			"-vf",
-			`format=rgba,geq=r=0:g=0:b=0:a='255*${dark.toFixed(4)}*clip((${d}-${inner})/${(1 - inner).toFixed(4)},0,1)'`,
+			`format=rgba,geq=r=0:g=0:b=0:a='${vignetteGeq(effects, w, h)}'`,
 			"-frames:v",
 			"1",
 			tmp,

@@ -309,6 +309,12 @@ export interface Effects {
 	blur: number;
 	sharpen: number;
 	vignette: number;
+	/** 0–1, where the vignette starts darkening: higher keeps it nearer the corners (default 0.5). */
+	vignetteMidpoint?: number;
+	/** -1 (follows the frame's rectangle) – 1 (a circle); 0, the default, is an ellipse of the frame's proportions. */
+	vignetteRoundness?: number;
+	/** 0–1, how soft the vignette's edge is: 0 is a hard edge (default 0.5). */
+	vignetteFeather?: number;
 	glow: number;
 	/** Film grain, 0–1: moving noise over the picture (archive footage, paper, a filmic look). */
 	grain: number;

@@ -25,7 +25,8 @@ import type {
 	TextClip,
 	Track,
 } from "../../electron/core/types";
-import { createKeyer, type Keyer, maskUrl } from "./compositing";
+import { isClassicVignette } from "../../electron/core/vignette";
+import { createKeyer, type Keyer, maskUrl, vignetteUrl } from "./compositing";
 import { drawMotion, onMotionReady } from "./motion";
 import { createStore } from "./state";
 import { drawTextClip, textFrame } from "./textDraw";
@@ -802,8 +803,8 @@ class PlaybackEngine {
 		g.backgroundPosition = `${Math.floor(Math.random() * 192)}px ${Math.floor(Math.random() * 192)}px`;
 	}
 
-	/** A dark edge over the slot's picture (made on first use). */
-	private showVignette(slot: Slot, effects: Effects | undefined) {
+	/** A dark edge over the slot's picture (made on first use), `aspect` its width / height. */
+	private showVignette(slot: Slot, effects: Effects | undefined, aspect: number) {
 		const amount = effects?.vignette ?? 0;
 		if (!amount) {
 			if (slot.vignette) slot.vignette.style.display = "none";
@@ -816,6 +817,11 @@ class PlaybackEngine {
 			slot.frame.append(slot.vignette);
 		}
 		slot.vignette.style.display = "";
+		if (effects && !isClassicVignette(effects)) {
+			// Midpoint, roundness or feather: a drawn mask (CSS gradients can't square an ellipse).
+			slot.vignette.style.background = `url(${vignetteUrl(effects, aspect)}) center / 100% 100% no-repeat`;
+			return;
+		}
 		const inner = Math.round(70 - amount * 45);
 		slot.vignette.style.background = `radial-gradient(ellipse at center, transparent ${inner}%, rgba(0,0,0,${(0.35 + amount * 0.55).toFixed(2)}) 100%)`;
 	}
@@ -964,7 +970,7 @@ class PlaybackEngine {
 		}
 		if (slot.signal)
 			slot.signal.style.display = tr?.kind === "signal-glitch" && p < 1 ? "" : "none";
-		this.showVignette(slot, look?.effects);
+		this.showVignette(slot, look?.effects, ar);
 		this.showGrain(slot, look?.effects);
 		// Chroma key: the picture stays underneath (still decoding) while a WebGL canvas shows it keyed.
 		if (clip.key && !isMotion) {
@@ -1102,7 +1108,7 @@ class PlaybackEngine {
 			effectsFilter(look?.effects && { ...look.effects, glow: 0 }, this.stageH / 1080),
 		);
 		frame.backdropFilter = backdrop === "none" ? "" : backdrop;
-		this.showVignette(slot, look?.effects);
+		this.showVignette(slot, look?.effects, this.stageW / Math.max(1, this.stageH));
 		this.showGrain(slot, look?.effects);
 		slot.video.style.display = "none";
 		slot.image.style.display = "none";

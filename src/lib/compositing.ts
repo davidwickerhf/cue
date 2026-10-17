@@ -1,4 +1,5 @@
-import type { ChromaKey, Mask } from "../../electron/core/types";
+import type { ChromaKey, Effects, Mask } from "../../electron/core/types";
+import { vignetteAlpha } from "../../electron/core/vignette";
 
 /**
  * Preview versions of the export's compositing: mask images (same formula
@@ -37,6 +38,42 @@ export function maskUrl(mask: Mask, aspect: number): string {
 			const i = (y * w + x) * 4;
 			img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
 			img.data[i + 3] = Math.round(v * 255);
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+	const url = canvas.toDataURL("image/png");
+	if (maskCache.size > 64) maskCache.clear();
+	maskCache.set(key, url);
+	return url;
+}
+
+/**
+ * A data URL of the vignette as black whose alpha is the darkening (the
+ * exporter's mask, from the same maths), drawn with the picture's aspect ratio.
+ */
+export function vignetteUrl(effects: Effects, aspect: number): string {
+	const key = JSON.stringify([
+		"vignette",
+		effects.vignette,
+		effects.vignetteMidpoint,
+		effects.vignetteRoundness,
+		effects.vignetteFeather,
+		Math.round(aspect * 100),
+	]);
+	const cached = maskCache.get(key);
+	if (cached) return cached;
+	const w = aspect >= 1 ? 480 : Math.round(480 * aspect);
+	const h = aspect >= 1 ? Math.round(480 / aspect) : 480;
+	const canvas = document.createElement("canvas");
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return "";
+	const img = ctx.createImageData(w, h);
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			img.data[i + 3] = Math.round(vignetteAlpha(effects, x + 0.5, y + 0.5, w, h) * 255);
 		}
 	}
 	ctx.putImageData(img, 0, 0);
