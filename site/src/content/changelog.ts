@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.26",
+		date: "2026-10-17",
+		summary: "Long videos export again.",
+		changes: [
+			"Long or busy edits (more than a minute, or more than 60 pictures and graphics) are exported in 20-second chunks that are joined seamlessly. A 15-minute edit with hundreds of clips used to fail with \"Resource temporarily unavailable\" or use up the Mac's memory; it now exports with a small, steady amount.",
+		],
+	},
+	{
 		version: "0.2.25",
 		date: "2026-09-28",
 		summary: "Exact cuts, and thumbnails in copied projects.",
