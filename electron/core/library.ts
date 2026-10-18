@@ -82,8 +82,9 @@ export async function summarise(
 /**
  * Grabs a frame of the edit as the project's poster: the topmost photo or video on
  * screen about 15% of the way in (past cold opens and titles), or at a later moment when
- * nothing is there. Motion graphics, adjustment layers and nested sequences are skipped:
- * ffmpeg can't read them, and an edit that starts with one used to get no poster at all.
+ * nothing is there. A backdrop under most of the edit says nothing about it, so it is passed
+ * over; motion graphics, adjustment layers and nested sequences are too, as ffmpeg can't read
+ * them (an edit that started with one used to get no poster at all).
  */
 export async function makePoster(projectFile: string, data: ProjectData): Promise<void> {
 	const dir = path.dirname(projectFile);
@@ -98,8 +99,11 @@ export async function makePoster(projectFile: string, data: ProjectData): Promis
 			existsSync(resolveInProject(dir, a.path))
 		);
 	});
-	if (!pictures.length) return;
 	const length = projectDuration(data);
+	// A paper texture or backdrop under most of the edit is the last resort.
+	const shots = pictures.filter((c) => c.durationMs < length * 0.4);
+	if (shots.length) pictures.splice(0, pictures.length, ...shots);
+	if (!pictures.length) return;
 	// Tracks are listed top to bottom, so the first one showing at a moment is on top.
 	const at = (ms: number) =>
 		pictures
