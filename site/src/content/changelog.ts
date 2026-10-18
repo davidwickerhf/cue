@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.29",
+		date: "2026-10-18",
+		summary: "Projects you can tell apart.",
+		changes: [
+			"Every project in the overview gets a thumbnail: a photo or video from the edit, about 15% in. An edit that opened with a motion graphic or an adjustment layer used to get none.",
+			"Copies of a project in the same folder each get their own thumbnail, and projects with the same name show their file's name under it.",
+		],
+	},
+	{
 		version: "0.2.28",
 		date: "2026-10-17",
 		summary: "A newspaper serif for graphics, and a vignette you can shape.",
