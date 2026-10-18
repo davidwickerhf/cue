@@ -4,10 +4,19 @@ import path from "node:path";
 import { ffmpeg } from "./media";
 import { resolveInProject } from "./paths";
 import { isProjectFile, parseProject, projectDuration } from "./project";
-import type { ProjectData, ProjectSummary, RecentProject } from "./types";
+import type { Asset, MediaClip, ProjectData, ProjectSummary, RecentProject } from "./types";
 
-/** Where each project keeps its poster frame for the projects overview. */
+/**
+ * Where a project keeps its poster frame for the projects overview: one per project
+ * file, so copies of a project in the same folder (backups, versions) each show their own.
+ */
 export function posterPath(projectFile: string): string {
+	const name = path.basename(projectFile).replace(/\.cueproj$|\.cue\.json$/, "");
+	return path.join(path.dirname(projectFile), ".cue-cache", "posters", `${name}.jpg`);
+}
+
+/** The poster of projects made before each file had its own (one per folder). */
+function folderPoster(projectFile: string): string {
 	return path.join(path.dirname(projectFile), ".cue-cache", "poster.jpg");
 }
 
@@ -48,7 +57,9 @@ export async function summarise(
 	try {
 		const [stat, raw] = await Promise.all([fs.stat(file), fs.readFile(file, "utf8")]);
 		const data = parseProject(JSON.parse(raw));
-		const poster = posterPath(file);
+		const poster = existsSync(posterPath(file)) ? posterPath(file) : folderPoster(file);
+		// A project that has never had a poster gets one in the background, for the next listing.
+		if (!existsSync(poster)) void makePoster(file, data).catch(() => {});
 		return {
 			...base,
 			name: data.name,
@@ -68,26 +79,53 @@ export async function summarise(
 	}
 }
 
-/** Grabs a frame from the first picture on the timeline as the project's poster. */
+/**
+ * Grabs a frame of the edit as the project's poster: the topmost photo or video on
+ * screen about 15% of the way in (past cold opens and titles), or at a later moment when
+ * nothing is there. Motion graphics, adjustment layers and nested sequences are skipped:
+ * ffmpeg can't read them, and an edit that starts with one used to get no poster at all.
+ */
 export async function makePoster(projectFile: string, data: ProjectData): Promise<void> {
 	const dir = path.dirname(projectFile);
-	const visual = new Set(
-		data.tracks.filter((t) => t.kind === "video" && !t.hidden).map((t) => t.id),
-	);
-	const clip = data.clips
-		.filter((c) => c.type === "media" && visual.has(c.trackId))
-		.sort((a, b) => a.startMs - b.startMs)[0];
-	if (!clip || clip.type !== "media") return;
-	const asset = data.assets.find((a) => a.id === clip.assetId);
-	if (!asset || asset.kind === "audio") return;
-	const source = resolveInProject(dir, asset.path);
-	if (!existsSync(source)) return;
+	const order = data.tracks.filter((t) => t.kind === "video" && !t.hidden).map((t) => t.id);
+	const pictures = data.clips.filter((c): c is MediaClip => {
+		if (c.type !== "media" || c.disabled || !order.includes(c.trackId)) return false;
+		const a = data.assets.find((x) => x.id === c.assetId);
+		return (
+			!!a &&
+			(a.kind === "image" || a.kind === "video") &&
+			!a.sequenceId &&
+			existsSync(resolveInProject(dir, a.path))
+		);
+	});
+	if (!pictures.length) return;
+	const length = projectDuration(data);
+	// Tracks are listed top to bottom, so the first one showing at a moment is on top.
+	const at = (ms: number) =>
+		pictures
+			.filter((c) => c.startMs <= ms && ms < c.startMs + c.durationMs)
+			.sort((a, b) => order.indexOf(a.trackId) - order.indexOf(b.trackId))[0];
+	const moments = [0.15, 0.3, 0.5, 0.05].map((share) => length * share);
+	let ms = moments.find((m) => at(m)) ?? pictures[0].startMs;
+	const clip = at(ms) ?? pictures[0];
+	ms = Math.max(ms, clip.startMs);
+	const asset = data.assets.find((a) => a.id === clip.assetId) as Asset;
 	const out = posterPath(projectFile);
 	await fs.mkdir(path.dirname(out), { recursive: true });
-	// A quarter of the way in: past fade-ins and dark openings, still early in the shot.
-	const at =
+	const seek =
 		asset.kind === "image"
 			? []
-			: ["-ss", String((clip.inMs + Math.min(10000, clip.durationMs / 4)) / 1000)];
-	await ffmpeg([...at, "-i", source, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", out]);
+			: ["-ss", String((clip.inMs + (ms - clip.startMs) * clip.speed) / 1000)];
+	await ffmpeg([
+		...seek,
+		"-i",
+		resolveInProject(dir, asset.path),
+		"-frames:v",
+		"1",
+		"-vf",
+		"scale=480:-2",
+		"-q:v",
+		"4",
+		out,
+	]);
 }

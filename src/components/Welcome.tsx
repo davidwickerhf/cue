@@ -125,6 +125,10 @@ export function Welcome() {
 		q || place === "all" ? true : place === "loose" ? !p.collectionId : p.collectionId === place;
 	const current = collections.find((c) => c.id === place);
 	if (place !== "all" && place !== "loose" && !current && collections.length) setPlace("all");
+	// Names shared by more than one project: their cards also show the file's name.
+	const sameName = new Set(
+		(projects ?? []).map((p) => p.name).filter((name, i, all) => all.indexOf(name) !== i),
+	);
 	const shown = (projects ?? [])
 		.filter(inPlace)
 		.filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
@@ -268,6 +272,7 @@ export function Welcome() {
 									<Card
 										key={p.path}
 										project={p}
+										fileName={sameName.has(p.name) ? fileNameOf(p.path) : undefined}
 										renaming={renaming === p.path}
 										onRename={(name) => {
 											setRenaming(null);
@@ -461,13 +466,21 @@ function Place({
 /** Drag data type for projects dragged from a card to a collection. */
 const PROJECT_DRAG = "application/x-cue-projects";
 
+/** A project file's name without its extension, to tell projects with the same name apart. */
+function fileNameOf(file: string): string {
+	return (file.split("/").pop() ?? file).replace(/\.cueproj$|\.cue\.json$/, "");
+}
+
 function Card({
 	project: p,
+	fileName,
 	renaming,
 	onRename,
 	onMenu,
 }: {
 	project: ProjectSummary;
+	/** Shown under the name when another project has the same name. */
+	fileName?: string;
 	renaming: boolean;
 	onRename: (name: string) => void;
 	onMenu: (x: number, y: number) => void;
@@ -533,6 +546,11 @@ function Card({
 						/>
 					) : (
 						<p className="truncate text-[13px] font-medium">{p.name}</p>
+					)}
+					{fileName && fileName !== p.name && (
+						<p className="truncate text-[11px] text-foreground/70" title={p.path}>
+							{fileName}
+						</p>
 					)}
 					<p className="truncate text-[11px] text-muted">
 						{p.exists

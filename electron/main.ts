@@ -827,11 +827,16 @@ function mayServe(file: string): boolean {
 	const resolved = path.resolve(file);
 	if (extraServable.has(resolved)) return true;
 	// Poster frames for the projects overview, only next to a Cue project file.
-	if (
-		path.basename(resolved) === "poster.jpg" &&
-		path.basename(path.dirname(resolved)) === ".cue-cache"
-	) {
-		const projectDir = path.dirname(path.dirname(resolved));
+	const posters = path.dirname(resolved);
+	const inCache =
+		(path.basename(resolved) === "poster.jpg" && path.basename(posters) === ".cue-cache") ||
+		(resolved.endsWith(".jpg") &&
+			path.basename(posters) === "posters" &&
+			path.basename(path.dirname(posters)) === ".cue-cache");
+	if (inCache) {
+		const projectDir = path.dirname(
+			path.basename(posters) === "posters" ? path.dirname(posters) : posters,
+		);
 		return readdirSync(projectDir).some((entry) => isProjectFile(entry));
 	}
 	const snapshot = store.snapshot();
