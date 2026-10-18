@@ -9,6 +9,14 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.30",
+		date: "2026-10-18",
+		summary: "Better project thumbnails.",
+		changes: [
+			"A project's thumbnail is taken from a real shot, not from a paper texture or backdrop running under the whole edit.",
+		],
+	},
+	{
 		version: "0.2.29",
 		date: "2026-10-18",
 		summary: "Projects you can tell apart.",
