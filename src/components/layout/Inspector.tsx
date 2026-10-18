@@ -24,6 +24,7 @@ import type {
 import { VIGNETTE_DEFAULTS } from "../../../electron/core/vignette";
 import { notify, run } from "../../lib/api";
 import { askAbout, draftMessage } from "../../lib/chat";
+import { type SpecJson, specTexts, withSpecText } from "../../lib/motionText";
 import { goToPage, pageState } from "../../lib/pages";
 import { isMac, keyLabel } from "../../lib/platform";
 import { playback } from "../../lib/playback";
@@ -1968,6 +1969,7 @@ function MotionSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
 	const set = (motion: MotionSettings | null) =>
 		void run("update_clip", { id: clip.id, patch: { motion } });
 	const glyphs = info.texts.some((t) => t.glyphs);
+	const spec = asset.motionSource?.spec as SpecJson | undefined;
 	return (
 		<Section
 			title="Motion graphic"
@@ -1982,17 +1984,37 @@ function MotionSection({ clip, asset }: { clip: MediaClip; asset: Asset }) {
 				</div>
 			}
 		>
-			{info.texts.map((t) => (
-				<Field key={t.id} label={t.id}>
-					<TextInput
-						value={m.text?.[t.id] ?? t.text}
-						multiline={t.text.includes("\n") || (m.text?.[t.id] ?? "").includes("\n")}
-						rows={2}
-						// Back to the file's own text removes the change.
-						onCommit={(v) => set({ text: { [t.id]: v === t.text ? "" : v } })}
-					/>
-				</Field>
-			))}
+			{spec
+				? specTexts(spec).map((t) => (
+						<Field key={t.path} label={t.name ?? "Text"}>
+							<TextInput
+								value={t.text}
+								multiline
+								rows={t.text.length > 34 || t.text.includes("\n") ? 2 : 1}
+								placeholder="Empty removes the line"
+								onCommit={(v) => {
+									// Edits the graphic itself, so the field always shows what is drawn;
+									// a clip's old text change for this line would hide it.
+									if (t.name && m.text?.[t.name] !== undefined) set({ text: { [t.name]: "" } });
+									void run("update_motion_graphic", {
+										assetId: asset.id,
+										spec: withSpecText(spec, t.path, v.trim() ? v : null),
+									});
+								}}
+							/>
+						</Field>
+					))
+				: info.texts.map((t) => (
+						<Field key={t.id} label={t.id}>
+							<TextInput
+								value={m.text?.[t.id] ?? t.text}
+								multiline
+								rows={t.text.length > 34 || t.text.includes("\n") ? 2 : 1}
+								// Back to the file's own text removes the change; cleared, the line is blank.
+								onCommit={(v) => set({ text: { [t.id]: v === t.text ? "" : v || " " } })}
+							/>
+						</Field>
+					))}
 			{glyphs && (
 				<p className="text-[11px] text-muted">
 					This file draws its text from letter shapes stored in it, so only those letters show.

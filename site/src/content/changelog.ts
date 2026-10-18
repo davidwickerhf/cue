@@ -9,6 +9,15 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.31",
+		date: "2026-10-18",
+		summary: "Editing a motion graphic's text in the inspector.",
+		changes: [
+			"For graphics made in Cue, the inspector's text fields edit the graphic itself, listed top to bottom in the graphic's own order, and clearing a field removes that line. Clearing one used to bring the old text back.",
+			"Long lines wrap in their field instead of being cut off.",
+		],
+	},
+	{
 		version: "0.2.30",
 		date: "2026-10-18",
 		summary: "Better project thumbnails.",
