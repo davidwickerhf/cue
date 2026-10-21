@@ -154,3 +154,14 @@ What editors reach for After Effects to do, available in Cue without its complex
 - [ ] Listings: MCP server directories (mcp.so, Smithery, Glama, the official MCP registry), awesome-mcp-servers, awesome-macOS, AlternativeTo, Homebrew cask
 - [ ] Launches: Show HN, Product Hunt, r/VideoEditing, r/macapps, r/ClaudeAI and r/LocalLLaMA (local models), Mastodon and X with short Recordly demo clips
 - [ ] A launch post on wicker.life: why an editor an agent can drive, with the demo videos
+
+## 10. What Descript does that fits Cue
+
+From a comparison with Descript (28 September 2026). Descript is a hosted, subscription editor where its own AI edits for you; Cue stays local, open and driven by any agent. Take what fits that, leave cloud collaboration and enterprise features to them.
+
+- [ ] **Speech correction in the speaker's voice**: type over a word or line in the transcript and it is regenerated with an ElevenLabs voice clone, matched to the room. Cloning asks for the speaker's consent first. Available to agents over MCP.
+- [ ] **Long recordings into clips**: a playbook and recipe that chains find_moments, variants, captions and chapters into ready-to-post clips, each with a title and description.
+- [ ] **Dubbing and translation**: translate the transcript and produce a voice track and captions per language with ElevenLabs, kept as alternative tracks or sequences.
+- [ ] **Transcript-first simple mode**: open a project on its transcript and edit by text, the timeline one click away (see progressive disclosure in section 8).
+- [ ] **Review copies without a server**: export a review file with the markers and comments as a list, and bring the reviewer's notes back in as markers.
+- [ ] **"Cue vs Descript" page on the site**: a Descript alternative page beside the pages in section 7: local, open source, free, any agent, a real editing timeline.
