@@ -145,7 +145,7 @@ What editors reach for After Effects to do, available in Cue without its complex
 - [x] Metadata: page title and description per section, canonical URL, Open Graph and Twitter cards with a real preview image
 - [x] Structured data: `SoftwareApplication` (name, OS, price 0, download URL, screenshots) and `FAQPage` for the FAQ
 - [x] `sitemap.xml`, `robots.txt` and `llms.txt` (so AI search can describe Cue correctly)
-- [x] Performance: poster images and lazy video on the site, Core Web Vitals checked in Vercel
+- [x] Performance: poster images and lazy video on the site, Core Web Vitals checked in Vercel (the site was hosted there until October 2026)
 - [x] Pages people search for: "AI video editor for Mac", "open-source Premiere alternative", "edit video with Claude Code / MCP", "text-based video editing", each with a short demo
 - [x] Changelog page on the site
 - [x] Docs pages on the site
