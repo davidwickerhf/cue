@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { classifyDownload, githubTarget, onPostHog, POSTHOG_KEY, track } from "@/lib/analytics";
+import { classifyDownload, docsTarget, githubTarget, onPostHog, POSTHOG_KEY, track } from "@/lib/analytics";
 import { REPO } from "@/lib/site";
 
 /**
@@ -18,13 +18,13 @@ function locationOf(el: Element): string {
 
 /**
  * One listener for every link on the site: downloads (the release files in lib/site.ts,
- * wherever they appear) become download_click and repository links github_click. Copying text
- * from an element marked `data-track-copy` becomes command_copied. Mounted once in the layout;
- * without PostHog it adds no listeners.
+ * wherever they appear) become download_click, repository links github_click and links into
+ * the docs from outside them docs_click. Copying text from an element marked `data-track-copy`
+ * becomes command_copied. Mounted once in the layout. Umami is always on in production, so the
+ * listeners don't depend on the PostHog key; track() is a no-op where neither is loaded.
  */
 export function LinkTracking({ version }: { version: string }) {
   useEffect(() => {
-    if (!POSTHOG_KEY) return;
     const onClick = (event: MouseEvent) => {
       // Primary and middle clicks (opening in a new tab counts too).
       if (event.button !== 0 && event.button !== 1) return;
@@ -39,7 +39,15 @@ export function LinkTracking({ version }: { version: string }) {
         return;
       }
       const target = githubTarget(href, REPO);
-      if (target) track("github_click", { target, page, location });
+      if (target) {
+        track("github_click", { target, page, location });
+        return;
+      }
+      const docs = docsTarget(link);
+      const onDocs = page === "/docs" || page.startsWith("/docs/");
+      if (docs && !onDocs) {
+        track("docs_click", { target: docs, page, location });
+      }
     };
     const onCopy = () => {
       const node = document.getSelection()?.anchorNode;
@@ -62,10 +70,15 @@ export function LinkTracking({ version }: { version: string }) {
 /** Sends changelog_viewed once when the changelog opens (with the version linked to, if any). */
 export function ChangelogViewed({ latest }: { latest: string }) {
   useEffect(() => {
-    if (!POSTHOG_KEY) return;
     const anchor = window.location.hash.replace(/^#/, "") || undefined;
-    // posthog-js loads asynchronously; wait for it so the event isn't dropped.
-    return onPostHog(() => track("changelog_viewed", { latest_version: latest, ...(anchor ? { anchor } : {}) }));
+    const properties = { latest_version: latest, ...(anchor ? { anchor } : {}) };
+    // posthog-js loads asynchronously; wait for it so the event isn't dropped. Without PostHog,
+    // send to Umami alone (track() queues it until the Umami script has run).
+    if (!POSTHOG_KEY) {
+      track("changelog_viewed", properties);
+      return;
+    }
+    return onPostHog(() => track("changelog_viewed", properties));
   }, [latest]);
   return null;
 }

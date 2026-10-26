@@ -8,7 +8,7 @@ import { AUTHOR, REPO } from "@/lib/site";
 export const metadata = pageMetadata({
   title: "Privacy",
   description:
-    "What cue.wicker.life measures (cookieless, in the EU, no personal data) and the anonymous usage report the Cue app sends only if you turn it on.",
+    "What cue.wicker.life measures (cookieless, no personal data) and the anonymous usage report the Cue app sends only if you turn it on.",
   path: "/privacy",
 });
 
@@ -52,17 +52,23 @@ export default function Privacy() {
           <Section id="website" title="This website">
             <p>
               cue.wicker.life counts visits with{" "}
+              <a href="https://umami.is" className="underline underline-offset-4 hover:text-white">
+                Umami
+              </a>
+              , which its author runs himself at analytics.wicker.life, and with{" "}
               <a href="https://posthog.com" className="underline underline-offset-4 hover:text-white">
                 PostHog
               </a>
-              , hosted in the EU (Frankfurt), through this site&apos;s own address. It measures which pages are viewed, which links and
-              buttons are clicked (for example which download), when a command or prompt is copied, and the referring site.
+              , hosted in the EU (Frankfurt), through this site&apos;s own address. They measure which pages are viewed, which links and
+              buttons are clicked (for example which download, or a link to the docs or GitHub), when a command or prompt is copied, and
+              the referring site.
             </p>
             <p>
-              It sets <strong className="text-white">no cookies</strong> and stores nothing in your browser (no local or session storage).
-              To count visitors, PostHog computes an anonymous hash on its servers from your IP address, browser and this site, with a
-              random value that changes every day and is then deleted. So the same visitor can&apos;t be recognised from one day to the
-              next, and your IP address is not stored with the events.
+              Neither sets <strong className="text-white">cookies</strong> or stores anything in your browser (no local or session
+              storage). To count visitors, both compute an anonymous hash on their servers from your IP address, browser and this site,
+              mixed with a random value that changes regularly: every day for PostHog, which then deletes it, and every month for Umami.
+              So PostHog can&apos;t recognise the same visitor from one day to the next, nor Umami from one month to the next, and your
+              IP address is not stored with the events.
             </p>
             <p>
               There are no personal profiles, no session recordings, no advertising and no tracking across other websites. If your

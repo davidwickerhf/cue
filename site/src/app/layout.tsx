@@ -54,6 +54,17 @@ const noScriptReveal = "[style*='opacity:0']{opacity:1!important;transform:none!
 export default function RootLayout({ children }: LayoutProps<"/">) {
 	return (
 		<html lang="en" className={`${inter.variable} antialiased`}>
+			<head>
+				{/* Umami, self-hosted and cookieless (see lib/analytics.ts and /privacy). data-domains keeps
+				    localhost and previews out; data-do-not-track honours the browser's Do Not Track. */}
+				<script
+					defer
+					src="https://analytics.wicker.life/wa.js"
+					data-website-id="28e87729-30be-499a-bf63-07835c1ffaed"
+					data-domains="cue.wicker.life"
+					data-do-not-track="true"
+				/>
+			</head>
 			<body className="min-h-screen font-sans">
 				<noscript>
 					<style>{noScriptReveal}</style>
