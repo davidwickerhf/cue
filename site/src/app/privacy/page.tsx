@@ -55,20 +55,15 @@ export default function Privacy() {
               <a href="https://umami.is" className="underline underline-offset-4 hover:text-white">
                 Umami
               </a>
-              , which its author runs himself at analytics.wicker.life, and with{" "}
-              <a href="https://posthog.com" className="underline underline-offset-4 hover:text-white">
-                PostHog
-              </a>
-              , hosted in the EU (Frankfurt), through this site&apos;s own address. They measure which pages are viewed, which links and
-              buttons are clicked (for example which download, or a link to the docs or GitHub), when a command or prompt is copied, and
-              the referring site.
+              , which its author runs himself at analytics.wicker.life, on a server at Hetzner Online GmbH in Germany (EU). It
+              measures which pages are viewed, which links and buttons are clicked (for example which download, or a link to the docs
+              or GitHub), when a command or prompt is copied, and the referring site.
             </p>
             <p>
-              Neither sets <strong className="text-white">cookies</strong> or stores anything in your browser (no local or session
-              storage). To count visitors, both compute an anonymous hash on their servers from your IP address, browser and this site,
-              mixed with a random value that changes regularly: every day for PostHog, which then deletes it, and every month for Umami.
-              So PostHog can&apos;t recognise the same visitor from one day to the next, nor Umami from one month to the next, and your
-              IP address is not stored with the events.
+              It sets no <strong className="text-white">cookies</strong> and stores nothing in your browser (no local or session
+              storage). To count visitors, it computes an anonymous hash on the server from your IP address, browser and this site,
+              mixed with a random value that changes every month. So Umami can&apos;t recognise the same visitor from one month to the
+              next, and your IP address is not stored with the events.
             </p>
             <p>
               There are no personal profiles, no session recordings, no advertising and no tracking across other websites. If your
@@ -79,7 +74,7 @@ export default function Privacy() {
           <Section id="app" title="The Cue app">
             <p>
               The app sends nothing about how you use it unless you choose <strong className="text-white">Share anonymous usage</strong>{" "}
-              (Cue asks once, and the setting is in Settings → General). If you do, it sends these events to the same EU PostHog project,
+              (Cue asks once, and the setting is in Settings → General). If you do, it sends these events to a PostHog project hosted in the EU,
               with a random install ID created on your computer (not linked to you, your account or your device):
             </p>
             <ul className="flex flex-col gap-2">
