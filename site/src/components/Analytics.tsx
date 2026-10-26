@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { classifyDownload, docsTarget, githubTarget, onPostHog, POSTHOG_KEY, track } from "@/lib/analytics";
+import { classifyDownload, docsTarget, githubTarget, track } from "@/lib/analytics";
 import { REPO } from "@/lib/site";
 
 /**
@@ -20,8 +20,7 @@ function locationOf(el: Element): string {
  * One listener for every link on the site: downloads (the release files in lib/site.ts,
  * wherever they appear) become download_click, repository links github_click and links into
  * the docs from outside them docs_click. Copying text from an element marked `data-track-copy`
- * becomes command_copied. Mounted once in the layout. Umami is always on in production, so the
- * listeners don't depend on the PostHog key; track() is a no-op where neither is loaded.
+ * becomes command_copied. Mounted once in the layout. track() is a no-op where Umami isn't loaded.
  */
 export function LinkTracking({ version }: { version: string }) {
   useEffect(() => {
@@ -72,13 +71,8 @@ export function ChangelogViewed({ latest }: { latest: string }) {
   useEffect(() => {
     const anchor = window.location.hash.replace(/^#/, "") || undefined;
     const properties = { latest_version: latest, ...(anchor ? { anchor } : {}) };
-    // posthog-js loads asynchronously; wait for it so the event isn't dropped. Without PostHog,
-    // send to Umami alone (track() queues it until the Umami script has run).
-    if (!POSTHOG_KEY) {
-      track("changelog_viewed", properties);
-      return;
-    }
-    return onPostHog(() => track("changelog_viewed", properties));
+    // track() queues it until the deferred Umami script has run.
+    track("changelog_viewed", properties);
   }, [latest]);
   return null;
 }

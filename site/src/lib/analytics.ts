@@ -1,19 +1,13 @@
-import type { PostHog } from "posthog-js";
-
 /**
- * Site analytics, both cookieless:
- * - Umami, self-hosted at analytics.wicker.life, loaded by a script tag in app/layout.tsx and
- *   limited to cue.wicker.life by its data-domains attribute. Events go to it under kebab-case
- *   names (download_click becomes download-click).
- * - PostHog (EU cloud), a no-op until NEXT_PUBLIC_POSTHOG_KEY is set at build time and posthog-js
- *   has loaded (src/instrumentation-client.ts). Without the key, posthog-js is never downloaded.
+ * Site analytics: Umami, cookieless and self-hosted at analytics.wicker.life, loaded by a script
+ * tag in app/layout.tsx and limited to cue.wicker.life by its data-domains attribute. Events go to
+ * it under kebab-case names (download_click becomes download-click).
  */
-export const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
 
 export type Platform = "mac-arm" | "mac-intel" | "windows" | "linux-appimage" | "linux-deb";
 export type DownloadFormat = "dmg" | "zip" | "exe" | "appimage" | "deb";
 
-/** Every explicit event the site sends, with its properties. Autocaptured pageviews and clicks come on top. */
+/** Every explicit event the site sends, with its properties. Umami counts pageviews on top. */
 export interface SiteEvents {
   /** A link to a release file. `location` is the button or section, `page` the path it was on. */
   download_click: { platform: Platform; format: DownloadFormat; version?: string; page: string; location: string };
@@ -31,32 +25,6 @@ export interface SiteEvents {
   changelog_viewed: { latest_version: string; anchor?: string };
 }
 export type SiteEvent = keyof SiteEvents;
-
-let client: PostHog | null = null;
-const waiting = new Set<(posthog: PostHog) => void>();
-
-/** Called once posthog-js has been initialised. */
-export function setPostHog(posthog: PostHog) {
-  client = posthog;
-  for (const cb of waiting) cb(posthog);
-  waiting.clear();
-}
-
-/** The PostHog client, or null when analytics is off (no key) or not loaded yet. */
-export function getPostHog(): PostHog | null {
-  return client;
-}
-
-/** Runs `cb` with the client once it is available. Never runs without a key. Returns an unsubscribe. */
-export function onPostHog(cb: (posthog: PostHog) => void): () => void {
-  if (client) {
-    cb(client);
-    return () => {};
-  }
-  if (!POSTHOG_KEY) return () => {};
-  waiting.add(cb);
-  return () => waiting.delete(cb);
-}
 
 type UmamiProps = Record<string, string | number | boolean | undefined>;
 declare global {
@@ -94,11 +62,8 @@ function sendToUmami(event: string, properties: UmamiProps) {
   }, 500);
 }
 
-/** Sends one event to Umami and, when it is configured, PostHog. Never throws. */
+/** Sends one event to Umami. Never throws. */
 export function track<E extends SiteEvent>(event: E, properties: SiteEvents[E]) {
-  try {
-    client?.capture(event, properties);
-  } catch {}
   try {
     sendToUmami(event, properties as UmamiProps);
   } catch {}
