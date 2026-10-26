@@ -1,6 +1,6 @@
 # cue.wicker.life
 
-The Cue website: Next.js (App Router), deployed on Vercel.
+The Cue website: Next.js (App Router), self-hosted with Coolify on the owner's Hetzner server and deployed on every merge to `main`. See [../docs/HOSTING.md](../docs/HOSTING.md). (It was on Vercel until October 2026.)
 
 ```bash
 npm run dev     # http://localhost:3000
