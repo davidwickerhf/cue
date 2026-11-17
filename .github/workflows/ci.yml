@@ -34,7 +34,9 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q libxml2-utils
       - run: npm ci
       - run: npx tsc --noEmit -p tsconfig.json
-      - run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=junit.xml
+      # --testTimeout: the CPU-bound tracker tests (test/tracker.test.ts) take 5.3–5.6 s on anvil-4cpu, just over
+      # vitest's 5 s default.
+      - run: npx vitest run --testTimeout=20000 --reporter=default --reporter=junit --outputFile.junit=junit.xml
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
