@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-14]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'anvil-2cpu' || matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
