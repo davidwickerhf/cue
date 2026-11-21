@@ -230,11 +230,61 @@ export const keySchema = z.object({
 	similarity: z.number().min(0.01).max(0.6),
 	blend: z.number().min(0).max(0.5),
 });
+const point = z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]);
+export const cornersSchema = z.tuple([point, point, point, point]);
+export const pinSchema = z.object({
+	keys: z
+		.array(z.object({ atMs: z.number().min(0), corners: cornersSchema }))
+		.min(1)
+		.max(20000),
+});
+export const trackerSchema = z.object({
+	mode: z.enum(["screen", "surface", "object"]),
+	color: z
+		.string()
+		.regex(/^#[0-9a-fA-F]{6}$/)
+		.optional(),
+	anchors: z.array(z.object({ atMs: z.number().min(0), corners: cornersSchema })).max(200),
+	result: z
+		.array(
+			z.object({
+				atMs: z.number().min(0),
+				corners: cornersSchema,
+				confidence: z.number().min(0).max(1),
+			}),
+		)
+		.max(20000)
+		.optional(),
+	targets: z
+		.array(z.object({ clipId: z.string(), as: z.enum(["pin", "follow"]) }))
+		.max(50)
+		.optional(),
+});
 export const DEFAULT_KEY = { color: "#00ff00", similarity: 0.15, blend: 0.08 };
 export const effectsSchema = z.object({
 	blur: z.number().min(0).max(1),
 	sharpen: z.number().min(0).max(1),
 	vignette: z.number().min(0).max(1),
+	vignetteMidpoint: z
+		.number()
+		.min(0)
+		.max(1)
+		.optional()
+		.describe("Where the vignette starts darkening: higher keeps it in the corners (default 0.5)."),
+	vignetteRoundness: z
+		.number()
+		.min(-1)
+		.max(1)
+		.optional()
+		.describe(
+			"-1 follows the frame's rectangle, 0 an ellipse of the frame's shape (default), 1 a circle.",
+		),
+	vignetteFeather: z
+		.number()
+		.min(0)
+		.max(1)
+		.optional()
+		.describe("Softness of the vignette's edge: 0 is hard (default 0.5)."),
 	glow: z.number().min(0).max(1),
 	grain: z.number().min(0).max(1).default(0),
 	stabilize: z.boolean(),
@@ -265,6 +315,7 @@ export const NEUTRAL_COLOR = { brightness: 0, contrast: 1, saturation: 1, temper
 export const transitionSchema = z.object({
 	kind: z.enum(TRANSITION_KINDS),
 	durationMs: z.number().min(40).max(5000),
+	made: z.enum(["head", "tail", "shift"]).optional(),
 });
 
 export const exportSchema = z.object({
@@ -439,6 +490,8 @@ const mediaClipSchema = z.object({
 	color: colorSchema.optional(),
 	mask: maskSchema.optional(),
 	key: keySchema.optional(),
+	pin: pinSchema.optional(),
+	tracker: trackerSchema.optional(),
 	effects: effectsSchema.optional(),
 	frame: frameSchema.optional(),
 	blend: z.enum(BLEND_MODES).optional(),

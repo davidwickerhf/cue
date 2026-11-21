@@ -419,7 +419,17 @@ async function saveSecret<P extends SecretProvider>(
 	provider: P,
 	value: Secrets[P] | null,
 ): Promise<void> {
-	const next = serializeSecrets(withSecret(await readSecrets(), provider, value));
+	// A file that exists but can't be read (the keychain refused, e.g. after an update)
+	// is kept aside rather than overwritten, so saving one key never erases the others.
+	const current = await readSecrets();
+	if (!Object.keys(current).length && existsSync(secretsFile)) {
+		try {
+			safeStorage.decryptString(await fs.readFile(secretsFile));
+		} catch {
+			await fs.rename(secretsFile, `${secretsFile}.unreadable-${Date.now()}`).catch(() => {});
+		}
+	}
+	const next = serializeSecrets(withSecret(current, provider, value));
 	if (!next) {
 		await fs.rm(secretsFile, { force: true });
 		return;
@@ -817,11 +827,16 @@ function mayServe(file: string): boolean {
 	const resolved = path.resolve(file);
 	if (extraServable.has(resolved)) return true;
 	// Poster frames for the projects overview, only next to a Cue project file.
-	if (
-		path.basename(resolved) === "poster.jpg" &&
-		path.basename(path.dirname(resolved)) === ".cue-cache"
-	) {
-		const projectDir = path.dirname(path.dirname(resolved));
+	const posters = path.dirname(resolved);
+	const inCache =
+		(path.basename(resolved) === "poster.jpg" && path.basename(posters) === ".cue-cache") ||
+		(resolved.endsWith(".jpg") &&
+			path.basename(posters) === "posters" &&
+			path.basename(path.dirname(posters)) === ".cue-cache");
+	if (inCache) {
+		const projectDir = path.dirname(
+			path.basename(posters) === "posters" ? path.dirname(posters) : posters,
+		);
 		return readdirSync(projectDir).some((entry) => isProjectFile(entry));
 	}
 	const snapshot = store.snapshot();

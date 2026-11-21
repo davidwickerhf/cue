@@ -181,7 +181,7 @@ npm run install:app    # build, sign and install /Applications/Cue.app
 
 Releases (signing, notarisation, the Windows and Linux builds, auto-update) are described in [docs/RELEASING.md](docs/RELEASING.md): `npm run release:mac` builds a signed and notarised Mac release, and pushing a `v*` tag runs [the release workflow](.github/workflows/release.yml) for all three platforms.
 
-The website lives in [`site/`](site) (Next.js) and deploys to [cue.wicker.life](https://cue.wicker.life) on push.
+The website lives in [`site/`](site) (Next.js) and deploys to [cue.wicker.life](https://cue.wicker.life) through Coolify on every merge to `main` ([hosting notes](docs/HOSTING.md)).
 
 ## Architecture
 

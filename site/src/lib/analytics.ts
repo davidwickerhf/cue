@@ -1,21 +1,20 @@
-import type { PostHog } from "posthog-js";
-
 /**
- * Site analytics (PostHog, EU cloud, cookieless). Everything here is a no-op until
- * NEXT_PUBLIC_POSTHOG_KEY is set at build time and posthog-js has loaded
- * (src/instrumentation-client.ts). Without the key, posthog-js is never even downloaded.
+ * Site analytics: Umami, cookieless and self-hosted at analytics.wicker.life, loaded by a script
+ * tag in app/layout.tsx and limited to cue.wicker.life by its data-domains attribute. Events go to
+ * it under kebab-case names (download_click becomes download-click).
  */
-export const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
 
 export type Platform = "mac-arm" | "mac-intel" | "windows" | "linux-appimage" | "linux-deb";
 export type DownloadFormat = "dmg" | "zip" | "exe" | "appimage" | "deb";
 
-/** Every explicit event the site sends, with its properties. Autocaptured pageviews and clicks come on top. */
+/** Every explicit event the site sends, with its properties. Umami counts pageviews on top. */
 export interface SiteEvents {
   /** A link to a release file. `location` is the button or section, `page` the path it was on. */
   download_click: { platform: Platform; format: DownloadFormat; version?: string; page: string; location: string };
   /** A link to the GitHub repository (not a download). `target`: repo, releases, issues, source, license or other. */
   github_click: { target: string; page: string; location: string };
+  /** A link into the docs from a page outside them. `target` is the docs path opened. */
+  docs_click: { target: string; page: string; location: string };
   /** The command or config that connects an agent (Claude Code, Codex, ...) to Cue was copied. */
   agent_connect_copied: { client: string; page: string };
   /** An example's full prompt was copied. */
@@ -27,37 +26,53 @@ export interface SiteEvents {
 }
 export type SiteEvent = keyof SiteEvents;
 
-let client: PostHog | null = null;
-const waiting = new Set<(posthog: PostHog) => void>();
-
-/** Called once posthog-js has been initialised. */
-export function setPostHog(posthog: PostHog) {
-  client = posthog;
-  for (const cb of waiting) cb(posthog);
-  waiting.clear();
-}
-
-/** The PostHog client, or null when analytics is off (no key) or not loaded yet. */
-export function getPostHog(): PostHog | null {
-  return client;
-}
-
-/** Runs `cb` with the client once it is available. Never runs without a key. Returns an unsubscribe. */
-export function onPostHog(cb: (posthog: PostHog) => void): () => void {
-  if (client) {
-    cb(client);
-    return () => {};
+type UmamiProps = Record<string, string | number | boolean | undefined>;
+declare global {
+  interface Window {
+    umami?: { track: (event: string, props?: UmamiProps) => void };
   }
-  if (!POSTHOG_KEY) return () => {};
-  waiting.add(cb);
-  return () => waiting.delete(cb);
 }
 
-/** Sends one event. Does nothing without PostHog, and never throws. */
+/** Events sent before the deferred Umami script has run. Flushed once it has, dropped after ~10 s. */
+const umamiQueue: [string, UmamiProps][] = [];
+let umamiTimer: ReturnType<typeof setInterval> | null = null;
+
+function flushUmami(): boolean {
+  const umami = typeof window === "undefined" ? undefined : window.umami;
+  if (!umami) return false;
+  for (const [name, props] of umamiQueue.splice(0)) {
+    try {
+      umami.track(name, props);
+    } catch {}
+  }
+  return true;
+}
+
+function sendToUmami(event: string, properties: UmamiProps) {
+  if (typeof window === "undefined") return;
+  umamiQueue.push([event.replace(/_/g, "-"), properties]);
+  if (flushUmami() || umamiTimer) return;
+  let tries = 0;
+  umamiTimer = setInterval(() => {
+    if (flushUmami() || ++tries >= 20) {
+      if (umamiTimer) clearInterval(umamiTimer);
+      umamiTimer = null;
+      umamiQueue.length = 0;
+    }
+  }, 500);
+}
+
+/** Sends one event to Umami. Never throws. */
 export function track<E extends SiteEvent>(event: E, properties: SiteEvents[E]) {
   try {
-    client?.capture(event, properties);
+    sendToUmami(event, properties as UmamiProps);
   } catch {}
+}
+
+/** The docs path a link opens, when it is a same-site link into /docs. */
+export function docsTarget(link: HTMLAnchorElement): string | null {
+  if (link.origin !== window.location.origin) return null;
+  return link.pathname === "/docs" || link.pathname.startsWith("/docs/") ? link.pathname : null;
 }
 
 /** Which build a release URL points at, from its file name (see DOWNLOADS in lib/site.ts). */

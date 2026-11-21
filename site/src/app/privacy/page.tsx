@@ -8,7 +8,7 @@ import { AUTHOR, REPO } from "@/lib/site";
 export const metadata = pageMetadata({
   title: "Privacy",
   description:
-    "What cue.wicker.life measures (cookieless, in the EU, no personal data) and the anonymous usage report the Cue app sends only if you turn it on.",
+    "What cue.wicker.life measures (cookieless, no personal data) and the anonymous usage report the Cue app sends only if you turn it on.",
   path: "/privacy",
 });
 
@@ -52,16 +52,17 @@ export default function Privacy() {
           <Section id="website" title="This website">
             <p>
               cue.wicker.life counts visits with{" "}
-              <a href="https://posthog.com" className="underline underline-offset-4 hover:text-white">
-                PostHog
+              <a href="https://umami.is" className="underline underline-offset-4 hover:text-white">
+                Umami
               </a>
-              , hosted in the EU (Frankfurt), through this site&apos;s own address. It measures which pages are viewed, which links and
-              buttons are clicked (for example which download), when a command or prompt is copied, and the referring site.
+              , which its author runs himself at analytics.wicker.life, on a server at Hetzner Online GmbH in Germany (EU). It
+              measures which pages are viewed, which links and buttons are clicked (for example which download, or a link to the docs
+              or GitHub), when a command or prompt is copied, and the referring site.
             </p>
             <p>
-              It sets <strong className="text-white">no cookies</strong> and stores nothing in your browser (no local or session storage).
-              To count visitors, PostHog computes an anonymous hash on its servers from your IP address, browser and this site, with a
-              random value that changes every day and is then deleted. So the same visitor can&apos;t be recognised from one day to the
+              It sets no <strong className="text-white">cookies</strong> and stores nothing in your browser (no local or session
+              storage). To count visitors, it computes an anonymous hash on the server from your IP address, browser and this site,
+              mixed with a random value that changes every month. So Umami can&apos;t recognise the same visitor from one month to the
               next, and your IP address is not stored with the events.
             </p>
             <p>
@@ -73,7 +74,7 @@ export default function Privacy() {
           <Section id="app" title="The Cue app">
             <p>
               The app sends nothing about how you use it unless you choose <strong className="text-white">Share anonymous usage</strong>{" "}
-              (Cue asks once, and the setting is in Settings → General). If you do, it sends these events to the same EU PostHog project,
+              (Cue asks once, and the setting is in Settings → General). If you do, it sends these events to a PostHog project hosted in the EU,
               with a random install ID created on your computer (not linked to you, your account or your device):
             </p>
             <ul className="flex flex-col gap-2">

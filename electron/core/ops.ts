@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DEFAULT_CURVE, splitKeyframes, splitZooms, withKeyframe } from "./anim";
 import { binPath } from "./bins";
 import type { MotionSettings } from "./motion";
+import { splitPin } from "./pin";
 import {
 	aiSchema,
 	assertUnique,
@@ -38,6 +39,7 @@ import {
 	NO_EFFECTS,
 	newId,
 	normaliseLine,
+	pinSchema,
 	settingsSchema,
 	shapeSchema,
 	sortLines,
@@ -45,6 +47,7 @@ import {
 	textStyleSchema,
 	trackCompressorSchema,
 	trackEqSchema,
+	trackerSchema,
 	transformSchema,
 	transitionSchema,
 	voiceoverTrack,
@@ -158,6 +161,8 @@ export const clipPatch = z
 		label: z.enum(CLIP_LABELS).nullable(),
 		mask: maskSchema.partial().nullable(),
 		key: keySchema.partial().nullable(),
+		pin: pinSchema.nullable(),
+		tracker: trackerSchema.nullable(),
 		effects: effectsSchema.partial().nullable(),
 		blend: z.enum(BLEND_MODES).nullable(),
 		wiggle: wiggleSchema.partial().nullable(),
@@ -382,6 +387,22 @@ export const opSchema = z.discriminatedUnion("type", [
 				}),
 			)
 			.min(1),
+	}),
+	// A motion track kept on its clip and, in the same step, a clip pinned onto it or moved with it.
+	z.object({
+		type: z.literal("applyTrack"),
+		clipId: z.string(),
+		tracker: trackerSchema.nullable().optional(),
+		target: z
+			.object({
+				clipId: z.string(),
+				pin: pinSchema.nullable().optional(),
+				/** Replace these properties' keyframes. */
+				keyframes: z
+					.partialRecord(z.enum(KEYFRAME_PROPS), z.array(keyframeSchema).max(5000))
+					.optional(),
+			})
+			.optional(),
 	}),
 	z.object({
 		type: z.literal("clearKeyframes"),
@@ -893,6 +914,78 @@ function media(data: ProjectData, id: string): MediaClip {
 	return c;
 }
 
+/** Spare source before a clip's in-point (ms of timeline); pictures and graphics have any amount. */
+function headRoom(data: ProjectData, c: MediaClip): number {
+	const a = data.assets.find((x) => x.id === c.assetId);
+	if (!a || a.kind !== "video") return Number.POSITIVE_INFINITY;
+	return c.inMs / c.speed;
+}
+
+/** Spare source after a clip's out-point (ms of timeline). */
+function tailRoom(data: ProjectData, c: MediaClip): number {
+	const a = data.assets.find((x) => x.id === c.assetId);
+	if (!a || a.kind !== "video" || !a.durationMs) return Number.POSITIVE_INFINITY;
+	return Math.max(0, (a.durationMs - c.inMs - c.durationMs * c.speed) / c.speed);
+}
+
+/** Clip-local times (keyframes, zooms, corner pin) moved by delta, so they stay at the same timeline moments. */
+function shiftLocal(c: MediaClip, delta: number): MediaClip {
+	const keyframes = c.keyframes
+		? Object.fromEntries(
+				Object.entries(c.keyframes).map(([p, list]) => [
+					p,
+					(list ?? []).map((k) => ({ ...k, atMs: Math.max(0, k.atMs + delta) })),
+				]),
+			)
+		: undefined;
+	return {
+		...c,
+		...(keyframes ? { keyframes } : {}),
+		...(c.zooms
+			? {
+					zooms: c.zooms.map((z) => ({
+						...z,
+						startMs: Math.max(0, z.startMs + delta),
+						endMs: Math.max(0, z.endMs + delta),
+					})),
+				}
+			: {}),
+		...(c.pin
+			? {
+					pin: {
+						keys: c.pin.keys.map((k) => ({ ...k, atMs: Math.max(0, k.atMs + delta) })),
+					},
+				}
+			: {}),
+	};
+}
+
+/** The clip starting ms earlier into its own spare frames; its end and everything it shows stay put. */
+function startEarlier(c: MediaClip, ms: number): MediaClip {
+	return shiftLocal(
+		{
+			...c,
+			startMs: c.startMs - ms,
+			durationMs: c.durationMs + ms,
+			inMs: Math.max(0, Math.round(c.inMs - ms * c.speed)),
+		},
+		ms,
+	);
+}
+
+/** Undoes startEarlier. */
+function startLater(c: MediaClip, ms: number): MediaClip {
+	return shiftLocal(
+		{
+			...c,
+			startMs: c.startMs + ms,
+			durationMs: c.durationMs - ms,
+			inMs: Math.round(c.inMs + ms * c.speed),
+		},
+		-ms,
+	);
+}
+
 function replaceClip(data: ProjectData, next: Clip): ProjectData {
 	return { ...data, clips: data.clips.map((c) => (c.id === next.id ? next : c)) };
 }
@@ -917,6 +1010,7 @@ function splitOne(
 			if (r?.length) (keyframes[1] as Record<string, unknown>)[prop] = r;
 		}
 		const [zoomsLeft, zoomsRight] = splitZooms(c.zooms, leftLength);
+		const [pinLeft, pinRight] = splitPin(c.pin, leftLength);
 		right = {
 			...c,
 			id: newId("c"),
@@ -926,6 +1020,7 @@ function splitOne(
 			fadeInMs: 0,
 			keyframes: c.keyframes ? keyframes[1] : undefined,
 			zooms: zoomsRight,
+			...(pinRight ? { pin: pinRight } : {}),
 		};
 		// The cut itself is the right half's entrance, so it has no transition.
 		delete (right as MediaClip).transitionIn;
@@ -935,6 +1030,7 @@ function splitOne(
 			fadeOutMs: 0,
 			keyframes: c.keyframes ? keyframes[0] : undefined,
 			zooms: zoomsLeft,
+			...(pinLeft ? { pin: pinLeft } : {}),
 		};
 		if (!c.keyframes) {
 			delete (left as MediaClip).keyframes;
@@ -1471,6 +1567,8 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				label,
 				mask,
 				key,
+				pin,
+				tracker,
 				effects,
 				frame,
 				motion,
@@ -1504,6 +1602,11 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 									? undefined
 									: keySchema.parse({ ...DEFAULT_KEY, ...current.key, ...key }),
 						}),
+				// A pin or tracker is replaced whole (null removes it).
+				...(pin === undefined || current.type !== "media" ? {} : { pin: pin ?? undefined }),
+				...(tracker === undefined || current.type !== "media"
+					? {}
+					: { tracker: tracker ?? undefined }),
 				...(effects === undefined || current.type !== "media"
 					? {}
 					: {
@@ -2363,6 +2466,36 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				summary: `${verb} ${count} on ${c.name ?? c.id}`,
 			};
 		}
+		case "applyTrack": {
+			let next = data;
+			const source = media(next, op.clipId);
+			if (op.tracker !== undefined) {
+				unlocked(next, source.trackId);
+				next = replaceClip(next, { ...source, tracker: op.tracker ?? undefined });
+			}
+			if (op.target) {
+				const t = media(next, op.target.clipId);
+				unlocked(next, t.trackId);
+				const keyframes = op.target.keyframes
+					? { ...t.keyframes, ...op.target.keyframes }
+					: t.keyframes;
+				next = replaceClip(next, {
+					...t,
+					...(op.target.pin === undefined ? {} : { pin: op.target.pin ?? undefined }),
+					...(keyframes ? { keyframes } : {}),
+				});
+			}
+			return {
+				data: next,
+				summary: op.target
+					? op.target.pin
+						? "Pinned a clip onto a motion track"
+						: op.target.keyframes
+							? "Made a clip follow a motion track"
+							: "Changed a motion track"
+					: "Tracked motion",
+			};
+		}
 		case "clearKeyframes": {
 			const c = media(data, op.clipId);
 			const keyframes = { ...c.keyframes };
@@ -2430,18 +2563,43 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 				next = applyOp(next, { type: "removeTransition", clipId: c.id }).data;
 			}
 			if (kind !== "dip") {
-				// Overlap the clips by d: this clip and everything after it on the track move left.
-				const current = clip(next, c.id);
-				const before = leftNeighbour(next, current) ?? left;
-				const shift = d - Math.max(0, clipEnd(before) - current.startMs);
-				next = shiftTrackFrom(next, current, -shift);
+				// Overlap the clips by d without moving the cut or anything after it, as editors do:
+				// this clip starts earlier into its own spare frames (head), or the clip before runs
+				// on under it (tail). Only with no spare frames on either side does the rest of the
+				// track move left (shift), which the summary says.
+				const current = clip(next, c.id) as MediaClip;
+				const before = (leftNeighbour(next, current) ?? left) as Clip;
+				const already = Math.max(0, clipEnd(before) - current.startMs);
+				const need = d - already;
+				const fade = fadesIn({ kind, durationMs: d }) ? d : 0;
+				const spareHead = headRoom(next, current);
+				const spareTail = before.type === "media" ? tailRoom(next, before) : 0;
+				let made: "head" | "tail" | "shift";
+				if (need <= 0) made = "head";
+				else if (spareHead >= need) {
+					made = "head";
+					next = replaceClip(next, startEarlier(current, need));
+				} else if (spareTail >= need) {
+					made = "tail";
+					next = replaceClip(next, {
+						...(before as MediaClip),
+						durationMs: before.durationMs + need,
+					});
+				} else {
+					made = "shift";
+					next = shiftTrackFrom(next, current, -need);
+				}
 				const moved = clip(next, c.id) as MediaClip;
 				next = replaceClip(next, {
 					...moved,
 					// Wipes and slides keep the picture solid; the others fade it in too.
-					fadeInMs: fadesIn({ kind, durationMs: d }) ? d : 0,
-					transitionIn: { kind, durationMs: d },
+					fadeInMs: fade,
+					transitionIn: { kind, durationMs: d, made },
 				});
+				return {
+					data: next,
+					summary: `Added a ${sec(d)} ${transitionLabel(kind).toLowerCase()} into ${c.name ?? c.id}${made === "shift" ? ` (no spare frames on either side, so the clips after it moved ${sec(need)} earlier)` : ""}`,
+				};
 			} else {
 				next = replaceClip(next, { ...(left as MediaClip), fadeOutMs: Math.round(d / 2) });
 				next = replaceClip(next, {
@@ -2461,8 +2619,11 @@ export function applyOp(data: ProjectData, rawOp: Op | InternalOp): OpResult {
 			let next = data;
 			const left = leftNeighbour(data, c, c.transitionIn.durationMs + 60);
 			if (overlaps(c.transitionIn)) {
-				const shift = left ? Math.max(0, clipEnd(left) - c.startMs) : 0;
-				next = shiftTrackFrom(next, c, shift);
+				const overlap = left ? Math.max(0, clipEnd(left) - c.startMs) : 0;
+				if (c.transitionIn.made === "head") next = replaceClip(next, startLater(c, overlap));
+				else if (c.transitionIn.made === "tail" && left)
+					next = replaceClip(next, { ...left, durationMs: left.durationMs - overlap });
+				else next = shiftTrackFrom(next, c, overlap);
 			} else if (left && left.type === "media") next = replaceClip(next, { ...left, fadeOutMs: 0 });
 			const { transitionIn: _gone, ...rest } = clip(next, c.id) as MediaClip;
 			next = replaceClip(next, { ...rest, fadeInMs: 0 });

@@ -169,10 +169,12 @@ async function rpc(method: MethodName, params: unknown): Promise<unknown> {
 /** Frames a result carries (render_frame, inspect_edit, or their result through wait_for). */
 function framesOf(result: unknown): { atMs?: number; png: string }[] {
 	if (!result || typeof result !== "object") return [];
-	const r = result as { png?: unknown; frames?: unknown; status?: unknown };
+	const r = result as { png?: unknown; jpg?: unknown; frames?: unknown; status?: unknown };
 	// Still running: there is nothing to show yet (wait_for brings the frames).
 	if (r.status === "running") return [];
 	if (typeof r.png === "string") return [{ png: r.png }];
+	// Big images (contact sheets, track reviews) come as JPEG to stay small.
+	if (typeof r.jpg === "string") return [{ png: r.jpg }];
 	if (Array.isArray(r.frames))
 		return r.frames.filter((f): f is { atMs?: number; png: string } => typeof f?.png === "string");
 	return [];
@@ -187,7 +189,7 @@ function toolContent(_name: MethodName, result: unknown) {
 			{
 				type: "image" as const,
 				data: readFileSync(frame.png).toString("base64"),
-				mimeType: "image/png" as const,
+				mimeType: /\.jpe?g$/i.test(frame.png) ? ("image/jpeg" as const) : ("image/png" as const),
 			},
 		]),
 	];

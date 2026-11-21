@@ -209,6 +209,16 @@ export function toggleSection(title: string) {
 	sections.set({ collapsed: { ...collapsed, [title]: !isCollapsed(title) } });
 }
 
+/** The inspector section last asked to be shown (by title), counted so asking again scrolls again. */
+export const sectionFocus = createStore<{ title: string | null; n: number }>({ title: null, n: 0 });
+
+/** Opens an inspector section and scrolls to it (e.g. from a chip on a timeline clip). */
+export function revealSection(title: string) {
+	sections.set({ collapsed: { ...sections.get().collapsed, [title]: false } });
+	sectionFocus.set((s) => ({ title, n: s.n + 1 }));
+	editor.set({ inspectorOpen: true });
+}
+
 export function isCollapsed(title: string): boolean {
 	const own = sections.get().collapsed[title];
 	if (own !== undefined) return own;

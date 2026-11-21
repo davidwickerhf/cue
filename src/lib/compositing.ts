@@ -1,4 +1,5 @@
-import type { ChromaKey, Mask } from "../../electron/core/types";
+import type { ChromaKey, Effects, Mask } from "../../electron/core/types";
+import { vignetteAlpha } from "../../electron/core/vignette";
 
 /**
  * Preview versions of the export's compositing: mask images (same formula
@@ -46,16 +47,56 @@ export function maskUrl(mask: Mask, aspect: number): string {
 	return url;
 }
 
+/**
+ * A data URL of the vignette as black whose alpha is the darkening (the
+ * exporter's mask, from the same maths), drawn with the picture's aspect ratio.
+ */
+export function vignetteUrl(effects: Effects, aspect: number): string {
+	const key = JSON.stringify([
+		"vignette",
+		effects.vignette,
+		effects.vignetteMidpoint,
+		effects.vignetteRoundness,
+		effects.vignetteFeather,
+		Math.round(aspect * 100),
+	]);
+	const cached = maskCache.get(key);
+	if (cached) return cached;
+	const w = aspect >= 1 ? 480 : Math.round(480 * aspect);
+	const h = aspect >= 1 ? Math.round(480 / aspect) : 480;
+	const canvas = document.createElement("canvas");
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return "";
+	const img = ctx.createImageData(w, h);
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			img.data[i + 3] = Math.round(vignetteAlpha(effects, x + 0.5, y + 0.5, w, h) * 255);
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+	const url = canvas.toDataURL("image/png");
+	if (maskCache.size > 64) maskCache.clear();
+	maskCache.set(key, url);
+	return url;
+}
+
 const VERTEX = `attribute vec2 p; varying vec2 uv; void main(){ uv = vec2((p.x+1.0)/2.0, (1.0-p.y)/2.0); gl_Position = vec4(p,0.0,1.0); }`;
 const FRAGMENT = `precision mediump float;
-varying vec2 uv; uniform sampler2D tex; uniform vec2 keyUV; uniform float similarity; uniform float blend;
+varying vec2 uv; uniform sampler2D tex; uniform vec2 keyUV; uniform float similarity; uniform float blend; uniform float blueScreen;
 vec2 chroma(vec3 c){ return vec2(-0.169*c.r - 0.331*c.g + 0.5*c.b + 0.5, 0.5*c.r - 0.419*c.g - 0.081*c.b + 0.5); }
 void main(){
 	vec4 c = texture2D(tex, uv);
 	vec2 d = chroma(c.rgb) - keyUV;
 	float diff = sqrt((d.x*d.x + d.y*d.y) / 2.0);
 	float a = blend > 0.0001 ? clamp((diff - similarity) / blend, 0.0, 1.0) : (diff > similarity ? 1.0 : 0.0);
-	gl_FragColor = vec4(c.rgb * a, a);
+	// Spill, as ffmpeg's despill (mix 0.5): the screen's colour is capped at the mean of the other two.
+	vec3 rgb = c.rgb;
+	if (blueScreen > 0.5) rgb.b = min(rgb.b, 0.5 * (rgb.r + rgb.g));
+	else rgb.g = min(rgb.g, 0.5 * (rgb.r + rgb.b));
+	gl_FragColor = vec4(rgb * a, a);
 }`;
 
 export interface Keyer {
@@ -96,6 +137,7 @@ export function createKeyer(): Keyer | null {
 	const uKey = gl.getUniformLocation(program, "keyUV");
 	const uSim = gl.getUniformLocation(program, "similarity");
 	const uBlend = gl.getUniformLocation(program, "blend");
+	const uBlue = gl.getUniformLocation(program, "blueScreen");
 	return {
 		canvas,
 		draw(source, key) {
@@ -117,6 +159,7 @@ export function createKeyer(): Keyer | null {
 			);
 			gl.uniform1f(uSim, key.similarity);
 			gl.uniform1f(uBlend, key.blend);
+			gl.uniform1f(uBlue, b > g ? 1 : 0);
 			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
 			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		},

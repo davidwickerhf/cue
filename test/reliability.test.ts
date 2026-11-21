@@ -313,7 +313,7 @@ describe("long jobs", () => {
 		expect(seen.every((f) => f >= 0 && f <= 1)).toBe(true);
 		await expect(
 			ffmpegWithProgress(["-i", path.join(dir, "missing.mp4"), out], 1000),
-		).rejects.toThrow(/ffmpeg exited/);
+		).rejects.toThrow(/missing or has moved/);
 		// Two jobs for the same output never share a temporary file.
 		expect(partFile(out, "mp4")).not.toBe(partFile(out, "mp4"));
 	});

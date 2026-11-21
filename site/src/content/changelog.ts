@@ -9,6 +9,157 @@ export type Release = {
 /** Newest first. "Unreleased" lists work on the main branch that is not in a build yet. */
 export const CHANGELOG: Release[] = [
 	{
+		version: "0.2.31",
+		date: "2026-10-18",
+		summary: "Editing a motion graphic's text in the inspector.",
+		changes: [
+			"For graphics made in Cue, the inspector's text fields edit the graphic itself, listed top to bottom in the graphic's own order, and clearing a field removes that line. Clearing one used to bring the old text back.",
+			"Long lines wrap in their field instead of being cut off.",
+		],
+	},
+	{
+		version: "0.2.30",
+		date: "2026-10-18",
+		summary: "Better project thumbnails.",
+		changes: [
+			"A project's thumbnail is taken from a real shot, not from a paper texture or backdrop running under the whole edit.",
+		],
+	},
+	{
+		version: "0.2.29",
+		date: "2026-10-18",
+		summary: "Projects you can tell apart.",
+		changes: [
+			"Every project in the overview gets a thumbnail: a photo or video from the edit, about 15% in. An edit that opened with a motion graphic or an adjustment layer used to get none.",
+			"Copies of a project in the same folder each get their own thumbnail, and projects with the same name show their file's name under it.",
+		],
+	},
+	{
+		version: "0.2.28",
+		date: "2026-10-17",
+		summary: "A newspaper serif for graphics, and a vignette you can shape.",
+		changes: [
+			"Motion graphics have a new font, Source Serif 4 (editorial): a sturdy newspaper serif for titles, cards and charts. One step changes a font across every graphic in a project (replace_motion_font).",
+			"The vignette has Midpoint, Roundness and Feather, as in Lightroom: where the darkening starts, whether it follows the frame or a circle, and how soft its edge is. Existing projects look exactly as before.",
+		],
+	},
+	{
+		version: "0.2.27",
+		date: "2026-10-17",
+		summary: "Faster, lighter exports with large photos.",
+		changes: [
+			"A photo is decoded once per export instead of once per frame, and a photo much larger than it appears is drawn at the size it is shown. An edit with a 40-megapixel photo turned a few degrees used to export at a quarter of real time and need over 4 GB of memory.",
+		],
+	},
+	{
+		version: "0.2.26",
+		date: "2026-10-17",
+		summary: "Long videos export again.",
+		changes: [
+			"Long or busy edits (more than a minute, or more than 60 pictures and graphics) are exported in 20-second chunks that are joined seamlessly. A 15-minute edit with hundreds of clips used to fail with \"Resource temporarily unavailable\" or use up the Mac's memory; it now exports with a small, steady amount.",
+		],
+	},
+	{
+		version: "0.2.25",
+		date: "2026-09-28",
+		summary: "Exact cuts, and thumbnails in copied projects.",
+		changes: [
+			"Exports place every clip on exact frames, so there is no black frame at a cut, also around clips that zoom or move.",
+			"The timeline shows thumbnails and waveforms in a copied project (they used to point at the original's files).",
+		],
+	},
+	{
+		version: "0.2.24",
+		date: "2026-09-28",
+		summary: "No more black frames at cuts.",
+		changes: [
+			"Exports no longer show a single black frame before a cut when a clip starts between two frames; every clip now starts and ends on a whole frame.",
+		],
+	},
+	{
+		version: "0.2.23",
+		date: "2026-09-28",
+		summary: "Transitions no longer move the rest of the track.",
+		changes: [
+			"A crossfade or other transition now overlaps the two clips using spare footage at their edges, so the clips after it stay where they were and stay in sync with music and voice. Only when neither clip has spare footage does the track move, and Cue says so.",
+		],
+	},
+	{
+		version: "0.2.22",
+		date: "2026-09-28",
+		summary: "Pin titles and graphics onto moving surfaces.",
+		changes: [
+			"Motion graphics (titles, words, callouts) can now be pinned onto a motion track or follow one, so type sits on a wall or rides along with something moving.",
+		],
+	},
+	{
+		version: "0.2.21",
+		date: "2026-09-28",
+		summary: "Clearer failures, lighter contact sheets.",
+		changes: [
+			"When an export or any encode fails because the disk is full or a file is missing or damaged, Cue says so in one sentence instead of showing ffmpeg's log.",
+			"Contact sheets and motion-track reviews are sent to agents as JPEG, so big sheets (up to 60 frames) arrive instead of breaking the connection.",
+		],
+	},
+	{
+		version: "0.2.20",
+		date: "2026-09-28",
+		summary: "Music composed to an edit's structure works again.",
+		changes: [
+			"generate_music with sections now uses ElevenLabs' current composition format, so a piece can be made part by part (intro, build, drop) to the edit's timing.",
+		],
+	},
+	{
+		version: "0.2.19",
+		date: "2026-09-28",
+		summary: "Motion tracking and corner pin.",
+		changes: [
+			"Track a green screen, a flat surface or anything that moves, then pin a clip onto it (a recording onto a laptop screen, a picture onto a wall) or make a title follow it. Tracks run both ways from every set of corners you give, show how sure they are, and are fixed by giving the right corners where they slip.",
+			"Agents track too (track_motion, apply_track, review_track), and check their work with a review image of the tracked corners.",
+			"The timeline shows which clips are keyed, tracked and pinned, and links them; the Inspector puts the corner pin and tracker first.",
+			"Chroma keys now remove green or blue spill on the edges.",
+			"Seedance goes to Higgsfield even with a fal key stored, and Kling and Hailuo switch to Higgsfield when a fal key stops working.",
+			"Images can be made from reference pictures (same person, place or style), and music can be composed section by section to an edit's structure.",
+			"Fixed: exports of clips with many keyframes, clips generated at the same moment sharing a start picture, and saving one key erasing others when the key file couldn't be read.",
+		],
+	},
+	{
+		version: "0.2.18",
+		date: "2026-09-28",
+		summary: "Seedance 2.0 video and photographic stills.",
+		changes: [
+			"Seedance 2.0 in the Video clip tool and for agents when Higgsfield is connected: lifelike people and camera motion, 1080p, up to 15 seconds.",
+			"generate_image takes a model and quality, so agents can ask for GPT Image 2.5 Sunburst at high quality when a still has to look photographed.",
+		],
+	},
+	{
+		version: "0.2.17",
+		date: "2026-09-28",
+		summary: "Agents review a whole edit in seconds.",
+		changes: [
+			"New contact_sheet tool: up to 60 frames of the edit in one image, spread over a range or at chosen times, so agents check pacing and framing without exporting.",
+		],
+	},
+	{
+		version: "0.2.16",
+		date: "2026-09-28",
+		summary: "Video clips through Higgsfield work end to end.",
+		changes: [
+			"Starting a clip from a picture or the frame at the playhead uploads correctly to Higgsfield.",
+			"Any start picture is fitted to a standard frame first, so models don't reject its size.",
+			"A dropped connection while a clip renders no longer fails it: Cue asks again and downloads it when it's ready.",
+		],
+	},
+	{
+		version: "0.2.15",
+		date: "2026-09-28",
+		summary: "Music works on a free ElevenLabs plan when fal is connected.",
+		changes: [
+			"ElevenLabs only offers music on paid plans; with fal connected, Cue now composes through fal instead of stopping with an error.",
+			"The Sound effect tool's Generate button is full width, like Music and Video clip.",
+		],
+	},
+	{
 		version: "0.2.14",
 		date: "2026-09-28",
 		summary: "Higgsfield connects like the other services.",

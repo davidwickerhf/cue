@@ -44,14 +44,14 @@ Honesty rules, by kind of video:
 
 ## Video clips
 
-- generate_clip makes 5–10 s silent shots (Kling 2.5 Turbo by default, Hailuo 2.3). Write the prompt like a shot list: subject, action, camera move, lens, light, style, mood. "Slow dolly in on a lone lighthouse at dusk, waves breaking below, warm backlight, light mist, cinematic, 35 mm"; "top-down macro of ink spreading through water, deep blue, slow motion".
+- generate_clip makes 5–15 s silent shots (Kling 2.5 Turbo by default, Hailuo 2.3; with Higgsfield, Seedance 2.0 for the most natural people and camera motion, up to 15 s). Write the prompt like a shot list: subject, action, camera move, lens, light, style, mood. "Slow dolly in on a lone lighthouse at dusk, waves breaking below, warm backlight, light mist, cinematic, 35 mm"; "top-down macro of ink spreading through water, deep blue, slow motion".
 - For a consistent look, make one still in the project's style with generate_image and animate it (imageAssetId), or animate a real frame of the edit (frameAtMs) so the new shot matches what's around it. Reuse the same style words in every prompt of a project (palette, lens, grain, era).
 - They take one to a few minutes: start them early (several in a row), keep editing, collect them with wait_for. Trim to the part that works; slow them a little (speed 0.8–0.9) if the motion is hurried; grade them like the rest (copy_grade). They are silent: give each one a sound of its own (generate_sound for the ambience or the action in the shot, looped for a long hold).
 - Not for text, logos, faces that must be right, or anything factual; use motion graphics and real footage for those.
 
 ## Images
 
-generate_image for title cards, stills, illustrations and start pictures for clips; keep one style across a project (say it in every prompt).
+generate_image for title cards, stills, illustrations and start pictures for clips; keep one style across a project (say it in every prompt). For people and anything that should look photographed (OpenAI), ask for model gpt-image-2.5-sunburst with quality high, and prompt like a photographer: camera and lens, available light, natural skin, real lived-in places, unposed; words like "cinematic", "epic" or "hyperrealistic" make pictures look generated.
 
 ## Spending the user's credits
 

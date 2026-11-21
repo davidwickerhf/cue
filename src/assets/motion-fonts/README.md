@@ -8,4 +8,5 @@ downloaded from Google Fonts:
 - DM Sans (400, 500, 700; static cuts of the variable font at 14 pt) — Colophon Foundry, Cue's interface font
 - Space Grotesk (500, 700) — Florian Karsten
 - Instrument Serif (400) — Instrument
+- Source Serif 4 (400, 600, 400 italic; the Subhead optical size) — Frank Grießhammer, Adobe; from github.com/adobe-fonts/source-serif
 - JetBrains Mono (500) — JetBrains

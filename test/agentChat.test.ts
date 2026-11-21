@@ -87,7 +87,9 @@ async function turn(
 	harness: "claude" | "codex" | "gemini",
 	prompt: string,
 	images: string[] = [],
-	during?: (handle: Awaited<ReturnType<typeof import("../electron/agents/harness").runHarness>>) => Promise<void>,
+	during?: (
+		handle: Awaited<ReturnType<typeof import("../electron/agents/harness").runHarness>>,
+	) => Promise<void>,
 ) {
 	const { runHarness } = await import("../electron/agents/harness");
 	const events: ChatEvent[] = [];
@@ -115,7 +117,9 @@ async function turn(
 }
 
 const texts = (events: ChatEvent[]) =>
-	events.filter((e): e is Extract<ChatEvent, { kind: "text" }> => e.kind === "text").map((e) => e.text);
+	events
+		.filter((e): e is Extract<ChatEvent, { kind: "text" }> => e.kind === "text")
+		.map((e) => e.text);
 
 describe.skipIf(process.platform === "win32")("in-app agent chat", () => {
 	it("hands Claude attached screenshots as pictures in the message", async () => {
@@ -174,8 +178,8 @@ describe.skipIf(process.platform === "win32")("in-app agent chat", () => {
 
 		expect(isAttachment(project, big.path)).toBe(true);
 		expect(isAttachment(project, path.join(project, "media", "x.png"))).toBe(false);
-		expect(isAttachment(project, path.join(project, ".cue-chat", "attachments", "..", "chats.json"))).toBe(
-			false,
-		);
+		expect(
+			isAttachment(project, path.join(project, ".cue-chat", "attachments", "..", "chats.json")),
+		).toBe(false);
 	});
 });

@@ -61,7 +61,13 @@ export async function uploadImage(key: HiggsfieldKey, file: string): Promise<str
 	// The upload goes to storage, which is signed by the URL: no Higgsfield key on it.
 	const put = await fetch(slot.upload_url, {
 		method: "PUT",
-		headers: { "content-type": type, ...(slot.upload_headers ?? {}) },
+		// The URL is signed for exactly these headers: one Content-Type, never doubled by a case clash.
+		headers: Object.fromEntries(
+			Object.entries({ "content-type": type, ...(slot.upload_headers ?? {}) }).map(([k, v]) => [
+				k.toLowerCase(),
+				v,
+			]),
+		),
 		body: new Uint8Array(bytes),
 		signal: AbortSignal.timeout(120000),
 	});
@@ -130,8 +136,22 @@ export async function waitForClip(
 	const sleep = options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 	const now = options.now ?? Date.now;
 	const started = now();
+	let dropped = 0;
 	for (;;) {
-		const res = await fetch(url, { headers: auth(key), signal: AbortSignal.timeout(30000) });
+		let res: Response;
+		try {
+			res = await fetch(url, { headers: auth(key), signal: AbortSignal.timeout(30000) });
+			dropped = 0;
+		} catch (error) {
+			// A dropped connection while the clip renders: ask again, unless it keeps failing.
+			if (++dropped > 5) throw error;
+			await sleep(Math.min(15000, 2000 * dropped));
+			continue;
+		}
+		if (res.status >= 500 && ++dropped <= 5) {
+			await sleep(Math.min(15000, 2000 * dropped));
+			continue;
+		}
 		if (!res.ok) throw await higgsfieldFailure(res);
 		const body = (await res.json()) as StatusBody;
 		options.onStatus?.(body.status, now() - started);
@@ -161,11 +181,18 @@ export async function waitForClip(
 
 /** Saves the finished video to a file. */
 export async function downloadClip(url: string, file: string): Promise<string> {
-	const res = await fetch(url, { signal: AbortSignal.timeout(300000) });
-	if (!res.ok || !res.body) throw new Error(`Could not download the clip (${res.status}).`);
 	await fs.mkdir(path.dirname(file), { recursive: true });
-	await pipeline(Readable.fromWeb(res.body as never), createWriteStream(file));
-	return file;
+	for (let attempt = 1; ; attempt++) {
+		try {
+			const res = await fetch(url, { signal: AbortSignal.timeout(300000) });
+			if (!res.ok || !res.body) throw new Error(`Could not download the clip (${res.status}).`);
+			await pipeline(Readable.fromWeb(res.body as never), createWriteStream(file));
+			return file;
+		} catch (error) {
+			if (attempt >= 3) throw error;
+			await new Promise((r) => setTimeout(r, 3000 * attempt));
+		}
+	}
 }
 
 /** The whole round: upload the picture (if any), queue, poll, download. */

@@ -731,40 +731,36 @@ function SoundTool() {
 			<Field label="Length">
 				<Segmented size="xs" value={length} onChange={setLength} options={SOUND_LENGTHS} />
 			</Field>
-			<div className="flex items-center justify-between gap-2">
+			<Field label="Takes">
 				<Segmented
 					size="xs"
 					value={variants}
 					onChange={setVariants}
-					options={["1", "2", "3", "4"].map((n) => ({
-						value: n,
-						label: n === "1" ? "1 take" : `${n} takes`,
-					}))}
+					options={["1", "2", "3", "4"].map((n) => ({ value: n, label: n }))}
 				/>
-				<Button
-					size="sm"
-					variant="primary"
-					className="gap-1.5"
-					isDisabled={busy || prompt.trim().length < 3 || !sound?.ready}
-					onPress={async () => {
-						const result = await run<{ sounds: unknown[] }>("generate_sound", {
-							prompt,
-							durationSeconds: length === "auto" ? undefined : Number(length),
-							variants: Number(variants),
-							atMs: Math.round(playback.currentMs),
-						});
-						if (result)
-							notify(
-								result.sounds.length > 1
-									? `Sound added at the playhead; ${result.sounds.length - 1} more take(s) in the media`
-									: "Sound added at the playhead",
-								"success",
-							);
-					}}
-				>
-					<Waveform className="size-4" /> Generate
-				</Button>
-			</div>
+			</Field>
+			<Button
+				variant="primary"
+				className="w-full gap-2"
+				isDisabled={busy || prompt.trim().length < 3 || !sound?.ready}
+				onPress={async () => {
+					const result = await run<{ sounds: unknown[] }>("generate_sound", {
+						prompt,
+						durationSeconds: length === "auto" ? undefined : Number(length),
+						variants: Number(variants),
+						atMs: Math.round(playback.currentMs),
+					});
+					if (result)
+						notify(
+							result.sounds.length > 1
+								? `Sound added at the playhead; ${result.sounds.length - 1} more take(s) in the media`
+								: "Sound added at the playhead",
+							"success",
+						);
+				}}
+			>
+				<Waveform className="size-4" /> Generate
+			</Button>
 			<JobProgress match={/^Generating (a sound|\d+ sounds)/} />
 		</Section>
 	);

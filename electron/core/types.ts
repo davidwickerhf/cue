@@ -256,6 +256,41 @@ export interface ChromaKey {
 	blend: number;
 }
 
+/** Four corners (top-left, top-right, bottom-right, bottom-left), each [x, y] as shares of the canvas. */
+export type Corners = [[number, number], [number, number], [number, number], [number, number]];
+
+/**
+ * Corner pin: the picture is stretched onto four corners that may move (a laptop
+ * screen, a sign, a wall), like After Effects' corner pin. Between keys the corners
+ * move in straight lines; one key holds still. Position, scale and rotation are
+ * not used while a clip is pinned.
+ */
+export interface CornerPin {
+	/** In clip-local ms, in order. */
+	keys: { atMs: number; corners: Corners }[];
+}
+
+/**
+ * A motion tracker on a clip: what to follow and what was found, kept so it can
+ * be corrected (another anchor) and applied again. screen: a green or blue screen,
+ * found by its colour. surface: a flat thing given its four corners. object:
+ * anything, given a box, followed in position, size and rotation.
+ */
+export interface Tracker {
+	mode: "screen" | "surface" | "object";
+	/** Key colour for screens. */
+	color?: string;
+	/**
+	 * Corners set by hand at moments; tracking runs both ways from each. Times here are
+	 * in the source media (ms), so trimming, splitting or slipping the clip keeps them.
+	 */
+	anchors: { atMs: number; corners: Corners }[];
+	/** The tracked corners, one per frame (source ms), with how sure the tracker was (0–1). */
+	result?: { atMs: number; corners: Corners; confidence: number }[];
+	/** Clips that follow this tracker: pinned onto its corners, or moved with it. */
+	targets?: { clipId: string; as: "pin" | "follow" }[];
+}
+
 export interface ColorGrade {
 	/** -1–1, 0 is neutral. */
 	brightness: number;
@@ -274,6 +309,12 @@ export interface Effects {
 	blur: number;
 	sharpen: number;
 	vignette: number;
+	/** 0–1, where the vignette starts darkening: higher keeps it nearer the corners (default 0.5). */
+	vignetteMidpoint?: number;
+	/** -1 (follows the frame's rectangle) – 1 (a circle); 0, the default, is an ellipse of the frame's proportions. */
+	vignetteRoundness?: number;
+	/** 0–1, how soft the vignette's edge is: 0 is a hard edge (default 0.5). */
+	vignetteFeather?: number;
 	glow: number;
 	/** Film grain, 0–1: moving noise over the picture (archive footage, paper, a filmic look). */
 	grain: number;
@@ -302,6 +343,12 @@ export interface Frame {
 export interface Transition {
 	kind: import("./transitions").TransitionKind;
 	durationMs: number;
+	/**
+	 * How the clips were overlapped: head (this clip starts earlier into its own
+	 * spare frames), tail (the clip before runs on under it) or shift (no spare
+	 * frames, so this clip and the rest of its track moved left; older projects).
+	 */
+	made?: "head" | "tail" | "shift";
 }
 
 export interface MediaClip {
@@ -327,6 +374,10 @@ export interface MediaClip {
 	color?: ColorGrade;
 	mask?: Mask;
 	key?: ChromaKey;
+	/** Stretched onto four (moving) corners instead of placed by transform. */
+	pin?: CornerPin;
+	/** A motion tracker on this clip's picture. */
+	tracker?: Tracker;
 	effects?: Effects;
 	frame?: Frame;
 	/** Blend with the tracks below; none is normal. */

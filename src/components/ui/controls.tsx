@@ -1,9 +1,9 @@
 import { Button, Switch, Tooltip } from "@heroui/react";
 import { CaretRight } from "@phosphor-icons/react";
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { keyLabel } from "../../lib/platform";
 import { cn } from "../../lib/utils";
-import { isCollapsed, layout, sections, toggleSection } from "../../lib/workspace";
+import { isCollapsed, layout, sectionFocus, sections, toggleSection } from "../../lib/workspace";
 
 /** Sections inside this fold by title (the inspector); elsewhere they stay open. */
 export const FoldingSections = createContext(false);
@@ -66,8 +66,15 @@ export function Section({
 	sections.use((s) => s.collapsed[title ?? ""]);
 	layout.use((s) => s.sections);
 	const collapsed = folding && isCollapsed(title as string);
+	// Asked to be shown (revealSection): scroll it into view.
+	const ref = useRef<HTMLElement>(null);
+	const focus = sectionFocus.use((s) => (title && s.title === title ? s.n : 0));
+	useEffect(() => {
+		if (focus) ref.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+	}, [focus]);
 	return (
 		<section
+			ref={ref}
 			className={cn(
 				"flex flex-col gap-2.5 border-b border-separator px-4 py-3.5 last:border-b-0",
 				collapsed && "py-2",
