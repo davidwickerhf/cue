@@ -14,15 +14,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Linux on Anvil's runners (anvil-4cpu: the ffmpeg export tests timed out on small runners), except for pull requests
+  # from forks, which stay on GitHub's so code from outside the repository never runs on Anvil's server.
   test:
-    name: Typecheck and tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-14]
-    # Linux on Anvil's runners (anvil-4cpu: the ffmpeg export tests timed out on small runners), except for pull
-    # requests from forks, which stay on GitHub's so code from outside the repository never runs on Anvil's server.
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && !github.event.pull_request.head.repo.fork && 'anvil-4cpu' || matrix.os }}
+    name: Typecheck and tests (ubuntu-latest)
+    runs-on: ${{ !github.event.pull_request.head.repo.fork && 'anvil-4cpu' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,9 +26,8 @@ jobs:
           node-version: 22
           cache: npm
       # ffmpeg-static downloads the ffmpeg for this runner's OS during install.
-      # xmllint checks the exported FCPXML and MLT (built into macOS).
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update -q && sudo apt-get install -y -q libxml2-utils
+      # xmllint checks the exported FCPXML and MLT.
+      - run: sudo apt-get update -q && sudo apt-get install -y -q libxml2-utils
       - run: npm ci
       - run: npx tsc --noEmit -p tsconfig.json
       # --testTimeout: the CPU-bound tracker tests (test/tracker.test.ts) take 5.3–5.6 s on anvil-4cpu, just over
@@ -41,7 +36,29 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: junit-Typecheck and tests (${{ matrix.os }})
+          name: junit-Typecheck and tests (ubuntu-latest)
+          path: junit.xml
+          if-no-files-found: warn
+
+  # The same on GitHub's macOS runner (xmllint is built into macOS). Its own job, outside ci-ok: GitHub hasn't been
+  # starting macOS jobs for this account ("The configuration 'macos-14-arm64-us-default' is not supported"), and a
+  # GitHub-hosted job stops when the account's hosted minutes run out.
+  test-macos:
+    name: Typecheck and tests (macos-14)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npx vitest run --testTimeout=20000 --reporter=default --reporter=junit --outputFile.junit=junit.xml
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: junit-Typecheck and tests (macos-14)
           path: junit.xml
           if-no-files-found: warn
 
